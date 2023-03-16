@@ -1,9 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package disque
 
 import (
 	"bufio"
-	_ "embed"
 	"errors"
 	"fmt"
 	"net"
@@ -17,16 +15,29 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 type Disque struct {
 	Servers []string
 
 	c net.Conn
 }
 
+var sampleConfig = `
+  ## An array of URI to gather stats about. Specify an ip or hostname
+  ## with optional port and password.
+  ## ie disque://localhost, disque://10.10.3.33:18832, 10.0.0.1:10000, etc.
+  ## If no servers are specified, then localhost is used as the host.
+  servers = ["localhost"]
+`
+
 var defaultTimeout = 5 * time.Second
+
+func (d *Disque) SampleConfig() string {
+	return sampleConfig
+}
+
+func (d *Disque) Description() string {
+	return "Read metrics from one or many disque servers"
+}
 
 var Tracking = map[string]string{
 	"uptime_in_seconds":          "uptime",
@@ -50,10 +61,6 @@ var Tracking = map[string]string{
 
 var ErrProtocolError = errors.New("disque protocol error")
 
-func (*Disque) SampleConfig() string {
-	return sampleConfig
-}
-
 // Reads stats from all configured servers accumulates stats.
 // Returns one of the errors encountered while gather stats (if any).
 func (d *Disque) Gather(acc telegraf.Accumulator) error {
@@ -69,7 +76,7 @@ func (d *Disque) Gather(acc telegraf.Accumulator) error {
 	for _, serv := range d.Servers {
 		u, err := url.Parse(serv)
 		if err != nil {
-			acc.AddError(fmt.Errorf("unable to parse to address %q: %w", serv, err))
+			acc.AddError(fmt.Errorf("unable to parse to address '%s': %s", serv, err))
 			continue
 		} else if u.Scheme == "" {
 			// fallback to simple string based address (i.e. "10.0.0.1:10000")
@@ -100,7 +107,7 @@ func (d *Disque) gatherServer(addr *url.URL, acc telegraf.Accumulator) error {
 
 		c, err := net.DialTimeout("tcp", addr.Host, defaultTimeout)
 		if err != nil {
-			return fmt.Errorf("unable to connect to disque server %q: %w", addr.Host, err)
+			return fmt.Errorf("unable to connect to disque server '%s': %s", addr.Host, err)
 		}
 
 		if addr.User != nil {
@@ -117,7 +124,7 @@ func (d *Disque) gatherServer(addr *url.URL, acc telegraf.Accumulator) error {
 					return err
 				}
 				if line[0] != '+' {
-					return errors.New(strings.TrimSpace(line)[1:])
+					return fmt.Errorf("%s", strings.TrimSpace(line)[1:])
 				}
 			}
 		}
@@ -142,7 +149,7 @@ func (d *Disque) gatherServer(addr *url.URL, acc telegraf.Accumulator) error {
 	}
 
 	if line[0] != '$' {
-		return fmt.Errorf("bad line start: %w", ErrProtocolError)
+		return fmt.Errorf("bad line start: %s", ErrProtocolError)
 	}
 
 	line = strings.TrimSpace(line)
@@ -151,7 +158,7 @@ func (d *Disque) gatherServer(addr *url.URL, acc telegraf.Accumulator) error {
 
 	sz, err := strconv.Atoi(szStr)
 	if err != nil {
-		return fmt.Errorf("bad size string <<%s>>: %w", szStr, ErrProtocolError)
+		return fmt.Errorf("bad size string <<%s>>: %s", szStr, ErrProtocolError)
 	}
 
 	var read int

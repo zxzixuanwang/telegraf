@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package cassandra
 
 import (
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,9 +12,6 @@ import (
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 type JolokiaClient interface {
 	MakeRequest(req *http.Request) (*http.Response, error)
@@ -130,7 +125,7 @@ func (j javaMetric) addTagsFields(out map[string]interface{}) {
 		}
 		j.acc.AddFields(tokens["class"]+tokens["type"], fields, tags)
 	} else {
-		j.acc.AddError(fmt.Errorf("missing key 'value' in %q output response: %v", j.metric, out))
+		j.acc.AddError(fmt.Errorf("missing key 'value' in '%s' output response: %v", j.metric, out))
 	}
 }
 
@@ -154,7 +149,7 @@ func (c cassandraMetric) addTagsFields(out map[string]interface{}) {
 		tokens["scope"] == "*") {
 		valuesMap, ok := out["value"]
 		if !ok {
-			c.acc.AddError(fmt.Errorf("missing key 'value' in %q output response: %v", c.metric, out))
+			c.acc.AddError(fmt.Errorf("missing key 'value' in '%s' output response: %v", c.metric, out))
 			return
 		}
 		for k, v := range valuesMap.(map[string]interface{}) {
@@ -163,11 +158,38 @@ func (c cassandraMetric) addTagsFields(out map[string]interface{}) {
 	} else {
 		values, ok := out["value"]
 		if !ok {
-			c.acc.AddError(fmt.Errorf("missing key 'value' in %q output response: %v", c.metric, out))
+			c.acc.AddError(fmt.Errorf("missing key 'value' in '%s' output response: %v", c.metric, out))
 			return
 		}
 		addCassandraMetric(r.(map[string]interface{})["mbean"].(string), c, values.(map[string]interface{}))
 	}
+}
+
+func (c *Cassandra) SampleConfig() string {
+	return `
+  ## DEPRECATED: The cassandra plugin has been deprecated.  Please use the
+  ## jolokia2 plugin instead.
+  ##
+  ## see https://github.com/influxdata/telegraf/tree/master/plugins/inputs/jolokia2
+
+  context = "/jolokia/read"
+  ## List of cassandra servers exposing jolokia read service
+  servers = ["myuser:mypassword@10.10.10.1:8778","10.10.10.2:8778",":8778"]
+  ## List of metrics collected on above servers
+  ## Each metric consists of a jmx path.
+  ## This will collect all heap memory usage metrics from the jvm and
+  ## ReadLatency metrics for all keyspaces and tables.
+  ## "type=Table" in the query works with Cassandra3.0. Older versions might
+  ## need to use "type=ColumnFamily"
+  metrics  = [
+    "/java.lang:type=Memory/HeapMemoryUsage",
+    "/org.apache.cassandra.metrics:type=Table,keyspace=*,scope=*,name=ReadLatency"
+  ]
+`
+}
+
+func (c *Cassandra) Description() string {
+	return "Read Cassandra metrics through Jolokia"
 }
 
 func (c *Cassandra) getAttr(requestURL *url.URL) (map[string]interface{}, error) {
@@ -185,7 +207,7 @@ func (c *Cassandra) getAttr(requestURL *url.URL) (map[string]interface{}, error)
 
 	// Process response
 	if resp.StatusCode != http.StatusOK {
-		err = fmt.Errorf("response from url %q has status code %d (%s), expected %d (%s)",
+		err = fmt.Errorf("response from url \"%s\" has status code %d (%s), expected %d (%s)",
 			requestURL,
 			resp.StatusCode,
 			http.StatusText(resp.StatusCode),
@@ -231,10 +253,6 @@ func parseServerTokens(server string) map[string]string {
 		serverTokens["passwd"] = userTokens[1]
 	}
 	return serverTokens
-}
-
-func (*Cassandra) SampleConfig() string {
-	return sampleConfig
 }
 
 func (c *Cassandra) Start(_ telegraf.Accumulator) error {

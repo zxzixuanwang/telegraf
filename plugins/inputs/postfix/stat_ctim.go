@@ -1,4 +1,5 @@
 //go:build dragonfly || linux || netbsd || openbsd || solaris
+// +build dragonfly linux netbsd openbsd solaris
 
 package postfix
 

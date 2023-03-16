@@ -1,21 +1,11 @@
 # Couchbase Input Plugin
 
-Couchbase is a distributed NoSQL database.  This plugin gets metrics for each
-Couchbase node, as well as detailed metrics for each bucket, for a given
-couchbase server.
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+Couchbase is a distributed NoSQL database.
+This plugin gets metrics for each Couchbase node, as well as detailed metrics for each bucket, for a given couchbase server.
 
 ## Configuration
 
-```toml @sample.conf
+```toml
 # Read per-node and per-bucket metrics from Couchbase
 [[inputs.couchbase]]
   ## specify servers via a url matching:
@@ -39,25 +29,15 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   ## Use TLS but skip chain & host verification (defaults to false)
   ## If set to false, tls_cert and tls_key are required
   # insecure_skip_verify = false
-
-  ## Whether to collect cluster-wide bucket statistics
-  ## It is recommended to disable this in favor of node_stats
-  ## to get a better view of the cluster.
-  cluster_bucket_stats = true
-
-  ## Whether to collect bucket stats for each individual node
-  node_bucket_stats = false
 ```
 
-## Metrics
+## Measurements
 
 ### couchbase_node
 
 Tags:
 
-- cluster: sanitized string from `servers` configuration field
-  e.g.: `http://user:password@couchbase-0.example.com:8091/endpoint` becomes
-  `http://couchbase-0.example.com:8091/endpoint`
+- cluster: sanitized string from `servers` configuration field e.g.: `http://user:password@couchbase-0.example.com:8091/endpoint` -> `http://couchbase-0.example.com:8091/endpoint`
 - hostname: Couchbase's name for the node and port, e.g., `172.16.10.187:8091`
 
 Fields:
@@ -65,15 +45,12 @@ Fields:
 - memory_free (unit: bytes, example: 23181365248.0)
 - memory_total (unit: bytes, example: 64424656896.0)
 
-### couchbase_bucket and couchbase_node_bucket
+### couchbase_bucket
 
 Tags:
 
-- cluster: whatever you called it in `servers` in the configuration,
-  e.g. `http://couchbase-0.example.com/`
+- cluster: whatever you called it in `servers` in the configuration, e.g.: `http://couchbase-0.example.com/`)
 - bucket: the name of the couchbase bucket, e.g., `blastro-df`
-- hostname: the hostname of the node the bucket metrics were collected
-  from, e.g. `172.16.10.187:8091` (only present in `couchbase_node_bucket`)
 
 Default bucket fields:
 
@@ -85,8 +62,7 @@ Default bucket fields:
 - data_used (unit: bytes, example: 212179309111.0)
 - mem_used (unit: bytes, example: 202156957464.0)
 
-Additional fields that can be configured with the `bucket_stats_included`
-option:
+Additional fields that can be configured with the `bucket_stats_included` option:
 
 - couch_total_disk_size
 - couch_docs_fragmentation
@@ -304,7 +280,7 @@ option:
 - swap_total
 - swap_used
 
-## Example Output
+## Example output
 
 ```shell
 couchbase_node,cluster=http://localhost:8091/,hostname=172.17.0.2:8091 memory_free=7705575424,memory_total=16558182400 1547829754000000000

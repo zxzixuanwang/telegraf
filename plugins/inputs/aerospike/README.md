@@ -1,28 +1,17 @@
 # Aerospike Input Plugin
 
-The aerospike plugin queries aerospike server(s) and get node statistics & stats
-for all the configured namespaces.
+The aerospike plugin queries aerospike server(s) and get node statistics & stats for
+all the configured namespaces.
 
-For what the measurements mean, please consult the [Aerospike Metrics Reference
-Docs](http://www.aerospike.com/docs/reference/metrics).
+For what the measurements mean, please consult the [Aerospike Metrics Reference Docs](http://www.aerospike.com/docs/reference/metrics).
 
-The metric names, to make it less complicated in querying, have replaced all `-`
-with `_` as Aerospike metrics come in both forms (no idea why).
+The metric names, to make it less complicated in querying, have replaced all `-` with `_` as Aerospike metrics come in both forms (no idea why).
 
 All metrics are attempted to be cast to integers, then booleans, then strings.
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
+```toml
 # Read stats from aerospike server(s)
 [[inputs.aerospike]]
   ## Aerospike servers to connect to (with port)
@@ -38,7 +27,6 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   # tls_ca = "/etc/telegraf/ca.pem"
   # tls_cert = "/etc/telegraf/cert.pem"
   # tls_key = "/etc/telegraf/key.pem"
-  # tls_name = "tlsname"
   ## If false, skip chain & host verification
   # insecure_skip_verify = true
 
@@ -66,7 +54,7 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   # num_histogram_buckets = 100 # default: 10
 ```
 
-## Metrics
+## Measurements
 
 The aerospike metrics are under a few measurement names:
 
@@ -101,9 +89,8 @@ are available from the aerospike `sets/<namespace_name>/<set_name>` command.
   ...
 ```
 
-***aerospike_histogram_ttl***: These are aerospike ttl hisogram measurements,
-which is available from the aerospike
-`histogram:namespace=<namespace_name>;[set=<set_name>;]type=ttl` command.
+***aerospike_histogram_ttl***: These are aerospike ttl hisogram measurements, which
+is available from the aerospike `histogram:namespace=<namespace_name>;[set=<set_name>;]type=ttl` command.
 
 ```text
   telnet localhost 3003
@@ -112,10 +99,7 @@ which is available from the aerospike
   ...
 ```
 
-***aerospike_histogram_object_size_linear***: These are aerospike object size
-linear histogram measurements, which is available from the aerospike
-`histogram:namespace=<namespace_name>;[set=<set_name>;]type=object_size_linear`
-command.
+***aerospike_histogram_object_size_linear***: These are aerospike object size linear histogram measurements, which is available from the aerospike `histogram:namespace=<namespace_name>;[set=<set_name>;]type=object_size_linear` command.
 
 ```text
   telnet localhost 3003

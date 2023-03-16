@@ -43,12 +43,6 @@ func TestDiskUsage(t *testing.T) {
 			Fstype:     "ext4",
 			Opts:       []string{"rw", "noatime", "nodiratime", "errors=remount-ro"},
 		},
-		{
-			Device:     "/dev/sda",
-			Mountpoint: "/var/rootbind",
-			Fstype:     "ext4",
-			Opts:       []string{"ro", "noatime", "nodiratime", "bind"},
-		},
 	}
 	duAll := []diskUtil.UsageStat{
 		{
@@ -71,29 +65,18 @@ func TestDiskUsage(t *testing.T) {
 			InodesFree:  468,
 			InodesUsed:  2000,
 		},
-		{
-			Path:        "/var/rootbind",
-			Fstype:      "ext4",
-			Total:       128,
-			Free:        23,
-			Used:        100,
-			InodesTotal: 1234,
-			InodesFree:  234,
-			InodesUsed:  1000,
-		},
 	}
 
 	mps.On("Partitions", true).Return(psAll, nil)
 	mps.On("OSGetenv", "HOST_MOUNT_PREFIX").Return("")
 	mps.On("PSDiskUsage", "/").Return(&duAll[0], nil)
 	mps.On("PSDiskUsage", "/home").Return(&duAll[1], nil)
-	mps.On("PSDiskUsage", "/var/rootbind").Return(&duAll[2], nil)
 
 	err = (&DiskStats{ps: mps}).Gather(&acc)
 	require.NoError(t, err)
 
 	numDiskMetrics := acc.NFields()
-	expectedAllDiskMetrics := 21
+	expectedAllDiskMetrics := 14
 	require.Equal(t, expectedAllDiskMetrics, numDiskMetrics)
 
 	tags1 := map[string]string{
@@ -107,12 +90,6 @@ func TestDiskUsage(t *testing.T) {
 		"fstype": "ext4",
 		"device": "sdb",
 		"mode":   "rw",
-	}
-	tags3 := map[string]string{
-		"path":   fmt.Sprintf("%cvar%crootbind", os.PathSeparator, os.PathSeparator),
-		"fstype": "ext4",
-		"device": "sda",
-		"mode":   "ro",
 	}
 
 	fields1 := map[string]interface{}{
@@ -133,35 +110,20 @@ func TestDiskUsage(t *testing.T) {
 		"inodes_used":  uint64(2000),
 		"used_percent": float64(81.30081300813008),
 	}
-	fields3 := map[string]interface{}{
-		"total":        uint64(128),
-		"used":         uint64(100),
-		"free":         uint64(23),
-		"inodes_total": uint64(1234),
-		"inodes_free":  uint64(234),
-		"inodes_used":  uint64(1000),
-		"used_percent": float64(81.30081300813008),
-	}
 	acc.AssertContainsTaggedFields(t, "disk", fields1, tags1)
 	acc.AssertContainsTaggedFields(t, "disk", fields2, tags2)
-	acc.AssertContainsTaggedFields(t, "disk", fields3, tags3)
 
-	// We expect 7 more DiskMetrics to show up with an explicit match on "/"
+	// We expect 6 more DiskMetrics to show up with an explicit match on "/"
 	// and /home not matching the /dev in MountPoints
 	err = (&DiskStats{ps: &mps, MountPoints: []string{"/", "/dev"}}).Gather(&acc)
 	require.NoError(t, err)
 	require.Equal(t, expectedAllDiskMetrics+7, acc.NFields())
 
 	// We should see all the diskpoints as MountPoints includes both
-	// /, /home, and /var/rootbind
-	err = (&DiskStats{ps: &mps, MountPoints: []string{"/", "/home", "/var/rootbind"}}).Gather(&acc)
+	// / and /home
+	err = (&DiskStats{ps: &mps, MountPoints: []string{"/", "/home"}}).Gather(&acc)
 	require.NoError(t, err)
-	require.Equal(t, expectedAllDiskMetrics+7*4, acc.NFields())
-
-	// We should see all the mounts as MountPoints except the bind mound
-	err = (&DiskStats{ps: &mps, IgnoreMountOpts: []string{"bind"}}).Gather(&acc)
-	require.NoError(t, err)
-	require.Equal(t, expectedAllDiskMetrics+7*6, acc.NFields())
+	require.Equal(t, 2*expectedAllDiskMetrics+7, acc.NFields())
 }
 
 func TestDiskUsageHostMountPrefix(t *testing.T) {
@@ -325,18 +287,8 @@ func TestDiskStats(t *testing.T) {
 			InodesFree:  468,
 			InodesUsed:  2000,
 		},
-		{
-			Path:        "/var/rootbind",
-			Fstype:      "ext4",
-			Total:       128,
-			Free:        23,
-			Used:        100,
-			InodesTotal: 1234,
-			InodesFree:  234,
-			InodesUsed:  1000,
-		},
 	}
-	duMountFiltered := []*diskUtil.UsageStat{
+	duFiltered := []*diskUtil.UsageStat{
 		{
 			Path:        "/",
 			Fstype:      "ext4",
@@ -346,28 +298,6 @@ func TestDiskStats(t *testing.T) {
 			InodesTotal: 1234,
 			InodesFree:  234,
 			InodesUsed:  1000,
-		},
-	}
-	duOptFiltered := []*diskUtil.UsageStat{
-		{
-			Path:        "/",
-			Fstype:      "ext4",
-			Total:       128,
-			Free:        23,
-			Used:        100,
-			InodesTotal: 1234,
-			InodesFree:  234,
-			InodesUsed:  1000,
-		},
-		{
-			Path:        "/home",
-			Fstype:      "ext4",
-			Total:       256,
-			Free:        46,
-			Used:        200,
-			InodesTotal: 2468,
-			InodesFree:  468,
-			InodesUsed:  2000,
 		},
 	}
 
@@ -384,15 +314,9 @@ func TestDiskStats(t *testing.T) {
 			Fstype:     "ext4",
 			Opts:       []string{"rw", "noatime", "nodiratime", "errors=remount-ro"},
 		},
-		{
-			Device:     "/dev/sda",
-			Mountpoint: "/var/rootbind",
-			Fstype:     "ext4",
-			Opts:       []string{"ro", "noatime", "nodiratime", "bind"},
-		},
 	}
 
-	psMountFiltered := []*diskUtil.PartitionStat{
+	psFiltered := []*diskUtil.PartitionStat{
 		{
 			Device:     "/dev/sda",
 			Mountpoint: "/",
@@ -400,31 +324,16 @@ func TestDiskStats(t *testing.T) {
 			Opts:       []string{"ro", "noatime", "nodiratime"},
 		},
 	}
-	psOptFiltered := []*diskUtil.PartitionStat{
-		{
-			Device:     "/dev/sda",
-			Mountpoint: "/",
-			Fstype:     "ext4",
-			Opts:       []string{"ro", "noatime", "nodiratime"},
-		},
-		{
-			Device:     "/dev/sdb",
-			Mountpoint: "/home",
-			Fstype:     "ext4",
-			Opts:       []string{"rw", "noatime", "nodiratime", "errors=remount-ro"},
-		},
-	}
 
-	mps.On("DiskUsage", []string(nil), []string(nil), []string(nil)).Return(duAll, psAll, nil)
-	mps.On("DiskUsage", []string{"/", "/dev"}, []string(nil), []string(nil)).Return(duMountFiltered, psMountFiltered, nil)
-	mps.On("DiskUsage", []string{"/", "/home", "/var/rootbind"}, []string(nil), []string(nil)).Return(duAll, psAll, nil)
-	mps.On("DiskUsage", []string(nil), []string{"bind"}, []string(nil)).Return(duOptFiltered, psOptFiltered, nil)
+	mps.On("DiskUsage", []string(nil), []string(nil)).Return(duAll, psAll, nil)
+	mps.On("DiskUsage", []string{"/", "/dev"}, []string(nil)).Return(duFiltered, psFiltered, nil)
+	mps.On("DiskUsage", []string{"/", "/home"}, []string(nil)).Return(duAll, psAll, nil)
 
 	err = (&DiskStats{ps: &mps}).Gather(&acc)
 	require.NoError(t, err)
 
 	numDiskMetrics := acc.NFields()
-	expectedAllDiskMetrics := 21
+	expectedAllDiskMetrics := 14
 	require.Equal(t, expectedAllDiskMetrics, numDiskMetrics)
 
 	tags1 := map[string]string{
@@ -461,22 +370,17 @@ func TestDiskStats(t *testing.T) {
 	acc.AssertContainsTaggedFields(t, "disk", fields1, tags1)
 	acc.AssertContainsTaggedFields(t, "disk", fields2, tags2)
 
-	// We expect 7 more DiskMetrics to show up with an explicit match on "/"
-	// and /home and /var/rootbind not matching the /dev in MountPoints
+	// We expect 6 more DiskMetrics to show up with an explicit match on "/"
+	// and /home not matching the /dev in MountPoints
 	err = (&DiskStats{ps: &mps, MountPoints: []string{"/", "/dev"}}).Gather(&acc)
 	require.NoError(t, err)
 	require.Equal(t, expectedAllDiskMetrics+7, acc.NFields())
 
 	// We should see all the diskpoints as MountPoints includes both
-	// /, /home, and /var/rootbind
-	err = (&DiskStats{ps: &mps, MountPoints: []string{"/", "/home", "/var/rootbind"}}).Gather(&acc)
+	// / and /home
+	err = (&DiskStats{ps: &mps, MountPoints: []string{"/", "/home"}}).Gather(&acc)
 	require.NoError(t, err)
-	require.Equal(t, expectedAllDiskMetrics+7*4, acc.NFields())
-
-	// We should see all the mounts as MountPoints except the bind mound
-	err = (&DiskStats{ps: &mps, IgnoreMountOpts: []string{"bind"}}).Gather(&acc)
-	require.NoError(t, err)
-	require.Equal(t, expectedAllDiskMetrics+7*6, acc.NFields())
+	require.Equal(t, 2*expectedAllDiskMetrics+7, acc.NFields())
 }
 
 func TestDiskUsageIssues(t *testing.T) {
@@ -609,7 +513,7 @@ func TestDiskUsageIssues(t *testing.T) {
 
 			// Get the partitions in the test-case
 			os.Clearenv()
-			t.Setenv("HOST_PROC", hostProcPrefix)
+			require.NoError(t, os.Setenv("HOST_PROC", hostProcPrefix))
 			partitions, err := diskUtil.Partitions(true)
 			require.NoError(t, err)
 

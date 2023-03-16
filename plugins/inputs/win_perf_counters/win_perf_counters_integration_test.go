@@ -1,15 +1,18 @@
 //go:build windows
+// +build windows
 
 package win_perf_counters
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/influxdata/telegraf/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/influxdata/telegraf/testutil"
 )
 
 func TestWinPerformanceQueryImplIntegration(t *testing.T) {
@@ -66,13 +69,8 @@ func TestWinPerformanceQueryImplIntegration(t *testing.T) {
 	err = query.CollectData()
 	require.NoError(t, err)
 
-	fcounter, err := query.GetFormattedCounterValueDouble(hCounter)
+	_, err = query.GetFormattedCounterValueDouble(hCounter)
 	require.NoError(t, err)
-	require.True(t, fcounter > 0)
-
-	rcounter, err := query.GetRawCounterValue(hCounter)
-	require.NoError(t, err)
-	require.True(t, rcounter > 10000000)
 
 	now := time.Now()
 	mtime, err := query.CollectDataWithTime()
@@ -106,17 +104,13 @@ func TestWinPerformanceQueryImplIntegration(t *testing.T) {
 	err = query.CollectData()
 	require.NoError(t, err)
 
-	farr, err := query.GetFormattedCounterArrayDouble(hCounter)
+	arr, err := query.GetFormattedCounterArrayDouble(hCounter)
 	if phderr, ok := err.(*PdhError); ok && phderr.ErrorCode != PDH_INVALID_DATA && phderr.ErrorCode != PDH_CALC_NEGATIVE_VALUE {
 		time.Sleep(time.Second)
-		farr, err = query.GetFormattedCounterArrayDouble(hCounter)
+		arr, err = query.GetFormattedCounterArrayDouble(hCounter)
 	}
 	require.NoError(t, err)
-	require.True(t, len(farr) > 0)
-
-	rarr, err := query.GetRawCounterArray(hCounter)
-	require.NoError(t, err)
-	require.True(t, len(rarr) > 0, "Too")
+	require.True(t, len(arr) > 0, "Too")
 
 	err = query.Close()
 	require.NoError(t, err)
@@ -150,12 +144,8 @@ func TestWinPerfcountersConfigGet1Integration(t *testing.T) {
 
 	perfobjects[0] = PerfObject
 
-	m := WinPerfCounters{
-		PrintValid:   false,
-		Object:       perfobjects,
-		queryCreator: &PerformanceQueryCreatorImpl{},
-		Log:          testutil.Logger{},
-	}
+	m := Win_PerfCounters{PrintValid: false, Object: perfobjects, query: &PerformanceQueryImpl{}}
+	m.query.Open()
 
 	err := m.ParseConfig()
 	require.NoError(t, err)
@@ -188,26 +178,21 @@ func TestWinPerfcountersConfigGet2Integration(t *testing.T) {
 
 	perfobjects[0] = PerfObject
 
-	m := WinPerfCounters{
-		PrintValid:   false,
-		Object:       perfobjects,
-		queryCreator: &PerformanceQueryCreatorImpl{},
-		Log:          testutil.Logger{},
-	}
+	m := Win_PerfCounters{PrintValid: false, Object: perfobjects, query: &PerformanceQueryImpl{}}
+	m.query.Open()
 
 	err := m.ParseConfig()
 	require.NoError(t, err)
 
-	hostCounters, ok := m.hostCounters["localhost"]
-	require.True(t, ok)
-
-	if len(hostCounters.counters) == 1 {
+	if len(m.counters) == 1 {
 		require.NoError(t, nil)
-	} else if len(hostCounters.counters) == 0 {
-		err2 := fmt.Errorf("no results returned from the counterPath: %v", len(hostCounters.counters))
+	} else if len(m.counters) == 0 {
+		var errorstring1 = "No results returned from the counterPath"
+		err2 := errors.New(errorstring1)
 		require.NoError(t, err2)
-	} else if len(hostCounters.counters) > 1 {
-		err2 := fmt.Errorf("too many results returned from the counterPath: %v", len(hostCounters.counters))
+	} else if len(m.counters) > 1 {
+		var errorstring1 = fmt.Sprintf("Too many results returned from the counterPath: %v", len(m.counters))
+		err2 := errors.New(errorstring1)
 		require.NoError(t, err2)
 	}
 }
@@ -217,7 +202,6 @@ func TestWinPerfcountersConfigGet3Integration(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	var sources = make([]string, 1)
 	var instances = make([]string, 1)
 	var counters = make([]string, 2)
 	var perfobjects = make([]perfobject, 1)
@@ -226,12 +210,10 @@ func TestWinPerfcountersConfigGet3Integration(t *testing.T) {
 	instances[0] = "_Total"
 	counters[0] = "% Processor Time"
 	counters[1] = "% Idle Time"
-	sources[0] = "localhost"
 
 	var measurement = "test"
 
 	PerfObject := perfobject{
-		Sources:       sources,
 		ObjectName:    objectname,
 		Instances:     instances,
 		Counters:      counters,
@@ -243,26 +225,23 @@ func TestWinPerfcountersConfigGet3Integration(t *testing.T) {
 
 	perfobjects[0] = PerfObject
 
-	m := WinPerfCounters{
-		PrintValid:   false,
-		Object:       perfobjects,
-		queryCreator: &PerformanceQueryCreatorImpl{},
-		Log:          testutil.Logger{},
-	}
+	m := Win_PerfCounters{PrintValid: false, Object: perfobjects, query: &PerformanceQueryImpl{}}
+	m.query.Open()
 
 	err := m.ParseConfig()
 	require.NoError(t, err)
 
-	hostCounters, ok := m.hostCounters["localhost"]
-	require.True(t, ok)
-
-	if len(hostCounters.counters) == 2 {
+	if len(m.counters) == 2 {
 		require.NoError(t, nil)
-	} else if len(hostCounters.counters) < 2 {
-		err2 := fmt.Errorf("too few results returned from the counterPath: %v", len(hostCounters.counters))
+	} else if len(m.counters) < 2 {
+
+		var errorstring1 = fmt.Sprintf("Too few results returned from the counterPath: %v", len(m.counters))
+		err2 := errors.New(errorstring1)
 		require.NoError(t, err2)
-	} else if len(hostCounters.counters) > 2 {
-		err2 := fmt.Errorf("too many results returned from the counterPath: %v", len(hostCounters.counters))
+	} else if len(m.counters) > 2 {
+
+		var errorstring1 = fmt.Sprintf("Too many results returned from the counterPath: %v", len(m.counters))
+		err2 := errors.New(errorstring1)
 		require.NoError(t, err2)
 	}
 }
@@ -295,26 +274,23 @@ func TestWinPerfcountersConfigGet4Integration(t *testing.T) {
 
 	perfobjects[0] = PerfObject
 
-	m := WinPerfCounters{
-		PrintValid:   false,
-		Object:       perfobjects,
-		queryCreator: &PerformanceQueryCreatorImpl{},
-		Log:          testutil.Logger{},
-	}
+	m := Win_PerfCounters{PrintValid: false, Object: perfobjects, query: &PerformanceQueryImpl{}}
+	m.query.Open()
 
 	err := m.ParseConfig()
 	require.NoError(t, err)
 
-	hostCounters, ok := m.hostCounters["localhost"]
-	require.True(t, ok)
-
-	if len(hostCounters.counters) == 2 {
+	if len(m.counters) == 2 {
 		require.NoError(t, nil)
-	} else if len(hostCounters.counters) < 2 {
-		err2 := fmt.Errorf("too few results returned from the counterPath: %v", len(hostCounters.counters))
+	} else if len(m.counters) < 2 {
+
+		var errorstring1 = fmt.Sprintf("Too few results returned from the counterPath: %v", len(m.counters))
+		err2 := errors.New(errorstring1)
 		require.NoError(t, err2)
-	} else if len(hostCounters.counters) > 2 {
-		err2 := fmt.Errorf("too many results returned from the counterPath: %v", len(hostCounters.counters))
+	} else if len(m.counters) > 2 {
+
+		var errorstring1 = fmt.Sprintf("Too many results returned from the counterPath: %v", len(m.counters))
+		err2 := errors.New(errorstring1)
 		require.NoError(t, err2)
 	}
 }
@@ -348,26 +324,21 @@ func TestWinPerfcountersConfigGet5Integration(t *testing.T) {
 
 	perfobjects[0] = PerfObject
 
-	m := WinPerfCounters{
-		PrintValid:   false,
-		Object:       perfobjects,
-		queryCreator: &PerformanceQueryCreatorImpl{},
-		Log:          testutil.Logger{},
-	}
+	m := Win_PerfCounters{PrintValid: false, Object: perfobjects, query: &PerformanceQueryImpl{}}
+	m.query.Open()
 
 	err := m.ParseConfig()
 	require.NoError(t, err)
 
-	hostCounters, ok := m.hostCounters["localhost"]
-	require.True(t, ok)
-
-	if len(hostCounters.counters) == 4 {
+	if len(m.counters) == 4 {
 		require.NoError(t, nil)
-	} else if len(hostCounters.counters) < 4 {
-		err2 := fmt.Errorf("too few results returned from the counterPath: %v", len(hostCounters.counters))
+	} else if len(m.counters) < 4 {
+		var errorstring1 = fmt.Sprintf("Too few results returned from the counterPath: %v", len(m.counters))
+		err2 := errors.New(errorstring1)
 		require.NoError(t, err2)
-	} else if len(hostCounters.counters) > 4 {
-		err2 := fmt.Errorf("too many results returned from the counterPath: %v", len(hostCounters.counters))
+	} else if len(m.counters) > 4 {
+		var errorstring1 = fmt.Sprintf("Too many results returned from the counterPath: %v", len(m.counters))
+		err2 := errors.New(errorstring1)
 		require.NoError(t, err2)
 	}
 }
@@ -399,18 +370,11 @@ func TestWinPerfcountersConfigGet6Integration(t *testing.T) {
 
 	perfobjects[0] = PerfObject
 
-	m := WinPerfCounters{
-		PrintValid:   false,
-		Object:       perfobjects,
-		queryCreator: &PerformanceQueryCreatorImpl{},
-		Log:          testutil.Logger{},
-	}
+	m := Win_PerfCounters{PrintValid: false, Object: perfobjects, query: &PerformanceQueryImpl{}}
+	m.query.Open()
 
 	err := m.ParseConfig()
 	require.NoError(t, err)
-
-	_, ok := m.hostCounters["localhost"]
-	require.True(t, ok)
 }
 
 func TestWinPerfcountersConfigGet7Integration(t *testing.T) {
@@ -431,34 +395,32 @@ func TestWinPerfcountersConfigGet7Integration(t *testing.T) {
 	var measurement = "test"
 
 	PerfObject := perfobject{
-		ObjectName:  objectname,
-		Counters:    counters,
-		Instances:   instances,
-		Measurement: measurement,
+		objectname,
+		counters,
+		instances,
+		measurement,
+		false,
+		false,
+		false,
 	}
 
 	perfobjects[0] = PerfObject
 
-	m := WinPerfCounters{
-		PrintValid:   false,
-		Object:       perfobjects,
-		queryCreator: &PerformanceQueryCreatorImpl{},
-		Log:          testutil.Logger{},
-	}
+	m := Win_PerfCounters{PrintValid: false, Object: perfobjects, query: &PerformanceQueryImpl{}}
+	m.query.Open()
 
 	err := m.ParseConfig()
 	require.NoError(t, err)
 
-	hostCounters, ok := m.hostCounters["localhost"]
-	require.True(t, ok)
-
-	if len(hostCounters.counters) == 2 {
+	if len(m.counters) == 2 {
 		require.NoError(t, nil)
-	} else if len(hostCounters.counters) < 2 {
-		err2 := fmt.Errorf("too few results returned from the counterPath: %v", len(hostCounters.counters))
+	} else if len(m.counters) < 2 {
+		var errorstring1 = fmt.Sprintf("Too few results returned from the counterPath: %v", len(m.counters))
+		err2 := errors.New(errorstring1)
 		require.NoError(t, err2)
-	} else if len(hostCounters.counters) > 2 {
-		err2 := fmt.Errorf("too many results returned from the counterPath: %v", len(hostCounters.counters))
+	} else if len(m.counters) > 2 {
+		var errorstring1 = fmt.Sprintf("Too many results returned from the counterPath: %v", len(m.counters))
+		err2 := errors.New(errorstring1)
 		require.NoError(t, err2)
 	}
 }
@@ -490,12 +452,13 @@ func TestWinPerfcountersConfigError1Integration(t *testing.T) {
 
 	perfobjects[0] = PerfObject
 
-	m := WinPerfCounters{
-		PrintValid:   false,
-		Object:       perfobjects,
-		queryCreator: &PerformanceQueryCreatorImpl{},
-		Log:          testutil.Logger{},
+	m := Win_PerfCounters{
+		PrintValid: false,
+		Object:     perfobjects,
+		query:      &PerformanceQueryImpl{},
+		Log:        testutil.Logger{},
 	}
+	m.query.Open()
 
 	err := m.ParseConfig()
 	require.Error(t, err)
@@ -528,12 +491,13 @@ func TestWinPerfcountersConfigError2Integration(t *testing.T) {
 
 	perfobjects[0] = PerfObject
 
-	m := WinPerfCounters{
-		PrintValid:   false,
-		Object:       perfobjects,
-		queryCreator: &PerformanceQueryCreatorImpl{},
-		Log:          testutil.Logger{},
+	m := Win_PerfCounters{
+		PrintValid: false,
+		Object:     perfobjects,
+		query:      &PerformanceQueryImpl{},
+		Log:        testutil.Logger{},
 	}
+	m.query.Open()
 
 	err := m.ParseConfig()
 	var acc testutil.Accumulator
@@ -568,12 +532,13 @@ func TestWinPerfcountersConfigError3Integration(t *testing.T) {
 
 	perfobjects[0] = PerfObject
 
-	m := WinPerfCounters{
-		PrintValid:   false,
-		Object:       perfobjects,
-		queryCreator: &PerformanceQueryCreatorImpl{},
-		Log:          testutil.Logger{},
+	m := Win_PerfCounters{
+		PrintValid: false,
+		Object:     perfobjects,
+		query:      &PerformanceQueryImpl{},
+		Log:        testutil.Logger{},
 	}
+	m.query.Open()
 
 	err := m.ParseConfig()
 	require.Error(t, err)
@@ -607,11 +572,11 @@ func TestWinPerfcountersCollect1Integration(t *testing.T) {
 
 	perfobjects[0] = PerfObject
 
-	m := WinPerfCounters{
-		PrintValid:   false,
-		Object:       perfobjects,
-		queryCreator: &PerformanceQueryCreatorImpl{},
-		Log:          testutil.Logger{},
+	m := Win_PerfCounters{
+		PrintValid: false,
+		Object:     perfobjects,
+		query:      &PerformanceQueryImpl{},
+		Log:        testutil.Logger{},
 	}
 	var acc testutil.Accumulator
 	err := m.Gather(&acc)
@@ -658,15 +623,14 @@ func TestWinPerfcountersCollect2Integration(t *testing.T) {
 
 	perfobjects[0] = PerfObject
 
-	m := WinPerfCounters{
+	m := Win_PerfCounters{
 		PrintValid:            false,
 		UsePerfCounterTime:    true,
 		Object:                perfobjects,
-		queryCreator:          &PerformanceQueryCreatorImpl{},
+		query:                 &PerformanceQueryImpl{},
 		UseWildcardsExpansion: true,
 		Log:                   testutil.Logger{},
 	}
-
 	var acc testutil.Accumulator
 	err := m.Gather(&acc)
 	require.NoError(t, err)
@@ -680,86 +644,6 @@ func TestWinPerfcountersCollect2Integration(t *testing.T) {
 	for _, metric := range acc.Metrics {
 		_, ok := metric.Fields[expectedCounter]
 		require.True(t, ok)
-	}
-
-}
-
-func TestWinPerfcountersCollectRawIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-	var instances = make([]string, 1)
-	var counters = make([]string, 1)
-	var perfobjects = make([]perfobject, 1)
-
-	objectname := "Processor"
-	instances[0] = "*"
-	counters[0] = "% Idle Time"
-
-	var expectedCounter = "Percent_Idle_Time_Raw"
-
-	var measurement = "test"
-
-	PerfObject := perfobject{
-		ObjectName:    objectname,
-		Instances:     instances,
-		Counters:      counters,
-		Measurement:   measurement,
-		WarnOnMissing: false,
-		FailOnMissing: true,
-		IncludeTotal:  false,
-		UseRawValues:  true,
-	}
-
-	perfobjects[0] = PerfObject
-
-	m := WinPerfCounters{
-		PrintValid:            false,
-		Object:                perfobjects,
-		queryCreator:          &PerformanceQueryCreatorImpl{},
-		UseWildcardsExpansion: true,
-		Log:                   testutil.Logger{},
-	}
-	var acc testutil.Accumulator
-	err := m.Gather(&acc)
-	require.NoError(t, err)
-
-	time.Sleep(2000 * time.Millisecond)
-	err = m.Gather(&acc)
-	require.NoError(t, err)
-	require.True(t, len(acc.Metrics) > 1)
-
-	for _, metric := range acc.Metrics {
-		val, ok := metric.Fields[expectedCounter]
-		require.True(t, ok, "Expected presence of %s field", expectedCounter)
-		valInt64, ok := val.(int64)
-		require.True(t, ok, fmt.Sprintf("Expected int64, got %T", val))
-		require.True(t, valInt64 > 0, fmt.Sprintf("Expected > 0, got %d, for %#v", valInt64, metric))
-	}
-
-	// Test *Array way
-	m = WinPerfCounters{
-		PrintValid:            false,
-		Object:                perfobjects,
-		queryCreator:          &PerformanceQueryCreatorImpl{},
-		UseWildcardsExpansion: false,
-		Log:                   testutil.Logger{},
-	}
-	var acc2 testutil.Accumulator
-	err = m.Gather(&acc)
-	require.NoError(t, err)
-
-	time.Sleep(2000 * time.Millisecond)
-	err = m.Gather(&acc2)
-	require.NoError(t, err)
-	require.True(t, len(acc2.Metrics) > 1)
-
-	for _, metric := range acc2.Metrics {
-		val, ok := metric.Fields[expectedCounter]
-		require.True(t, ok, "Expected presence of %s field", expectedCounter)
-		valInt64, ok := val.(int64)
-		require.True(t, ok, fmt.Sprintf("Expected int64, got %T", val))
-		require.True(t, valInt64 > 0, fmt.Sprintf("Expected > 0, got %d, for %#v", valInt64, metric))
 	}
 
 }

@@ -1,18 +1,15 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package directory_monitor
 
 import (
 	"bufio"
 	"compress/gzip"
 	"context"
-	_ "embed"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"sync"
 	"time"
 
@@ -21,14 +18,56 @@ import (
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
-	"github.com/influxdata/telegraf/internal/choice"
 	"github.com/influxdata/telegraf/plugins/inputs"
 	"github.com/influxdata/telegraf/plugins/parsers"
+	"github.com/influxdata/telegraf/plugins/parsers/csv"
 	"github.com/influxdata/telegraf/selfstat"
 )
 
-//go:embed sample.conf
-var sampleConfig string
+const sampleConfig = `
+  ## The directory to monitor and read files from.
+  directory = ""
+  #
+  ## The directory to move finished files to.
+  finished_directory = ""
+  #
+  ## The directory to move files to upon file error.
+  ## If not provided, erroring files will stay in the monitored directory.
+  # error_directory = ""
+  #
+  ## The amount of time a file is allowed to sit in the directory before it is picked up.
+  ## This time can generally be low but if you choose to have a very large file written to the directory and it's potentially slow,
+  ## set this higher so that the plugin will wait until the file is fully copied to the directory.
+  # directory_duration_threshold = "50ms"
+  #
+  ## A list of the only file names to monitor, if necessary. Supports regex. If left blank, all files are ingested.
+  # files_to_monitor = ["^.*\.csv"]
+  #
+  ## A list of files to ignore, if necessary. Supports regex.
+  # files_to_ignore = [".DS_Store"]
+  #
+  ## Maximum lines of the file to process that have not yet be written by the
+  ## output. For best throughput set to the size of the output's metric_buffer_limit.
+  ## Warning: setting this number higher than the output's metric_buffer_limit can cause dropped metrics.
+  # max_buffered_metrics = 10000
+  #
+  ## The maximum amount of file paths to queue up for processing at once, before waiting until files are processed to find more files.
+  ## Lowering this value will result in *slightly* less memory use, with a potential sacrifice in speed efficiency, if absolutely necessary.
+  #	file_queue_size = 100000
+  #
+  ## Name a tag containing the name of the file the data was parsed from.  Leave empty
+  ## to disable. Cautious when file name variation is high, this can increase the cardinality
+  ## significantly. Read more about cardinality here:
+  ## https://docs.influxdata.com/influxdb/cloud/reference/glossary/#series-cardinality
+  # file_tag = ""
+  #
+  ## The dataformat to be read from the files.
+  ## Each data format has its own unique set of configuration options, read
+  ## more about them here:
+  ## https://github.com/influxdata/telegraf/blob/master/docs/DATA_FORMATS_INPUT.md
+  ## NOTE: We currently only support parsing newline-delimited JSON. See the format here: https://github.com/ndjson/ndjson-spec
+  data_format = "influx"
+`
 
 var (
 	defaultFilesToMonitor             = []string{}
@@ -36,13 +75,11 @@ var (
 	defaultMaxBufferedMetrics         = 10000
 	defaultDirectoryDurationThreshold = config.Duration(0 * time.Millisecond)
 	defaultFileQueueSize              = 100000
-	defaultParseMethod                = "line-by-line"
 )
 
 type DirectoryMonitor struct {
 	Directory         string `toml:"directory"`
 	FinishedDirectory string `toml:"finished_directory"`
-	Recursive         bool   `toml:"recursive"`
 	ErrorDirectory    string `toml:"error_directory"`
 	FileTag           string `toml:"file_tag"`
 
@@ -52,7 +89,6 @@ type DirectoryMonitor struct {
 	DirectoryDurationThreshold config.Duration `toml:"directory_duration_threshold"`
 	Log                        telegraf.Logger `toml:"-"`
 	FileQueueSize              int             `toml:"file_queue_size"`
-	ParseMethod                string          `toml:"parse_method"`
 
 	filesInUse          sync.Map
 	cancel              context.CancelFunc
@@ -68,64 +104,40 @@ type DirectoryMonitor struct {
 	filesToProcess      chan string
 }
 
-func (*DirectoryMonitor) SampleConfig() string {
+func (monitor *DirectoryMonitor) SampleConfig() string {
 	return sampleConfig
 }
 
+func (monitor *DirectoryMonitor) Description() string {
+	return "Ingests files in a directory and then moves them to a target directory."
+}
+
 func (monitor *DirectoryMonitor) Gather(_ telegraf.Accumulator) error {
-	processFile := func(path string) error {
+	// Get all files sitting in the directory.
+	files, err := os.ReadDir(monitor.Directory)
+	if err != nil {
+		return fmt.Errorf("unable to monitor the targeted directory: %w", err)
+	}
+
+	for _, file := range files {
+		filePath := monitor.Directory + "/" + file.Name()
+
 		// We've been cancelled via Stop().
 		if monitor.context.Err() != nil {
-			return io.EOF
+			//nolint:nilerr // context cancelation is not an error
+			return nil
 		}
 
-		stat, err := times.Stat(path)
+		stat, err := times.Stat(filePath)
 		if err != nil {
-			return nil //nolint:nilerr // don't stop traversing if there is an error
+			continue
 		}
 
 		timeThresholdExceeded := time.Since(stat.AccessTime()) >= time.Duration(monitor.DirectoryDurationThreshold)
 
 		// If file is decaying, process it.
 		if timeThresholdExceeded {
-			monitor.processFile(path)
-		}
-		return nil
-	}
-
-	if monitor.Recursive {
-		err := filepath.Walk(monitor.Directory,
-			func(path string, info os.FileInfo, err error) error {
-				if err != nil {
-					return err
-				}
-
-				return processFile(path)
-			})
-		// We've been cancelled via Stop().
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-	} else {
-		// Get all files sitting in the directory.
-		files, err := os.ReadDir(monitor.Directory)
-		if err != nil {
-			return fmt.Errorf("unable to monitor the targeted directory: %w", err)
-		}
-
-		for _, file := range files {
-			if file.IsDir() {
-				continue
-			}
-			path := monitor.Directory + "/" + file.Name()
-			err := processFile(path)
-			// We've been cancelled via Stop().
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
+			monitor.processFile(file)
 		}
 	}
 
@@ -177,21 +189,25 @@ func (monitor *DirectoryMonitor) Monitor() {
 	}
 }
 
-func (monitor *DirectoryMonitor) processFile(path string) {
-	basePath := strings.Replace(path, monitor.Directory, "", 1)
+func (monitor *DirectoryMonitor) processFile(file os.DirEntry) {
+	if file.IsDir() {
+		return
+	}
+
+	filePath := monitor.Directory + "/" + file.Name()
 
 	// File must be configured to be monitored, if any configuration...
-	if !monitor.isMonitoredFile(basePath) {
+	if !monitor.isMonitoredFile(file.Name()) {
 		return
 	}
 
 	// ...and should not be configured to be ignored.
-	if monitor.isIgnoredFile(basePath) {
+	if monitor.isIgnoredFile(file.Name()) {
 		return
 	}
 
 	select {
-	case monitor.filesToProcess <- path:
+	case monitor.filesToProcess <- filePath:
 	default:
 	}
 }
@@ -199,8 +215,7 @@ func (monitor *DirectoryMonitor) processFile(path string) {
 func (monitor *DirectoryMonitor) read(filePath string) {
 	// Open, read, and parse the contents of the file.
 	err := monitor.ingestFile(filePath)
-	var pathErr *os.PathError
-	if errors.As(err, &pathErr) {
+	if _, isPathError := err.(*os.PathError); isPathError {
 		return
 	}
 
@@ -228,7 +243,7 @@ func (monitor *DirectoryMonitor) ingestFile(filePath string) error {
 
 	parser, err := monitor.parserFunc()
 	if err != nil {
-		return fmt.Errorf("creating parser: %w", err)
+		return fmt.Errorf("E! Creating parser: %s", err.Error())
 	}
 
 	// Handle gzipped files.
@@ -246,25 +261,17 @@ func (monitor *DirectoryMonitor) ingestFile(filePath string) error {
 }
 
 func (monitor *DirectoryMonitor) parseFile(parser parsers.Parser, reader io.Reader, fileName string) error {
-	var splitter bufio.SplitFunc
-
-	// Decide on how to split the file
-	switch monitor.ParseMethod {
-	case "at-once":
-		return monitor.parseAtOnce(parser, reader, fileName)
-	case "line-by-line":
-		splitter = bufio.ScanLines
-	default:
-		return fmt.Errorf("unknown parse method %q", monitor.ParseMethod)
-	}
-
 	scanner := bufio.NewScanner(reader)
-	scanner.Split(splitter)
-
 	for scanner.Scan() {
-		metrics, err := monitor.parseMetrics(parser, scanner.Bytes(), fileName)
+		metrics, err := monitor.parseLine(parser, scanner.Bytes())
 		if err != nil {
 			return err
+		}
+
+		if monitor.FileTag != "" {
+			for _, m := range metrics {
+				m.AddTag(monitor.FileTag, filepath.Base(fileName))
+			}
 		}
 
 		if err := monitor.sendMetrics(metrics); err != nil {
@@ -272,39 +279,23 @@ func (monitor *DirectoryMonitor) parseFile(parser parsers.Parser, reader io.Read
 		}
 	}
 
-	return scanner.Err()
+	return nil
 }
 
-func (monitor *DirectoryMonitor) parseAtOnce(parser parsers.Parser, reader io.Reader, fileName string) error {
-	bytes, err := io.ReadAll(reader)
-	if err != nil {
-		return err
-	}
-
-	metrics, err := monitor.parseMetrics(parser, bytes, fileName)
-	if err != nil {
-		return err
-	}
-
-	return monitor.sendMetrics(metrics)
-}
-
-func (monitor *DirectoryMonitor) parseMetrics(parser parsers.Parser, line []byte, fileName string) (metrics []telegraf.Metric, err error) {
-	metrics, err = parser.Parse(line)
-	if err != nil {
-		if errors.Is(err, parsers.ErrEOF) {
-			return nil, nil
+func (monitor *DirectoryMonitor) parseLine(parser parsers.Parser, line []byte) ([]telegraf.Metric, error) {
+	switch parser.(type) {
+	case *csv.Parser:
+		m, err := parser.Parse(line)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil, nil
+			}
+			return nil, err
 		}
-		return nil, err
+		return m, err
+	default:
+		return parser.Parse(line)
 	}
-
-	if monitor.FileTag != "" {
-		for _, m := range metrics {
-			m.AddTag(monitor.FileTag, filepath.Base(fileName))
-		}
-	}
-
-	return metrics, err
 }
 
 func (monitor *DirectoryMonitor) sendMetrics(metrics []telegraf.Metric) error {
@@ -319,41 +310,11 @@ func (monitor *DirectoryMonitor) sendMetrics(metrics []telegraf.Metric) error {
 	return nil
 }
 
-func (monitor *DirectoryMonitor) moveFile(srcPath string, dstBaseDir string) {
-	// Appends any subdirectories in the srcPath to the dstBaseDir and
-	// creates those subdirectories.
-	basePath := strings.Replace(srcPath, monitor.Directory, "", 1)
-	dstPath := filepath.Join(dstBaseDir, basePath)
-	err := os.MkdirAll(filepath.Dir(dstPath), os.ModePerm)
+func (monitor *DirectoryMonitor) moveFile(filePath string, directory string) {
+	err := os.Rename(filePath, directory+"/"+filepath.Base(filePath))
+
 	if err != nil {
-		monitor.Log.Errorf("Error creating directory hierachy for " + srcPath + ". Error: " + err.Error())
-	}
-
-	inputFile, err := os.Open(srcPath)
-	if err != nil {
-		monitor.Log.Errorf("Could not open input file: %s", err)
-	}
-
-	outputFile, err := os.Create(dstPath)
-	if err != nil {
-		monitor.Log.Errorf("Could not open output file: %s", err)
-	}
-	defer outputFile.Close()
-
-	_, err = io.Copy(outputFile, inputFile)
-	if err != nil {
-		monitor.Log.Errorf("Writing to output file failed: %s", err)
-	}
-
-	// We need to close the file for remove on Windows as we otherwise
-	// will run into a "being used by another process" error
-	// (see https://github.com/influxdata/telegraf/issues/12287)
-	if err := inputFile.Close(); err != nil {
-		monitor.Log.Errorf("Could not close input file: %s", err)
-	}
-
-	if err := os.Remove(srcPath); err != nil {
-		monitor.Log.Errorf("Failed removing original file: %s", err)
+		monitor.Log.Errorf("Error while moving file '" + filePath + "' to another directory. Error: " + err.Error())
 	}
 }
 
@@ -398,7 +359,7 @@ func (monitor *DirectoryMonitor) Init() error {
 
 	// Finished directory can be created if not exists for convenience.
 	if _, err := os.Stat(monitor.FinishedDirectory); os.IsNotExist(err) {
-		err = os.Mkdir(monitor.FinishedDirectory, 0755)
+		err = os.Mkdir(monitor.FinishedDirectory, 0777)
 		if err != nil {
 			return err
 		}
@@ -410,7 +371,7 @@ func (monitor *DirectoryMonitor) Init() error {
 	// If an error directory should be used but has not been configured yet, create one ourselves.
 	if monitor.ErrorDirectory != "" {
 		if _, err := os.Stat(monitor.ErrorDirectory); os.IsNotExist(err) {
-			err := os.Mkdir(monitor.ErrorDirectory, 0755)
+			err := os.Mkdir(monitor.ErrorDirectory, 0777)
 			if err != nil {
 				return err
 			}
@@ -439,10 +400,6 @@ func (monitor *DirectoryMonitor) Init() error {
 		monitor.fileRegexesToIgnore = append(monitor.fileRegexesToIgnore, regex)
 	}
 
-	if err := choice.Check(monitor.ParseMethod, []string{"line-by-line", "at-once"}); err != nil {
-		return fmt.Errorf("config option parse_method: %w", err)
-	}
-
 	return nil
 }
 
@@ -454,7 +411,6 @@ func init() {
 			MaxBufferedMetrics:         defaultMaxBufferedMetrics,
 			DirectoryDurationThreshold: defaultDirectoryDurationThreshold,
 			FileQueueSize:              defaultFileQueueSize,
-			ParseMethod:                defaultParseMethod,
 		}
 	})
 }

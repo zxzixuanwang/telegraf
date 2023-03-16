@@ -1,42 +1,21 @@
 # Wavefront Output Plugin
 
-This plugin writes to a [Wavefront](https://www.wavefront.com) instance or a
-Wavefront Proxy instance over HTTP or HTTPS.
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
-## Secret-store support
-
-This plugin supports secrets from secret-stores for the `token` option.
-See the [secret-store documentation][SECRETSTORE] for more details on how
-to use them.
-
-[SECRETSTORE]: ../../../docs/CONFIGURATION.md#secret-store-secrets
+This plugin writes to a [Wavefront](https://www.wavefront.com) proxy, in Wavefront data format over TCP.
 
 ## Configuration
 
-```toml @sample.conf
-[[outputs.wavefront]]
-  ## Url for Wavefront API or Wavefront Proxy instance.
+```toml
+  ## Url for Wavefront Direct Ingestion or using HTTP with Wavefront Proxy
+  ## If using Wavefront Proxy, also specify port. example: http://proxyserver:2878
   url = "https://metrics.wavefront.com"
 
-  ## Authentication Token for Wavefront. Required if using Direct Ingestion. Not required if using a Wavefront Proxy.
+  ## Authentication Token for Wavefront. Only required if using Direct Ingestion
   #token = "DUMMY_TOKEN"
 
-  ## Maximum number of metrics to send per HTTP request. This value should be higher than the `metric_batch_size`. Default is 10,000. Values higher than 40,000 are not recommended.
-  # http_maximum_batch_size = 10000
-
-  ## Deprecated. DNS name of the Wavefront server or Wavefront Proxy. Use the `url` field instead.
+  ## DNS name of the wavefront proxy server. Do not use if url is specified
   #host = "wavefront.example.com"
 
-  ## Deprecated. Wavefront proxy port. Use the `url` field instead.
+  ## Port that the Wavefront proxy server listens on. Do not use if url is specified
   #port = 2878
 
   ## prefix for metrics keys
@@ -79,28 +58,23 @@ to use them.
 
 ### Convert Path & Metric Separator
 
-If the `convert_path` option is true any `_` in metric and field names will be
-converted to the `metric_separator` value.  By default, to ease metrics browsing
-in the Wavefront UI, the `convert_path` option is true, and `metric_separator`
-is `.` (dot).  Default integrations within Wavefront expect these values to be
-set to their defaults, however if converting from another platform it may be
-desirable to change these defaults.
+If the `convert_path` option is true any `_` in metric and field names will be converted to the `metric_separator` value.
+By default, to ease metrics browsing in the Wavefront UI, the `convert_path` option is true, and `metric_separator` is `.` (dot).
+Default integrations within Wavefront expect these values to be set to their defaults, however if converting from another platform
+it may be desirable to change these defaults.
 
 ### Use Regex
 
 Most illegal characters in the metric name are automatically converted to `-`.
-The `use_regex` setting can be used to ensure all illegal characters are
-properly handled, but can lead to performance degradation.
+The `use_regex` setting can be used to ensure all illegal characters are properly handled, but can lead to performance degradation.
 
 ### Source Override
 
-Often when collecting metrics from another system, you want to use the target
-system as the source, not the one running Telegraf.  Many Telegraf plugins will
-identify the target source with a tag. The tag name can vary for different
-plugins. The `source_override` option will use the value specified in any of the
-listed tags if found. The tag names are checked in the same order as listed, and
-if found, the other tags will not be checked. If no tags specified are found,
-the default host tag will be used to identify the source of the metric.
+Often when collecting metrics from another system, you want to use the target system as the source, not the one running Telegraf.
+Many Telegraf plugins will identify the target source with a tag. The tag name can vary for different plugins. The `source_override`
+option will use the value specified in any of the listed tags if found. The tag names are checked in the same order as listed,
+and if found, the other tags will not be checked. If no tags specified are found, the default host tag will be used to identify the
+source of the metric.
 
 ### Wavefront Data format
 
@@ -110,11 +84,9 @@ The expected input for Wavefront is specified in the following way:
 <metric> <value> [<timestamp>] <source|host>=<sourceTagValue> [tagk1=tagv1 ...tagkN=tagvN]
 ```
 
-More information about the Wavefront data format is available
-[here](https://community.wavefront.com/docs/DOC-1031)
+More information about the Wavefront data format is available [here](https://community.wavefront.com/docs/DOC-1031)
 
 ### Allowed values for metrics
 
-Wavefront allows `integers` and `floats` as input values.  By default it also
-maps `bool` values to numeric, false -> 0.0, true -> 1.0.  To map `strings` use
-the [enum](../../processors/enum) processor plugin.
+Wavefront allows `integers` and `floats` as input values.  By default it also maps `bool` values to numeric, false -> 0.0,
+true -> 1.0.  To map `strings` use the [enum](../../processors/enum) processor plugin.

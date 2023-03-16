@@ -1,37 +1,22 @@
 # Intel Performance Monitoring Unit Plugin
 
-This input plugin exposes Intel PMU (Performance Monitoring Unit) metrics
-available through [Linux Perf](https://perf.wiki.kernel.org/index.php/Main_Page)
-subsystem.
+This input plugin exposes Intel PMU (Performance Monitoring Unit) metrics available through [Linux Perf](https://perf.wiki.kernel.org/index.php/Main_Page) subsystem.
 
-PMU metrics gives insight into performance and health of IA processor's internal
-components, including core and uncore units. With the number of cores increasing
-and processor topology getting more complex the insight into those metrics is
-vital to assure the best CPU performance and utilization.
+PMU metrics gives insight into performance and health of IA processor's internal components,
+including core and uncore units. With the number of cores increasing and processor topology getting more complex
+the insight into those metrics is vital to assure the best CPU performance and utilization.
 
-Performance counters are CPU hardware registers that count hardware events such
-as instructions executed, cache-misses suffered, or branches mispredicted. They
-form a basis for profiling applications to trace dynamic control flow and
-identify hotspots.
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+Performance counters are CPU hardware registers that count hardware events such as instructions executed, cache-misses suffered, or branches mispredicted.
+They form a basis for profiling applications to trace dynamic control flow and identify hotspots.
 
 ## Configuration
 
-```toml @sample.conf
+```toml
 # Intel Performance Monitoring Unit plugin exposes Intel PMU metrics available through Linux Perf subsystem
-# This plugin ONLY supports Linux on amd64
 [[inputs.intel_pmu]]
   ## List of filesystem locations of JSON files that contain PMU event definitions.
   event_definitions = ["/var/cache/pmu/GenuineIntel-6-55-4-core.json", "/var/cache/pmu/GenuineIntel-6-55-4-uncore.json"]
-
+  
   ## List of core events measurement entities. There can be more than one core_events sections.
   [[inputs.intel_pmu.core_events]]
     ## List of events to be counted. Event names shall match names from event_definitions files.
@@ -78,10 +63,8 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
 
 ### Modifiers
 
-Perf modifiers adjust event-specific perf attribute to fulfill particular
-requirements.  Details about perf attribute structure could be found in
-[perf_event_open][man]
-syscall manual.
+Perf modifiers adjust event-specific perf attribute to fulfill particular requirements.
+Details about perf attribute structure could be found in [perf_event_open](https://man7.org/linux/man-pages/man2/perf_event_open.2.html) syscall manual.
 
 General schema of configuration's `events` list element:
 
@@ -106,65 +89,48 @@ where:
 
 ## Requirements
 
-The plugin is using [iaevents](https://github.com/intel/iaevents) library which
-is a golang package that makes accessing the Linux kernel's perf interface
-easier.
+The plugin is using [iaevents](https://github.com/intel/iaevents) library which is a golang package that makes accessing the Linux kernel's perf interface easier.
 
 Intel PMU plugin, is only intended for use on **linux 64-bit** systems.
 
-Event definition JSON files for specific architectures can be found at
-[01.org](https://download.01.org/perfmon/).  A script to download the event
-definitions that are appropriate for your system (event_download.py) is
-available at [pmu-tools](https://github.com/andikleen/pmu-tools).  Please keep
-these files in a safe place on your system.
+Event definition JSON files for specific architectures can be found at [01.org](https://download.01.org/perfmon/).
+A script to download the event definitions that are appropriate for your system (event_download.py) is available at [pmu-tools](https://github.com/andikleen/pmu-tools).
+Please keep these files in a safe place on your system.
 
 ## Measuring
 
-Plugin allows measuring both core and uncore events. During plugin
-initialization the event names provided by user are compared with event
-definitions included in JSON files and translated to perf attributes. Next,
-those events are activated to start counting.  During every telegraf interval,
-the plugin reads proper measurement for each previously activated event.
+Plugin allows measuring both core and uncore events. During plugin initialization the event names provided by user are compared
+with event definitions included in JSON files and translated to perf attributes. Next, those events are activated to start counting.
+During every telegraf interval, the plugin reads proper measurement for each previously activated event.
 
-Each single core event may be counted severally on every available CPU's
-core. In contrast, uncore events could be placed in many PMUs within specified
-CPU package. The plugin allows choosing core ids (core events) or socket ids
-(uncore events) on which the counting should be executed.  Uncore events are
-separately activated on all socket's PMUs, and can be exposed as separate
+Each single core event may be counted severally on every available CPU's core. In contrast, uncore events could be placed in
+many PMUs within specified CPU package. The plugin allows choosing core ids (core events) or socket ids (uncore events) on which the counting should be executed.
+Uncore events are separately activated on all socket's PMUs, and can be exposed as separate
 measurement or to be summed up as one measurement.
 
-Obtained measurements are stored as three values: **Raw**, **Enabled** and
-**Running**. Raw is a total count of event. Enabled and running are total time
-the event was enabled and running.  Normally these are the same. If more events
-are started than available counter slots on the PMU, then multiplexing occurs
-and events only run part of the time. Therefore, the plugin provides a 4-th
-value called **scaled** which is calculated using following formula: `raw *
-enabled / running`.
+Obtained measurements are stored as three values: **Raw**, **Enabled** and **Running**. Raw is a total count of event. Enabled and running are total time the event was enabled and running.
+Normally these are the same. If more events are started than available counter slots on the PMU, then multiplexing
+occurs and events only run part of the time. Therefore, the plugin provides a 4-th value called **scaled** which is calculated using following formula:
+`raw * enabled / running`.
 
 Events are measured for all running processes.
 
 ### Core event groups
 
-Perf allows assembling events as a group. A perf event group is scheduled onto
-the CPU as a unit: it will be put onto the CPU only if all of the events in the
-group can be put onto the CPU.  This means that the values of the member events
-can be meaningfully compared — added, divided (to get ratios), and so on — with
-each other, since they have counted events for the same set of executed
-instructions [(source)][man].
+Perf allows assembling events as a group. A perf event group is scheduled onto the CPU as a unit: it will be put onto the CPU only if all of the events in the group can be put onto the CPU.
+This means that the values of the member events can be meaningfully compared — added, divided (to get ratios), and so on — with each other,
+since they have counted events for the same set of executed instructions [(source)](https://man7.org/linux/man-pages/man2/perf_event_open.2.html).
 
-> **NOTE:** Be aware that the plugin will throw an error when trying to create
-> core event group of size that exceeds available core PMU counters.  The error
-> message from perf syscall will be shown as "invalid argument". If you want to
-> check how many PMUs are supported by your Intel CPU, you can use the
-> [cpuid](https://linux.die.net/man/1/cpuid) command.
+> **NOTE:**
+> Be aware that the plugin will throw an error when trying to create core event group of size that exceeds available core PMU counters.
+> The error message from perf syscall will be shown as "invalid argument". If you want to check how many PMUs are supported by your Intel CPU, you can use the [cpuid](https://linux.die.net/man/1/cpuid) command.
 
 ### Note about file descriptors
 
-The plugin opens a number of file descriptors dependent on number of monitored
-CPUs and number of monitored counters. It can easily exceed the default per
-process limit of allowed file descriptors. Depending on configuration, it might
-be required to increase the limit of opened file descriptors allowed.  This can
-be done for example by using `ulimit -n command`.
+The plugin opens a number of file descriptors dependent on number of monitored CPUs and number of monitored
+counters. It can easily exceed the default per process limit of allowed file descriptors. Depending on
+configuration, it might be required to increase the limit of opened file descriptors allowed.
+This can be done for example by using `ulimit -n command`.
 
 ## Metrics
 
@@ -202,7 +168,7 @@ On each Telegraf interval, Intel PMU plugin transmits following data:
 | unit      | name of event-capable PMU that the event was counted for, as listed in /sys/bus/event_source/devices/ e.g. uncore_cbox_1, uncore_imc_1 etc.  Present for non-aggregated uncore events only |
 | events_tag| (optional) tag as defined in "intel_pmu.uncore_events" configuration element                           |
 
-## Example Output
+## Example outputs
 
 Event group:
 
@@ -229,7 +195,7 @@ pmu_metric,event=UNC_CBO_XSNP_RESPONSE.MISS_XCORE,host=xyz,socket=0,unit=uncore_
 Uncore event aggregated:
 
 ```text
-pmu_metric,event=UNC_CBO_XSNP_RESPONSE.MISS_XCORE,host=xyz,socket=0,unit_type=cbox enabled=13199712335i,running=13199712335i,raw=467485i,scaled=467485i 1621254412000000000
+pmu_metric,event=UNC_CBO_XSNP_RESPONSE.MISS_XCORE,host=xyz,socket=0,unit_type=cbox enabled=13199712335i,running=13199712335i,raw=467485i,scaled=467485i 1621254412000000000 
 ```
 
 Time multiplexing:
@@ -242,5 +208,3 @@ pmu_metric,cpu=0,event=CPU_CLK_UNHALTED.REF_XCLK_ANY,host=xyz enabled=2200963921
 pmu_metric,cpu=0,event=L1D_PEND_MISS.PENDING_CYCLES_ANY,host=xyz enabled=2200933946i,running=1470322480i,raw=23631950i,scaled=35374798i 1621254412000000000
 pmu_metric,cpu=0,event=L1D_PEND_MISS.PENDING_CYCLES,host=xyz raw=18767833i,scaled=28169827i,enabled=2200888514i,running=1466317384i 1621254412000000000
 ```
-
-[man]: https://man7.org/linux/man-pages/man2/perf_event_open.2.html

@@ -8,11 +8,11 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/stretchr/testify/require"
 
-	"github.com/influxdata/telegraf/plugins/parsers/influx"
+	"github.com/influxdata/telegraf/plugins/parsers"
 	"github.com/influxdata/telegraf/testutil"
 )
 
-func TestReadsMetricsFromKafkaIntegration(t *testing.T) {
+func TestReadsMetricsFromKafka(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -43,9 +43,8 @@ func TestReadsMetricsFromKafkaIntegration(t *testing.T) {
 		PointBuffer:    100000,
 		Offset:         "oldest",
 	}
-	parser := &influx.Parser{}
-	require.NoError(t, parser.Init())
-	k.SetParser(parser)
+	p, _ := parsers.NewInfluxParser()
+	k.SetParser(p)
 
 	// Verify that we can now gather the sent message
 	var acc testutil.Accumulator
@@ -78,6 +77,7 @@ func TestReadsMetricsFromKafkaIntegration(t *testing.T) {
 	}
 }
 
+//nolint:unused // Used in skipped tests
 // Waits for the metric that was sent to the kafka broker to arrive at the kafka consumer
 func waitForPoint(acc *testutil.Accumulator, t *testing.T) {
 	// Give the kafka container up to 2 seconds to get the point to the consumer

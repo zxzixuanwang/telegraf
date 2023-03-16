@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/influxdata/telegraf"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewMetric(t *testing.T) {
@@ -78,17 +78,17 @@ func TestRemoveTagNoEffectOnMissingTags(t *testing.T) {
 func TestGetTag(t *testing.T) {
 	m := baseMetric()
 
-	_, ok := m.GetTag("host")
+	value, ok := m.GetTag("host")
 	require.False(t, ok)
 
 	m.AddTag("host", "localhost")
 
-	value, ok := m.GetTag("host")
+	value, ok = m.GetTag("host")
 	require.True(t, ok)
 	require.Equal(t, "localhost", value)
 
 	m.RemoveTag("host")
-	_, ok = m.GetTag("host")
+	value, ok = m.GetTag("host")
 	require.False(t, ok)
 }
 
@@ -143,17 +143,17 @@ func TestRemoveFieldNoEffectOnMissingFields(t *testing.T) {
 func TestGetField(t *testing.T) {
 	m := baseMetric()
 
-	_, ok := m.GetField("foo")
+	value, ok := m.GetField("foo")
 	require.False(t, ok)
 
 	m.AddField("foo", "bar")
 
-	value, ok := m.GetField("foo")
+	value, ok = m.GetField("foo")
 	require.True(t, ok)
 	require.Equal(t, "bar", value)
 
 	m.RemoveTag("foo")
-	_, ok = m.GetTag("foo")
+	value, ok = m.GetTag("foo")
 	require.False(t, ok)
 }
 
@@ -218,20 +218,20 @@ func TestHashID(t *testing.T) {
 
 	// adding a field doesn't change the hash:
 	m.AddField("foo", int64(100))
-	require.Equal(t, hash, m.HashID())
+	assert.Equal(t, hash, m.HashID())
 
 	// removing a non-existent tag doesn't change the hash:
 	m.RemoveTag("no-op")
-	require.Equal(t, hash, m.HashID())
+	assert.Equal(t, hash, m.HashID())
 
 	// adding a tag does change it:
 	m.AddTag("foo", "bar")
-	require.NotEqual(t, hash, m.HashID())
+	assert.NotEqual(t, hash, m.HashID())
 	hash = m.HashID()
 
 	// removing a tag also changes it:
 	m.RemoveTag("mytag")
-	require.NotEqual(t, hash, m.HashID())
+	assert.NotEqual(t, hash, m.HashID())
 }
 
 func TestHashID_Consistency(t *testing.T) {
@@ -261,10 +261,10 @@ func TestHashID_Consistency(t *testing.T) {
 		},
 		time.Now(),
 	)
-	require.Equal(t, hash, m2.HashID())
+	assert.Equal(t, hash, m2.HashID())
 
 	m3 := m.Copy()
-	require.Equal(t, m2.HashID(), m3.HashID())
+	assert.Equal(t, m2.HashID(), m3.HashID())
 }
 
 func TestHashID_Delimiting(t *testing.T) {
@@ -290,7 +290,7 @@ func TestHashID_Delimiting(t *testing.T) {
 		},
 		time.Now(),
 	)
-	require.NotEqual(t, m1.HashID(), m2.HashID())
+	assert.NotEqual(t, m1.HashID(), m2.HashID())
 }
 
 func TestSetName(t *testing.T) {
@@ -324,5 +324,5 @@ func TestValueType(t *testing.T) {
 	}
 	m := New("cpu", tags, fields, now, telegraf.Gauge)
 
-	require.Equal(t, telegraf.Gauge, m.Type())
+	assert.Equal(t, telegraf.Gauge, m.Type())
 }

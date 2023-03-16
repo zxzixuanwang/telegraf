@@ -1,33 +1,20 @@
 # Zipkin Input Plugin
 
-This plugin implements the Zipkin http server to gather trace and timing data
-needed to troubleshoot latency problems in microservice architectures.
+This plugin implements the Zipkin http server to gather trace and timing data needed to troubleshoot latency problems in microservice architectures.
 
-__Please Note:__ This plugin is experimental; Its data schema may be subject to
-change based on its main usage cases and the evolution of the OpenTracing
-standard.
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+*Please Note: This plugin is experimental; Its data schema may be subject to change
+based on its main usage cases and the evolution of the OpenTracing standard.*
 
 ## Configuration
 
-```toml @sample.conf
-# This plugin implements the Zipkin http server to gather trace and timing data needed to troubleshoot latency problems in microservice architectures.
+```toml
 [[inputs.zipkin]]
-  # path = "/api/v1/spans" # URL path for span data
-  # port = 9411 # Port on which Telegraf listens
+    path = "/api/v1/spans" # URL path for span data
+    port = 9411 # Port on which Telegraf listens
 ```
 
-The plugin accepts spans in `JSON` or `thrift` if the `Content-Type` is
-`application/json` or `application/x-thrift`, respectively.  If `Content-Type`
-is not set, then the plugin assumes it is `JSON` format.
+The plugin accepts spans in `JSON` or `thrift` if the `Content-Type` is `application/json` or `application/x-thrift`, respectively.
+If `Content-Type` is not set, then the plugin assumes it is `JSON` format.
 
 ## Tracing
 
@@ -38,7 +25,7 @@ Traces are built by collecting all Spans that share a traceId.
 
 - __SPAN:__ is a set of Annotations and BinaryAnnotations that correspond to a particular RPC.
 
-- __Annotations:__ for each annotation & binary annotation of a span a metric is output. _Records an occurrence in time at the beginning and end of a request._
+- __Annotations:__ for each annotation & binary annotation of a span a metric is output. *Records an occurrence in time at the beginning and end of a request.*
 
   Annotations may have the following values:
 
@@ -49,10 +36,6 @@ Traces are built by collecting all Spans that share a traceId.
       amount of time it took to process request will differ it from sr
   - __CR (client receive):__ end of span, client receives response from server
       RPC is considered complete with this annotation
-
-## Metrics
-
-- __"duration_ns":__ The time in nanoseconds between the end and beginning of a span.
 
 ### Tags
 
@@ -73,6 +56,10 @@ Traces are built by collecting all Spans that share a traceId.
 - __"annotation":__       The value of an annotation
 - __"endpoint_host":__    Listening port concat with IPV4, if port is not present it will not be concatenated
 - __"annotation_key":__ label describing the annotation
+
+## Fields
+
+- __"duration_ns":__ The time in nanoseconds between the end and beginning of a span.
 
 ## Sample Queries
 
@@ -102,10 +89,7 @@ SELECT max("duration_ns") FROM "zipkin" WHERE "service_name" = 'my_service' AND 
 
 ### Recommended InfluxDB setup
 
-This test will create high cardinality data so we recommend using the [tsi
-influxDB engine][1].
-
-[1]: https://www.influxdata.com/path-1-billion-time-series-influxdb-high-cardinality-indexing-ready-testing/
+This test will create high cardinality data so we recommend using the [tsi influxDB engine](https://www.influxdata.com/path-1-billion-time-series-influxdb-high-cardinality-indexing-ready-testing/).
 
 #### How To Set Up InfluxDB For Work With Zipkin
 
@@ -195,5 +179,3 @@ influxDB engine][1].
   ]
 }
 ```
-
-## Example Output

@@ -1,4 +1,5 @@
 //go:build linux && amd64
+// +build linux,amd64
 
 package intel_pmu
 
@@ -8,10 +9,9 @@ import (
 	"math"
 	"testing"
 
+	"github.com/influxdata/telegraf/testutil"
 	ia "github.com/intel/iaevents"
 	"github.com/stretchr/testify/require"
-
-	"github.com/influxdata/telegraf/testutil"
 )
 
 func TestConfigParser_parseEntities(t *testing.T) {
@@ -65,14 +65,8 @@ func TestConfigParser_parseEntities(t *testing.T) {
 			&UncoreEventEntity{Events: nil, Sockets: []string{"0,1"}}, nil, []int{0, 1}, true,
 			"error during cores parsing"},
 		{"valid settings",
-			&CoreEventEntity{
-				Events: []string{"E1", "E2:config=123"},
-				Cores:  []string{"1-5"},
-			}, []*eventWithQuals{{"E1", nil, e}, {"E2", []string{"config=123"}, e}}, []int{1, 2, 3, 4, 5}, false,
-			&UncoreEventEntity{
-				Events:  []string{"E1", "E2", "E3"},
-				Sockets: []string{"0,2-6"},
-			}, []*eventWithQuals{{"E1", nil, e}, {"E2", nil, e}, {"E3", nil, e}}, []int{0, 2, 3, 4, 5, 6}, false,
+			&CoreEventEntity{Events: []string{"E1", "E2:config=123"}, Cores: []string{"1-5"}}, []*eventWithQuals{{"E1", nil, e}, {"E2", []string{"config=123"}, e}}, []int{1, 2, 3, 4, 5}, false,
+			&UncoreEventEntity{Events: []string{"E1", "E2", "E3"}, Sockets: []string{"0,2-6"}}, []*eventWithQuals{{"E1", nil, e}, {"E2", nil, e}, {"E3", nil, e}}, []int{0, 2, 3, 4, 5, 6}, false,
 			""},
 	}
 

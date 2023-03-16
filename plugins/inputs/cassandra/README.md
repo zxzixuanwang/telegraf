@@ -1,8 +1,6 @@
 # Cassandra Input Plugin
 
-**Deprecated in version 1.7**: Please use the [jolokia2](../jolokia2/README.md)
-plugin with the [cassandra.conf](../jolokia2/examples/cassandra.conf) example
-configuration.
+**Deprecated in version 1.7**: Please use the [jolokia2](https://github.com/influxdata/telegraf/tree/master/plugins/inputs/jolokia2) plugin with the [cassandra.conf](/plugins/inputs/jolokia2/examples/cassandra.conf) example configuration.
 
 ## Plugin arguments
 
@@ -12,35 +10,24 @@ configuration.
 
 ## Description
 
-The Cassandra plugin collects Cassandra 3 / JVM metrics exposed as MBean's
-attributes through jolokia REST endpoint. All metrics are collected for each
-server configured.
+The Cassandra plugin collects Cassandra 3 / JVM metrics exposed as MBean's attributes through jolokia REST endpoint. All metrics are collected for each server configured.
 
-See: [https://jolokia.org/](https://jolokia.org/) and [Cassandra
-Documentation][1]
+See: [https://jolokia.org/](https://jolokia.org/) and [Cassandra Documentation](http://docs.datastax.com/en/cassandra/3.x/cassandra/operations/monitoringCassandraTOC.html)
 
-[1]: http://docs.datastax.com/en/cassandra/3.x/cassandra/operations/monitoringCassandraTOC.html
+## Measurements
 
-## Metrics
+Cassandra plugin produces one or more measurements for each metric configured, adding Server's name  as `host` tag. More than one measurement is generated when querying table metrics with a wildcard for the keyspace or table name.
 
-Cassandra plugin produces one or more measurements for each metric configured,
-adding Server's name as `host` tag. More than one measurement is generated when
-querying table metrics with a wildcard for the keyspace or table name.
+Given a configuration like:
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
-## Configuration
-
-```toml @sample.conf
+```toml
 # Read Cassandra metrics through Jolokia
 [[inputs.cassandra]]
+  ## DEPRECATED: The cassandra plugin has been deprecated.  Please use the
+  ## jolokia2 plugin instead.
+  ##
+  ## see https://github.com/influxdata/telegraf/tree/master/plugins/inputs/jolokia2
+
   context = "/jolokia/read"
   ## List of cassandra servers exposing jolokia read service
   servers = ["myuser:mypassword@10.10.10.1:8778","10.10.10.2:8778",":8778"]
@@ -56,7 +43,7 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   ]
 ```
 
-## Example Output
+The collected metrics will be:
 
 ```shell
 javaMemory,host=myHost,mname=HeapMemoryUsage HeapMemoryUsage_committed=1040187392,HeapMemoryUsage_init=1050673152,HeapMemoryUsage_max=1040187392,HeapMemoryUsage_used=368155000 1459551767230567084
@@ -64,8 +51,7 @@ javaMemory,host=myHost,mname=HeapMemoryUsage HeapMemoryUsage_committed=104018739
 
 ## Useful Metrics
 
-Here is a list of metrics that might be useful to monitor your cassandra
-cluster. This was put together from multiple sources on the web.
+Here is a list of metrics that might be useful to monitor your cassandra cluster. This was put together from multiple sources on the web.
 
 - [How to monitor Cassandra performance metrics](https://www.datadoghq.com/blog/how-to-monitor-cassandra-performance-metrics)
 - [Cassandra Documentation](http://docs.datastax.com/en/cassandra/3.x/cassandra/operations/monitoringCassandraTOC.html)
@@ -131,9 +117,7 @@ cluster. This was put together from multiple sources on the web.
 
 ### measurement = cassandraTable
 
-Using wildcards for "keyspace" and "scope" can create a lot of series as metrics
-will be reported for every table and keyspace including internal system
-tables. Specify a keyspace name and/or a table name to limit them.
+Using wildcards for "keyspace" and "scope" can create a lot of series as metrics will be reported for every table and keyspace including internal system tables. Specify a keyspace name and/or a table name to limit them.
 
 - /org.apache.cassandra.metrics:type=Table,keyspace=\*,scope=\*,name=LiveDiskSpaceUsed
 - /org.apache.cassandra.metrics:type=Table,keyspace=\*,scope=\*,name=TotalDiskSpaceUsed

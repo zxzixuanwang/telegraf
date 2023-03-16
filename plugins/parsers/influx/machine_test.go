@@ -17,118 +17,132 @@ type TestingHandler struct {
 }
 
 func (h *TestingHandler) SetMeasurement(name []byte) error {
-	n := make([]byte, 0, len(name))
+	n := make([]byte, len(name))
+	copy(n, name)
 
-	mName := Result{
+	mname := Result{
 		Name:  Measurement,
-		Value: append(n, name...),
+		Value: n,
 	}
-	h.results = append(h.results, mName)
+	h.results = append(h.results, mname)
 	return nil
 }
 
 func (h *TestingHandler) AddTag(key []byte, value []byte) error {
-	k := make([]byte, 0, len(key))
-	v := make([]byte, 0, len(value))
+	k := make([]byte, len(key))
+	copy(k, key)
+	v := make([]byte, len(value))
+	copy(v, value)
 
-	tagKey := Result{
+	tagkey := Result{
 		Name:  TagKey,
-		Value: append(k, key...),
+		Value: k,
 	}
-	tagValue := Result{
+	tagvalue := Result{
 		Name:  TagValue,
-		Value: append(v, value...),
+		Value: v,
 	}
-	h.results = append(h.results, tagKey, tagValue)
+	h.results = append(h.results, tagkey, tagvalue)
 	return nil
 }
 
 func (h *TestingHandler) AddInt(key []byte, value []byte) error {
-	k := make([]byte, 0, len(key))
-	v := make([]byte, 0, len(value))
+	k := make([]byte, len(key))
+	copy(k, key)
+	v := make([]byte, len(value))
+	copy(v, value)
 
-	fieldKey := Result{
+	fieldkey := Result{
 		Name:  FieldKey,
-		Value: append(k, key...),
+		Value: k,
 	}
-	fieldValue := Result{
+	fieldvalue := Result{
 		Name:  FieldInt,
-		Value: append(v, value...),
+		Value: v,
 	}
-	h.results = append(h.results, fieldKey, fieldValue)
+	h.results = append(h.results, fieldkey, fieldvalue)
 	return nil
 }
 
 func (h *TestingHandler) AddUint(key []byte, value []byte) error {
-	k := make([]byte, 0, len(key))
-	v := make([]byte, 0, len(value))
+	k := make([]byte, len(key))
+	copy(k, key)
+	v := make([]byte, len(value))
+	copy(v, value)
 
-	fieldKey := Result{
+	fieldkey := Result{
 		Name:  FieldKey,
-		Value: append(k, key...),
+		Value: key,
 	}
-	fieldValue := Result{
+	fieldvalue := Result{
 		Name:  FieldUint,
-		Value: append(v, value...),
+		Value: value,
 	}
-	h.results = append(h.results, fieldKey, fieldValue)
+	h.results = append(h.results, fieldkey, fieldvalue)
 	return nil
 }
 
 func (h *TestingHandler) AddFloat(key []byte, value []byte) error {
-	k := make([]byte, 0, len(key))
-	v := make([]byte, 0, len(value))
+	k := make([]byte, len(key))
+	copy(k, key)
+	v := make([]byte, len(value))
+	copy(v, value)
 
-	fieldKey := Result{
+	fieldkey := Result{
 		Name:  FieldKey,
-		Value: append(k, key...),
+		Value: k,
 	}
-	fieldValue := Result{
+	fieldvalue := Result{
 		Name:  FieldFloat,
-		Value: append(v, value...),
+		Value: v,
 	}
-	h.results = append(h.results, fieldKey, fieldValue)
+	h.results = append(h.results, fieldkey, fieldvalue)
 	return nil
 }
 
 func (h *TestingHandler) AddString(key []byte, value []byte) error {
-	k := make([]byte, 0, len(key))
-	v := make([]byte, 0, len(value))
+	k := make([]byte, len(key))
+	copy(k, key)
+	v := make([]byte, len(value))
+	copy(v, value)
 
-	fieldKey := Result{
+	fieldkey := Result{
 		Name:  FieldKey,
-		Value: append(k, key...),
+		Value: k,
 	}
-	fieldValue := Result{
+	fieldvalue := Result{
 		Name:  FieldString,
-		Value: append(v, value...),
+		Value: v,
 	}
-	h.results = append(h.results, fieldKey, fieldValue)
+	h.results = append(h.results, fieldkey, fieldvalue)
 	return nil
 }
 
 func (h *TestingHandler) AddBool(key []byte, value []byte) error {
-	k := make([]byte, 0, len(key))
-	v := make([]byte, 0, len(value))
+	k := make([]byte, len(key))
+	copy(k, key)
+	v := make([]byte, len(value))
+	copy(v, value)
 
-	fieldKey := Result{
+	fieldkey := Result{
 		Name:  FieldKey,
-		Value: append(k, key...),
+		Value: k,
 	}
-	fieldValue := Result{
+	fieldvalue := Result{
 		Name:  FieldBool,
-		Value: append(v, value...),
+		Value: v,
 	}
-	h.results = append(h.results, fieldKey, fieldValue)
+	h.results = append(h.results, fieldkey, fieldvalue)
 	return nil
 }
 
 func (h *TestingHandler) SetTimestamp(tm []byte) error {
-	t := make([]byte, 0, len(tm))
+	t := make([]byte, len(tm))
+	copy(t, tm)
 
 	timestamp := Result{
 		Name:  Timestamp,
-		Value: append(t, tm...),
+		Value: t,
 	}
 	h.results = append(h.results, timestamp)
 	return nil
@@ -1710,7 +1724,7 @@ func TestMachine(t *testing.T) {
 
 			for i := 0; i < 20; i++ {
 				err := fsm.Next()
-				if err != nil && errors.Is(err, influx.EOF) {
+				if err != nil && err == influx.EOF {
 					break
 				}
 				handler.Result(err)
@@ -1820,18 +1834,7 @@ func BenchmarkMachine(b *testing.B) {
 }
 
 func TestMachineProcstat(_ *testing.T) {
-	input := []byte(
-		"procstat,exe=bash,process_name=bash voluntary_context_switches=42i,memory_rss=5103616i,rlimit_memory_data_hard=2147483647i,cpu_time_user=0.02," +
-			"rlimit_file_locks_soft=2147483647i,pid=29417i,cpu_time_nice=0,rlimit_memory_locked_soft=65536i,read_count=259i," +
-			"rlimit_memory_vms_hard=2147483647i,memory_swap=0i,rlimit_num_fds_soft=1024i,rlimit_nice_priority_hard=0i,cpu_time_soft_irq=0,cpu_time=0i," +
-			"rlimit_memory_locked_hard=65536i,realtime_priority=0i,signals_pending=0i,nice_priority=20i,cpu_time_idle=0,memory_stack=139264i," +
-			"memory_locked=0i,rlimit_memory_stack_soft=8388608i,cpu_time_iowait=0,cpu_time_guest=0,cpu_time_guest_nice=0,rlimit_memory_data_soft=2147483647i," +
-			"read_bytes=0i,rlimit_cpu_time_soft=2147483647i,involuntary_context_switches=2i,write_bytes=106496i,cpu_time_system=0,cpu_time_irq=0,cpu_usage=0," +
-			"memory_vms=21659648i,memory_data=1576960i,rlimit_memory_stack_hard=2147483647i,num_threads=1i,rlimit_memory_rss_soft=2147483647i," +
-			"rlimit_realtime_priority_soft=0i,num_fds=4i,write_count=35i,rlimit_signals_pending_soft=78994i,cpu_time_steal=0,rlimit_num_fds_hard=4096i," +
-			"rlimit_file_locks_hard=2147483647i,rlimit_cpu_time_hard=2147483647i,rlimit_signals_pending_hard=78994i,rlimit_nice_priority_soft=0i," +
-			"rlimit_memory_rss_hard=2147483647i,rlimit_memory_vms_soft=2147483647i,rlimit_realtime_priority_hard=0i 1517620624000000000",
-	)
+	input := []byte("procstat,exe=bash,process_name=bash voluntary_context_switches=42i,memory_rss=5103616i,rlimit_memory_data_hard=2147483647i,cpu_time_user=0.02,rlimit_file_locks_soft=2147483647i,pid=29417i,cpu_time_nice=0,rlimit_memory_locked_soft=65536i,read_count=259i,rlimit_memory_vms_hard=2147483647i,memory_swap=0i,rlimit_num_fds_soft=1024i,rlimit_nice_priority_hard=0i,cpu_time_soft_irq=0,cpu_time=0i,rlimit_memory_locked_hard=65536i,realtime_priority=0i,signals_pending=0i,nice_priority=20i,cpu_time_idle=0,memory_stack=139264i,memory_locked=0i,rlimit_memory_stack_soft=8388608i,cpu_time_iowait=0,cpu_time_guest=0,cpu_time_guest_nice=0,rlimit_memory_data_soft=2147483647i,read_bytes=0i,rlimit_cpu_time_soft=2147483647i,involuntary_context_switches=2i,write_bytes=106496i,cpu_time_system=0,cpu_time_irq=0,cpu_usage=0,memory_vms=21659648i,memory_data=1576960i,rlimit_memory_stack_hard=2147483647i,num_threads=1i,rlimit_memory_rss_soft=2147483647i,rlimit_realtime_priority_soft=0i,num_fds=4i,write_count=35i,rlimit_signals_pending_soft=78994i,cpu_time_steal=0,rlimit_num_fds_hard=4096i,rlimit_file_locks_hard=2147483647i,rlimit_cpu_time_hard=2147483647i,rlimit_signals_pending_hard=78994i,rlimit_nice_priority_soft=0i,rlimit_memory_rss_hard=2147483647i,rlimit_memory_vms_soft=2147483647i,rlimit_realtime_priority_hard=0i 1517620624000000000")
 	handler := &TestingHandler{}
 	fsm := influx.NewMachine(handler)
 	fsm.SetData(input)
@@ -1844,18 +1847,7 @@ func TestMachineProcstat(_ *testing.T) {
 }
 
 func BenchmarkMachineProcstat(b *testing.B) {
-	input := []byte(
-		"procstat,exe=bash,process_name=bash voluntary_context_switches=42i,memory_rss=5103616i,rlimit_memory_data_hard=2147483647i,cpu_time_user=0.02," +
-			"rlimit_file_locks_soft=2147483647i,pid=29417i,cpu_time_nice=0,rlimit_memory_locked_soft=65536i,read_count=259i," +
-			"rlimit_memory_vms_hard=2147483647i,memory_swap=0i,rlimit_num_fds_soft=1024i,rlimit_nice_priority_hard=0i,cpu_time_soft_irq=0,cpu_time=0i," +
-			"rlimit_memory_locked_hard=65536i,realtime_priority=0i,signals_pending=0i,nice_priority=20i,cpu_time_idle=0,memory_stack=139264i," +
-			"memory_locked=0i,rlimit_memory_stack_soft=8388608i,cpu_time_iowait=0,cpu_time_guest=0,cpu_time_guest_nice=0,rlimit_memory_data_soft=2147483647i," +
-			"read_bytes=0i,rlimit_cpu_time_soft=2147483647i,involuntary_context_switches=2i,write_bytes=106496i,cpu_time_system=0,cpu_time_irq=0,cpu_usage=0," +
-			"memory_vms=21659648i,memory_data=1576960i,rlimit_memory_stack_hard=2147483647i,num_threads=1i,rlimit_memory_rss_soft=2147483647i," +
-			"rlimit_realtime_priority_soft=0i,num_fds=4i,write_count=35i,rlimit_signals_pending_soft=78994i,cpu_time_steal=0,rlimit_num_fds_hard=4096i," +
-			"rlimit_file_locks_hard=2147483647i,rlimit_cpu_time_hard=2147483647i,rlimit_signals_pending_hard=78994i,rlimit_nice_priority_soft=0i," +
-			"rlimit_memory_rss_hard=2147483647i,rlimit_memory_vms_soft=2147483647i,rlimit_realtime_priority_hard=0i 1517620624000000000",
-	)
+	input := []byte("procstat,exe=bash,process_name=bash voluntary_context_switches=42i,memory_rss=5103616i,rlimit_memory_data_hard=2147483647i,cpu_time_user=0.02,rlimit_file_locks_soft=2147483647i,pid=29417i,cpu_time_nice=0,rlimit_memory_locked_soft=65536i,read_count=259i,rlimit_memory_vms_hard=2147483647i,memory_swap=0i,rlimit_num_fds_soft=1024i,rlimit_nice_priority_hard=0i,cpu_time_soft_irq=0,cpu_time=0i,rlimit_memory_locked_hard=65536i,realtime_priority=0i,signals_pending=0i,nice_priority=20i,cpu_time_idle=0,memory_stack=139264i,memory_locked=0i,rlimit_memory_stack_soft=8388608i,cpu_time_iowait=0,cpu_time_guest=0,cpu_time_guest_nice=0,rlimit_memory_data_soft=2147483647i,read_bytes=0i,rlimit_cpu_time_soft=2147483647i,involuntary_context_switches=2i,write_bytes=106496i,cpu_time_system=0,cpu_time_irq=0,cpu_usage=0,memory_vms=21659648i,memory_data=1576960i,rlimit_memory_stack_hard=2147483647i,num_threads=1i,rlimit_memory_rss_soft=2147483647i,rlimit_realtime_priority_soft=0i,num_fds=4i,write_count=35i,rlimit_signals_pending_soft=78994i,cpu_time_steal=0,rlimit_num_fds_hard=4096i,rlimit_file_locks_hard=2147483647i,rlimit_cpu_time_hard=2147483647i,rlimit_signals_pending_hard=78994i,rlimit_nice_priority_soft=0i,rlimit_memory_rss_hard=2147483647i,rlimit_memory_vms_soft=2147483647i,rlimit_realtime_priority_hard=0i 1517620624000000000")
 	handler := &BenchmarkingHandler{}
 	fsm := influx.NewMachine(handler)
 	for n := 0; n < b.N; n++ {
@@ -2138,7 +2130,7 @@ func TestHandlerErrorRecovery(t *testing.T) {
 
 			for i := 0; i < 20; i++ {
 				err := fsm.Next()
-				if err != nil && errors.Is(err, influx.EOF) {
+				if err != nil && err == influx.EOF {
 					break
 				}
 				tt.handler.Result(err)
@@ -2158,7 +2150,7 @@ func TestStreamMachine(t *testing.T) {
 		err     error
 	}
 
-	tc := make([]testcase, 0, len(tests))
+	var tc []testcase
 	for _, tt := range tests {
 		tc = append(tc, testcase{
 			name:    tt.name,
@@ -2177,7 +2169,7 @@ func TestStreamMachine(t *testing.T) {
 			// isn't terminated.
 			for i := 0; i < 20; i++ {
 				err := fsm.Next()
-				if err != nil && errors.Is(err, influx.EOF) {
+				if err != nil && err == influx.EOF {
 					break
 				}
 				handler.Result(err)
@@ -2197,7 +2189,7 @@ func TestStreamMachinePosition(t *testing.T) {
 		column int
 	}
 
-	tc := make([]testcase, 0, len(positionTests))
+	var tc []testcase
 	for _, tt := range positionTests {
 		tc = append(tc, testcase{
 			name:   tt.name,

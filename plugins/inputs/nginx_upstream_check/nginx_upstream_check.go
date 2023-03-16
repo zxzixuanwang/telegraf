@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package nginx_upstream_check
 
 import (
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,8 +15,36 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
+const sampleConfig = `
+  ## An URL where Nginx Upstream check module is enabled
+  ## It should be set to return a JSON formatted response
+  url = "http://127.0.0.1/status?format=json"
+
+  ## HTTP method
+  # method = "GET"
+
+  ## Optional HTTP headers
+  # headers = {"X-Special-Header" = "Special-Value"}
+
+  ## Override HTTP "Host" header
+  # host_header = "check.example.com"
+
+  ## Timeout for HTTP requests
+  timeout = "5s"
+
+  ## Optional HTTP Basic Auth credentials
+  # username = "username"
+  # password = "pa$$word"
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+`
+
+const description = "Read nginx_upstream_check module status information (https://github.com/yaoweibin/nginx_upstream_check_module)"
 
 type NginxUpstreamCheck struct {
 	URL string `toml:"url"`
@@ -48,6 +74,14 @@ func init() {
 	inputs.Add("nginx_upstream_check", func() telegraf.Input {
 		return NewNginxUpstreamCheck()
 	})
+}
+
+func (check *NginxUpstreamCheck) SampleConfig() string {
+	return sampleConfig
+}
+
+func (check *NginxUpstreamCheck) Description() string {
+	return description
 }
 
 type NginxUpstreamCheckData struct {
@@ -128,10 +162,6 @@ func (check *NginxUpstreamCheck) gatherJSONData(address string, value interface{
 	}
 
 	return nil
-}
-
-func (*NginxUpstreamCheck) SampleConfig() string {
-	return sampleConfig
 }
 
 func (check *NginxUpstreamCheck) Gather(accumulator telegraf.Accumulator) error {

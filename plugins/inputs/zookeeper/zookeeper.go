@@ -1,11 +1,9 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package zookeeper
 
 import (
 	"bufio"
 	"context"
 	"crypto/tls"
-	_ "embed"
 	"fmt"
 	"net"
 	"regexp"
@@ -19,26 +17,52 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 var zookeeperFormatRE = regexp.MustCompile(`^zk_(\w[\w\.\-]*)\s+([\w\.\-]+)`)
 
 // Zookeeper is a zookeeper plugin
 type Zookeeper struct {
-	Servers     []string        `toml:"servers"`
-	Timeout     config.Duration `toml:"timeout"`
-	ParseFloats string          `toml:"parse_floats"`
+	Servers []string
+	Timeout config.Duration
 
 	EnableTLS bool `toml:"enable_tls"`
-	EnableSSL bool `toml:"enable_ssl" deprecated:"1.7.0;use 'enable_tls' instead"`
+	EnableSSL bool `toml:"enable_ssl"` // deprecated in 1.7; use enable_tls
 	tlsint.ClientConfig
 
 	initialized bool
 	tlsConfig   *tls.Config
 }
 
+var sampleConfig = `
+  ## An array of address to gather stats about. Specify an ip or hostname
+  ## with port. ie localhost:2181, 10.0.0.1:2181, etc.
+
+  ## If no servers are specified, then localhost is used as the host.
+  ## If no port is specified, 2181 is used
+  servers = [":2181"]
+
+  ## Timeout for metric collections from all servers.  Minimum timeout is "1s".
+  # timeout = "5s"
+
+  ## Optional TLS Config
+  # enable_tls = true
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## If false, skip chain & host verification
+  # insecure_skip_verify = true
+`
+
 var defaultTimeout = 5 * time.Second
+
+// SampleConfig returns sample configuration message
+func (z *Zookeeper) SampleConfig() string {
+	return sampleConfig
+}
+
+// Description returns description of Zookeeper plugin
+func (z *Zookeeper) Description() string {
+	return `Reads 'mntr' stats from one or many zookeeper servers`
+}
 
 func (z *Zookeeper) dial(ctx context.Context, addr string) (net.Conn, error) {
 	var dialer net.Dialer
@@ -50,10 +74,6 @@ func (z *Zookeeper) dial(ctx context.Context, addr string) (net.Conn, error) {
 		return tls.DialWithDialer(&dialer, "tcp", addr, z.tlsConfig)
 	}
 	return dialer.DialContext(ctx, "tcp", addr)
-}
-
-func (*Zookeeper) SampleConfig() string {
-	return sampleConfig
 }
 
 // Gather reads stats from all configured servers accumulates stats
@@ -130,29 +150,16 @@ func (z *Zookeeper) gatherServer(ctx context.Context, address string, acc telegr
 		measurement := strings.TrimPrefix(parts[1], "zk_")
 		if measurement == "server_state" {
 			zookeeperState = parts[2]
-			continue
-		}
+		} else {
+			sValue := parts[2]
 
-		sValue := parts[2]
-
-		// First attempt to parse as an int
-		iVal, err := strconv.ParseInt(sValue, 10, 64)
-		if err == nil {
-			fields[measurement] = iVal
-			continue
-		}
-
-		// If set, attempt to parse as a float
-		if z.ParseFloats == "float" {
-			fVal, err := strconv.ParseFloat(sValue, 64)
+			iVal, err := strconv.ParseInt(sValue, 10, 64)
 			if err == nil {
-				fields[measurement] = fVal
-				continue
+				fields[measurement] = iVal
+			} else {
+				fields[measurement] = sValue
 			}
 		}
-
-		// Finally, save as a string
-		fields[measurement] = sValue
 	}
 
 	srv := "localhost"

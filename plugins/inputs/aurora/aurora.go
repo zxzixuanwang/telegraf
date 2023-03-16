@@ -1,9 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package aurora
 
 import (
 	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,9 +15,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 type RoleType int
 
@@ -59,8 +54,37 @@ type Aurora struct {
 	urls   []*url.URL
 }
 
-func (*Aurora) SampleConfig() string {
+var sampleConfig = `
+  ## Schedulers are the base addresses of your Aurora Schedulers
+  schedulers = ["http://127.0.0.1:8081"]
+
+  ## Set of role types to collect metrics from.
+  ##
+  ## The scheduler roles are checked each interval by contacting the
+  ## scheduler nodes; zookeeper is not contacted.
+  # roles = ["leader", "follower"]
+
+  ## Timeout is the max time for total network operations.
+  # timeout = "5s"
+
+  ## Username and password are sent using HTTP Basic Auth.
+  # username = "username"
+  # password = "pa$$word"
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+`
+
+func (a *Aurora) SampleConfig() string {
 	return sampleConfig
+}
+
+func (a *Aurora) Description() string {
+	return "Gather metrics from Apache Aurora schedulers"
 }
 
 func (a *Aurora) Gather(acc telegraf.Accumulator) error {
@@ -81,7 +105,7 @@ func (a *Aurora) Gather(acc telegraf.Accumulator) error {
 			defer wg.Done()
 			role, err := a.gatherRole(ctx, u)
 			if err != nil {
-				acc.AddError(fmt.Errorf("%s: %w", u, err))
+				acc.AddError(fmt.Errorf("%s: %v", u, err))
 				return
 			}
 
@@ -91,7 +115,7 @@ func (a *Aurora) Gather(acc telegraf.Accumulator) error {
 
 			err = a.gatherScheduler(ctx, u, role, acc)
 			if err != nil {
-				acc.AddError(fmt.Errorf("%s: %w", u, err))
+				acc.AddError(fmt.Errorf("%s: %v", u, err))
 			}
 		}(u)
 	}
@@ -167,7 +191,7 @@ func (a *Aurora) gatherRole(ctx context.Context, origin *url.URL) (RoleType, err
 		return Unknown, err
 	}
 	if err := resp.Body.Close(); err != nil {
-		return Unknown, fmt.Errorf("closing body failed: %w", err)
+		return Unknown, fmt.Errorf("closing body failed: %v", err)
 	}
 
 	switch resp.StatusCode {
@@ -212,7 +236,7 @@ func (a *Aurora) gatherScheduler(
 	decoder.UseNumber()
 	err = decoder.Decode(&vars)
 	if err != nil {
-		return fmt.Errorf("decoding response: %w", err)
+		return fmt.Errorf("decoding response: %v", err)
 	}
 
 	var fields = make(map[string]interface{}, len(vars))

@@ -1,4 +1,5 @@
 //go:build linux && amd64
+// +build linux,amd64
 
 package intel_pmu
 
@@ -251,7 +252,7 @@ func TestGather(t *testing.T) {
 					tag:    "BIG_FISH",
 				},
 			},
-			errMSg: `cannot process "I_AM_TOO_BIG" scaled value "36893488147419103230": exceeds uint64`,
+			errMSg: "cannot process `I_AM_TOO_BIG` scaled value `36893488147419103230`: exceeds uint64",
 		},
 		{
 			name: "uncore scaled value greater then max uint64",
@@ -262,7 +263,7 @@ func TestGather(t *testing.T) {
 					tag:    "BIG_FISH",
 				},
 			},
-			errMSg: `cannot process "I_AM_TOO_BIG_UNCORE" scaled value "36893488147419103230": exceeds uint64`,
+			errMSg: "cannot process `I_AM_TOO_BIG_UNCORE` scaled value `36893488147419103230`: exceeds uint64",
 		},
 	}
 
@@ -385,7 +386,7 @@ func TestEstimateCoresFd(t *testing.T) {
 			{parsedEvents: makeEvents(2, 1), parsedCores: makeIDs(20)},
 		}, 715},
 		{"1024 events", []*CoreEventEntity{{parsedEvents: makeEvents(1024, 1), parsedCores: makeIDs(12)}}, 12288},
-		{"big number", []*CoreEventEntity{{parsedEvents: makeEvents(1024, 1), parsedCores: makeIDs(1048576)}}, 1073741824},
+		{"big number", []*CoreEventEntity{{parsedEvents: makeEvents(1048576, 1), parsedCores: makeIDs(1024)}}, 1073741824},
 	}
 
 	for _, test := range tests {
@@ -430,8 +431,8 @@ func TestReadMaxFD(t *testing.T) {
 		require.Zero(t, result)
 	})
 
-	openErrorMsg := fmt.Sprintf("cannot open file %q", fileMaxPath)
-	parseErrorMsg := fmt.Sprintf("cannot parse file content of %q", fileMaxPath)
+	openErrorMsg := fmt.Sprintf("cannot open `%s` file", fileMaxPath)
+	parseErrorMsg := fmt.Sprintf("cannot parse file content of `%s`", fileMaxPath)
 
 	tests := []struct {
 		name    string
@@ -489,7 +490,7 @@ func TestAddFiles(t *testing.T) {
 
 		err := checkFiles(paths, mFileInfo)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), fmt.Sprintf("cannot obtain file info of %q", file))
+		require.Contains(t, err.Error(), fmt.Sprintf("cannot obtain file info of `%s`", file))
 		mFileInfo.AssertExpectations(t)
 	})
 
@@ -500,7 +501,7 @@ func TestAddFiles(t *testing.T) {
 
 		err := checkFiles(paths, mFileInfo)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), fmt.Sprintf("file %q doesn't exist", file))
+		require.Contains(t, err.Error(), fmt.Sprintf("file `%s` doesn't exist", file))
 		mFileInfo.AssertExpectations(t)
 	})
 
@@ -512,7 +513,7 @@ func TestAddFiles(t *testing.T) {
 
 		err := checkFiles(paths, mFileInfo)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), fmt.Sprintf("file %q is a symlink", file))
+		require.Contains(t, err.Error(), fmt.Sprintf("file %s is a symlink", file))
 		mFileInfo.AssertExpectations(t)
 	})
 
@@ -524,7 +525,7 @@ func TestAddFiles(t *testing.T) {
 
 		err := checkFiles(paths, mFileInfo)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), fmt.Sprintf("file %q doesn't point to a reagular file", file))
+		require.Contains(t, err.Error(), fmt.Sprintf("file `%s` doesn't point to a reagular file", file))
 		mFileInfo.AssertExpectations(t)
 	})
 

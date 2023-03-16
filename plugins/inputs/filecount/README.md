@@ -2,20 +2,14 @@
 
 Reports the number and total size of files in specified directories.
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
-# Count files in a directory
+```toml
 [[inputs.filecount]]
+  ## Directory to gather stats about.
+  ##   deprecated in 1.9; use the directories option
+  # directory = "/var/cache/apt/archives"
+
   ## Directories to gather stats about.
   ## This accept standard unit glob matching rules, but with the addition of
   ## ** as a "super asterisk". ie:

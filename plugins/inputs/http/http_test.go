@@ -8,18 +8,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/influxdata/telegraf"
 	httpconfig "github.com/influxdata/telegraf/plugins/common/http"
 	"github.com/influxdata/telegraf/plugins/common/oauth"
 	httpplugin "github.com/influxdata/telegraf/plugins/inputs/http"
-	"github.com/influxdata/telegraf/plugins/parsers/csv"
-	"github.com/influxdata/telegraf/plugins/parsers/influx"
-	"github.com/influxdata/telegraf/plugins/parsers/json"
-	"github.com/influxdata/telegraf/plugins/parsers/value"
+	"github.com/influxdata/telegraf/plugins/parsers"
 	"github.com/influxdata/telegraf/testutil"
 )
 
@@ -40,11 +35,11 @@ func TestHTTPWithJSONFormat(t *testing.T) {
 	}
 	metricName := "metricName"
 
-	plugin.SetParserFunc(func() (telegraf.Parser, error) {
-		p := &json.Parser{MetricName: "metricName"}
-		err := p.Init()
-		return p, err
+	p, _ := parsers.NewParser(&parsers.Config{
+		DataFormat: "json",
+		MetricName: "metricName",
 	})
+	plugin.SetParser(p)
 
 	var acc testutil.Accumulator
 	require.NoError(t, plugin.Init())
@@ -83,44 +78,11 @@ func TestHTTPHeaders(t *testing.T) {
 		Log:     testutil.Logger{},
 	}
 
-	plugin.SetParserFunc(func() (telegraf.Parser, error) {
-		p := &json.Parser{MetricName: "metricName"}
-		err := p.Init()
-		return p, err
+	p, _ := parsers.NewParser(&parsers.Config{
+		DataFormat: "json",
+		MetricName: "metricName",
 	})
-
-	var acc testutil.Accumulator
-	require.NoError(t, plugin.Init())
-	require.NoError(t, acc.GatherError(plugin.Gather))
-}
-
-func TestHTTPContentLengthHeader(t *testing.T) {
-	fakeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/endpoint" {
-			if r.Header.Get("Content-Length") != "" {
-				_, _ = w.Write([]byte(simpleJSON))
-			} else {
-				w.WriteHeader(http.StatusForbidden)
-			}
-		} else {
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	defer fakeServer.Close()
-
-	address := fakeServer.URL + "/endpoint"
-	plugin := &httpplugin.HTTP{
-		URLs:    []string{address},
-		Headers: map[string]string{},
-		Body:    "{}",
-		Log:     testutil.Logger{},
-	}
-
-	plugin.SetParserFunc(func() (telegraf.Parser, error) {
-		p := &json.Parser{MetricName: "metricName"}
-		err := p.Init()
-		return p, err
-	})
+	plugin.SetParser(p)
 
 	var acc testutil.Accumulator
 	require.NoError(t, plugin.Init())
@@ -139,11 +101,12 @@ func TestInvalidStatusCode(t *testing.T) {
 		Log:  testutil.Logger{},
 	}
 
-	plugin.SetParserFunc(func() (telegraf.Parser, error) {
-		p := &json.Parser{MetricName: "metricName"}
-		err := p.Init()
-		return p, err
+	metricName := "metricName"
+	p, _ := parsers.NewParser(&parsers.Config{
+		DataFormat: "json",
+		MetricName: metricName,
 	})
+	plugin.SetParser(p)
 
 	var acc testutil.Accumulator
 	require.NoError(t, plugin.Init())
@@ -163,11 +126,12 @@ func TestSuccessStatusCodes(t *testing.T) {
 		Log:                testutil.Logger{},
 	}
 
-	plugin.SetParserFunc(func() (telegraf.Parser, error) {
-		p := &json.Parser{MetricName: "metricName"}
-		err := p.Init()
-		return p, err
+	metricName := "metricName"
+	p, _ := parsers.NewParser(&parsers.Config{
+		DataFormat: "json",
+		MetricName: metricName,
 	})
+	plugin.SetParser(p)
 
 	var acc testutil.Accumulator
 	require.NoError(t, plugin.Init())
@@ -190,11 +154,11 @@ func TestMethod(t *testing.T) {
 		Log:    testutil.Logger{},
 	}
 
-	plugin.SetParserFunc(func() (telegraf.Parser, error) {
-		p := &json.Parser{MetricName: "metricName"}
-		err := p.Init()
-		return p, err
+	p, _ := parsers.NewParser(&parsers.Config{
+		DataFormat: "json",
+		MetricName: "metricName",
 	})
+	plugin.SetParser(p)
 
 	var acc testutil.Accumulator
 	require.NoError(t, plugin.Init())
@@ -205,11 +169,6 @@ const simpleJSON = `
 {
     "a": 1.2
 }
-`
-const simpleCSVWithHeader = `
-# Simple CSV with header(s)
-a,b,c
-1.2,3.1415,ok
 `
 
 func TestBodyAndContentEncoding(t *testing.T) {
@@ -294,15 +253,15 @@ func TestBodyAndContentEncoding(t *testing.T) {
 				tt.queryHandlerFunc(t, w, r)
 			})
 
-			tt.plugin.SetParserFunc(func() (telegraf.Parser, error) {
-				parser := &influx.Parser{}
-				err := parser.Init()
-				return parser, err
-			})
+			parser, err := parsers.NewParser(&parsers.Config{DataFormat: "influx"})
+			require.NoError(t, err)
+
+			tt.plugin.SetParser(parser)
 
 			var acc testutil.Accumulator
 			require.NoError(t, tt.plugin.Init())
-			require.NoError(t, tt.plugin.Gather(&acc))
+			err = tt.plugin.Gather(&acc)
+			require.NoError(t, err)
 		})
 	}
 }
@@ -376,15 +335,8 @@ func TestOAuthClientCredentialsGrant(t *testing.T) {
 				}
 			})
 
-			tt.plugin.SetParserFunc(func() (telegraf.Parser, error) {
-				p := &value.Parser{
-					MetricName: "metric",
-					DataType:   "string",
-				}
-				err := p.Init()
-				return p, err
-			})
-
+			parser, _ := parsers.NewValueParser("metric", "string", "", nil)
+			tt.plugin.SetParser(parser)
 			err = tt.plugin.Init()
 			require.NoError(t, err)
 
@@ -393,56 +345,4 @@ func TestOAuthClientCredentialsGrant(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
-}
-
-func TestHTTPWithCSVFormat(t *testing.T) {
-	fakeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/endpoint" {
-			_, _ = w.Write([]byte(simpleCSVWithHeader))
-		} else {
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	defer fakeServer.Close()
-
-	address := fakeServer.URL + "/endpoint"
-	plugin := &httpplugin.HTTP{
-		URLs: []string{address},
-		Log:  testutil.Logger{},
-	}
-
-	plugin.SetParserFunc(func() (telegraf.Parser, error) {
-		parser := &csv.Parser{
-			MetricName:  "metricName",
-			SkipRows:    3,
-			ColumnNames: []string{"a", "b", "c"},
-			TagColumns:  []string{"c"},
-		}
-		err := parser.Init()
-		return parser, err
-	})
-
-	expected := []telegraf.Metric{
-		testutil.MustMetric("metricName",
-			map[string]string{
-				"url": address,
-				"c":   "ok",
-			},
-			map[string]interface{}{
-				"a": 1.2,
-				"b": 3.1415,
-			},
-			time.Unix(0, 0),
-		),
-	}
-
-	var acc testutil.Accumulator
-	require.NoError(t, plugin.Init())
-	require.NoError(t, acc.GatherError(plugin.Gather))
-	testutil.RequireMetricsEqual(t, expected, acc.GetTelegrafMetrics(), testutil.IgnoreTime())
-
-	// Run the parser a second time to test for correct stateful handling
-	acc.ClearMetrics()
-	require.NoError(t, acc.GatherError(plugin.Gather))
-	testutil.RequireMetricsEqual(t, expected, acc.GetTelegrafMetrics(), testutil.IgnoreTime())
 }

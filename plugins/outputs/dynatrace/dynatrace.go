@@ -1,32 +1,27 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package dynatrace
 
 import (
 	"bytes"
-	_ "embed"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 
-	dtMetric "github.com/dynatrace-oss/dynatrace-metric-utils-go/metric"
-	"github.com/dynatrace-oss/dynatrace-metric-utils-go/metric/apiconstants"
-	"github.com/dynatrace-oss/dynatrace-metric-utils-go/metric/dimensions"
-
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/outputs"
-)
 
-//go:embed sample.conf
-var sampleConfig string
+	dtMetric "github.com/dynatrace-oss/dynatrace-metric-utils-go/metric"
+	"github.com/dynatrace-oss/dynatrace-metric-utils-go/metric/apiconstants"
+	"github.com/dynatrace-oss/dynatrace-metric-utils-go/metric/dimensions"
+)
 
 // Dynatrace Configuration for the Dynatrace output plugin
 type Dynatrace struct {
 	URL               string            `toml:"url"`
-	APIToken          config.Secret     `toml:"api_token"`
+	APIToken          string            `toml:"api_token"`
 	Prefix            string            `toml:"prefix"`
 	Log               telegraf.Logger   `toml:"-"`
 	Timeout           config.Duration   `toml:"timeout"`
@@ -43,9 +38,44 @@ type Dynatrace struct {
 	loggedMetrics map[string]bool // New empty set
 }
 
-func (*Dynatrace) SampleConfig() string {
-	return sampleConfig
-}
+const sampleConfig = `
+  ## For usage with the Dynatrace OneAgent you can omit any configuration,
+  ## the only requirement is that the OneAgent is running on the same host.
+  ## Only setup environment url and token if you want to monitor a Host without the OneAgent present.
+  ##
+  ## Your Dynatrace environment URL.
+  ## For Dynatrace OneAgent you can leave this empty or set it to "http://127.0.0.1:14499/metrics/ingest" (default)
+  ## For Dynatrace SaaS environments the URL scheme is "https://{your-environment-id}.live.dynatrace.com/api/v2/metrics/ingest"
+  ## For Dynatrace Managed environments the URL scheme is "https://{your-domain}/e/{your-environment-id}/api/v2/metrics/ingest"
+  url = ""
+
+  ## Your Dynatrace API token. 
+  ## Create an API token within your Dynatrace environment, by navigating to Settings > Integration > Dynatrace API
+  ## The API token needs data ingest scope permission. When using OneAgent, no API token is required.
+  api_token = "" 
+
+  ## Optional prefix for metric names (e.g.: "telegraf")
+  prefix = "telegraf"
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+
+  ## Optional flag for ignoring tls certificate check
+  # insecure_skip_verify = false
+
+
+  ## Connection timeout, defaults to "5s" if not set.
+  timeout = "5s"
+
+  ## If you want metrics to be treated and reported as delta counters, add the metric names here
+  additional_counters = [ ]
+
+  ## Optional dimensions to be added to every metric
+  # [outputs.dynatrace.default_dimensions]
+  # default_key = "default value"
+`
 
 // Connect Connects the Dynatrace output plugin to the Telegraf stream
 func (d *Dynatrace) Connect() error {
@@ -56,6 +86,16 @@ func (d *Dynatrace) Connect() error {
 func (d *Dynatrace) Close() error {
 	d.client = nil
 	return nil
+}
+
+// SampleConfig Returns a sample configuration for the Dynatrace output plugin
+func (d *Dynatrace) SampleConfig() string {
+	return sampleConfig
+}
+
+// Description returns the description for the Dynatrace output plugin
+func (d *Dynatrace) Description() string {
+	return "Send telegraf metrics to a Dynatrace environment"
 }
 
 func (d *Dynatrace) Write(metrics []telegraf.Metric) error {
@@ -134,7 +174,7 @@ func (d *Dynatrace) Write(metrics []telegraf.Metric) error {
 		output := strings.Join(batch, "\n")
 		if output != "" {
 			if err := d.send(output); err != nil {
-				return fmt.Errorf("error processing data: %w", err)
+				return fmt.Errorf("error processing data:, %s", err.Error())
 			}
 		}
 	}
@@ -147,17 +187,12 @@ func (d *Dynatrace) send(msg string) error {
 	req, err := http.NewRequest("POST", d.URL, bytes.NewBufferString(msg))
 	if err != nil {
 		d.Log.Errorf("Dynatrace error: %s", err.Error())
-		return fmt.Errorf("error while creating HTTP request: %w", err)
+		return fmt.Errorf("error while creating HTTP request:, %s", err.Error())
 	}
 	req.Header.Add("Content-Type", "text/plain; charset=UTF-8")
 
-	if !d.APIToken.Empty() {
-		token, err := d.APIToken.Get()
-		if err != nil {
-			return fmt.Errorf("getting token failed: %w", err)
-		}
-		req.Header.Add("Authorization", "Api-Token "+string(token))
-		config.ReleaseSecret(token)
+	if len(d.APIToken) != 0 {
+		req.Header.Add("Authorization", "Api-Token "+d.APIToken)
 	}
 	// add user-agent header to identify metric source
 	req.Header.Add("User-Agent", "telegraf")
@@ -165,12 +200,12 @@ func (d *Dynatrace) send(msg string) error {
 	resp, err := d.client.Do(req)
 	if err != nil {
 		d.Log.Errorf("Dynatrace error: %s", err.Error())
-		return fmt.Errorf("error while sending HTTP request: %w", err)
+		return fmt.Errorf("error while sending HTTP request:, %s", err.Error())
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusBadRequest {
-		return fmt.Errorf("request failed with response code: %d", resp.StatusCode)
+		return fmt.Errorf("request failed with response code:, %d", resp.StatusCode)
 	}
 
 	// print metric line results as info log
@@ -189,7 +224,7 @@ func (d *Dynatrace) Init() error {
 		d.Log.Infof("Dynatrace URL is empty, defaulting to OneAgent metrics interface")
 		d.URL = apiconstants.GetDefaultOneAgentEndpoint()
 	}
-	if d.URL != apiconstants.GetDefaultOneAgentEndpoint() && d.APIToken.Empty() {
+	if d.URL != apiconstants.GetDefaultOneAgentEndpoint() && len(d.APIToken) == 0 {
 		d.Log.Errorf("Dynatrace api_token is a required field for Dynatrace output")
 		return fmt.Errorf("api_token is a required field for Dynatrace output")
 	}

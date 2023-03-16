@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package converter
 
 import (
-	_ "embed"
 	"errors"
 	"fmt"
 	"math"
@@ -12,23 +10,46 @@ import (
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/filter"
-	"github.com/influxdata/telegraf/internal"
 	"github.com/influxdata/telegraf/plugins/processors"
 )
 
-//go:embed sample.conf
-var sampleConfig string
+var sampleConfig = `
+  ## Tags to convert
+  ##
+  ## The table key determines the target type, and the array of key-values
+  ## select the keys to convert.  The array may contain globs.
+  ##   <target-type> = [<tag-key>...]
+  [processors.converter.tags]
+    measurement = []
+    string = []
+    integer = []
+    unsigned = []
+    boolean = []
+    float = []
+
+  ## Fields to convert
+  ##
+  ## The table key determines the target type, and the array of key-values
+  ## select the keys to convert.  The array may contain globs.
+  ##   <target-type> = [<field-key>...]
+  [processors.converter.fields]
+    measurement = []
+    tag = []
+    string = []
+    integer = []
+    unsigned = []
+    boolean = []
+    float = []
+`
 
 type Conversion struct {
-	Measurement     []string `toml:"measurement"`
-	Tag             []string `toml:"tag"`
-	String          []string `toml:"string"`
-	Integer         []string `toml:"integer"`
-	Unsigned        []string `toml:"unsigned"`
-	Boolean         []string `toml:"boolean"`
-	Float           []string `toml:"float"`
-	Timestamp       []string `toml:"timestamp"`
-	TimestampFormat string   `toml:"timestamp_format"`
+	Measurement []string `toml:"measurement"`
+	Tag         []string `toml:"tag"`
+	String      []string `toml:"string"`
+	Integer     []string `toml:"integer"`
+	Unsigned    []string `toml:"unsigned"`
+	Boolean     []string `toml:"boolean"`
+	Float       []string `toml:"float"`
 }
 
 type Converter struct {
@@ -48,11 +69,14 @@ type ConversionFilter struct {
 	Unsigned    filter.Filter
 	Boolean     filter.Filter
 	Float       filter.Filter
-	Timestamp   filter.Filter
 }
 
-func (*Converter) SampleConfig() string {
+func (p *Converter) SampleConfig() string {
 	return sampleConfig
+}
+
+func (p *Converter) Description() string {
+	return "Convert values to another metric value type"
 }
 
 func (p *Converter) Init() error {
@@ -129,11 +153,6 @@ func compileFilter(conv *Conversion) (*ConversionFilter, error) {
 		return nil, err
 	}
 
-	cf.Timestamp, err = filter.Compile(conv.Timestamp)
-	if err != nil {
-		return nil, err
-	}
-
 	return cf, nil
 }
 
@@ -204,18 +223,6 @@ func (p *Converter) convertTags(metric telegraf.Metric) {
 
 			metric.RemoveTag(key)
 			metric.AddField(key, v)
-			continue
-		}
-
-		if p.tagConversions.Timestamp != nil && p.tagConversions.Timestamp.Match(key) {
-			time, err := internal.ParseTimestamp(p.Tags.TimestampFormat, value, nil)
-			if err != nil {
-				p.Log.Errorf("error converting to timestamp [%T]: %v", value, value)
-				continue
-			}
-
-			metric.RemoveTag(key)
-			metric.SetTime(time)
 			continue
 		}
 	}
@@ -316,18 +323,6 @@ func (p *Converter) convertFields(metric telegraf.Metric) {
 
 			metric.RemoveField(key)
 			metric.AddField(key, v)
-			continue
-		}
-
-		if p.fieldConversions.Timestamp != nil && p.fieldConversions.Timestamp.Match(key) {
-			time, err := internal.ParseTimestamp(p.Fields.TimestampFormat, value, nil)
-			if err != nil {
-				p.Log.Errorf("error converting to timestamp [%T]: %v", value, value)
-				continue
-			}
-
-			metric.RemoveField(key)
-			metric.SetTime(time)
 			continue
 		}
 	}

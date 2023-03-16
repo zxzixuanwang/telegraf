@@ -1,29 +1,17 @@
 # LeoFS Input Plugin
 
-The LeoFS plugin gathers metrics of LeoGateway, LeoManager, and LeoStorage using
-SNMP. See [LeoFS Documentation / System Administration / System
-Monitoring](https://leo-project.net/leofs/docs/admin/system_admin/monitoring/).
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+The LeoFS plugin gathers metrics of LeoGateway, LeoManager, and LeoStorage using SNMP. See [LeoFS Documentation / System Administration / System Monitoring](https://leo-project.net/leofs/docs/admin/system_admin/monitoring/).
 
 ## Configuration
 
-```toml @sample.conf
-# Read metrics from a LeoFS Server via SNMP
+```toml
+# Sample Config:
+
 [[inputs.leofs]]
-  ## An array of URLs of the form:
-  ##   host [ ":" port]
-  servers = ["127.0.0.1:4010"]
+        servers = ["127.0.0.1:4010"]
 ```
 
-## Metrics
+## Measurements & Fields
 
 ### Statistics specific to the internals of LeoManager
 
@@ -162,9 +150,9 @@ All measurements have the following tags:
 
 - node
 
-## Example Output
+### Example output
 
-### LeoManager
+#### LeoManager
 
 ```bash
 $ ./telegraf --config ./plugins/inputs/leofs/leo_manager.conf --input-filter leofs --test
@@ -186,7 +174,7 @@ $ ./telegraf --config ./plugins/inputs/leofs/leo_manager.conf --input-filter leo
   1524105758000000000
 ```
 
-### LeoStorage
+#### LeoStorage
 
 ```bash
 $ ./telegraf --config ./plugins/inputs/leofs/leo_storage.conf --input-filter leofs --test
@@ -233,7 +221,7 @@ $ ./telegraf --config ./plugins/inputs/leofs/leo_storage.conf --input-filter leo
   1524529826000000000
 ```
 
-### LeoGateway
+#### LeoGateway
 
 ```shell
 $ ./telegraf --config ./plugins/inputs/leofs/leo_gateway.conf --input-filter leofs --test

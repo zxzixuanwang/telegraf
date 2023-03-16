@@ -11,8 +11,7 @@ import (
 )
 
 func TestParse(t *testing.T) {
-	parser := &Parser{}
-	require.NoError(t, parser.Init())
+	parser := NewWavefrontParser(nil)
 
 	parsedMetrics, err := parser.Parse([]byte("test.metric 1"))
 	require.NoError(t, err)
@@ -34,12 +33,7 @@ func TestParse(t *testing.T) {
 
 	parsedMetrics, err = parser.Parse([]byte("\u0394test.delta 1.234 1530939936 source=\"mysource\" tag2=value2"))
 	require.NoError(t, err)
-	testMetric = metric.New(
-		"\u0394test.delta",
-		map[string]string{"source": "mysource", "tag2": "value2"},
-		map[string]interface{}{"value": 1.234},
-		time.Unix(1530939936, 0),
-	)
+	testMetric = metric.New("\u0394test.delta", map[string]string{"source": "mysource", "tag2": "value2"}, map[string]interface{}{"value": 1.234}, time.Unix(1530939936, 0))
 	require.EqualValues(t, parsedMetrics[0], testMetric)
 
 	parsedMetrics, err = parser.Parse([]byte("test.metric 1 1530939936"))
@@ -59,58 +53,32 @@ func TestParse(t *testing.T) {
 
 	parsedMetrics, err = parser.Parse([]byte("\"test.metric\" 1.1234 1530939936 \"source\"=\"mysource\" tag2=value2"))
 	require.NoError(t, err)
-	testMetric = metric.New(
-		"test.metric",
-		map[string]string{"source": "mysource", "tag2": "value2"},
-		map[string]interface{}{"value": 1.1234},
-		time.Unix(1530939936, 0),
-	)
+	testMetric = metric.New("test.metric", map[string]string{"source": "mysource", "tag2": "value2"}, map[string]interface{}{"value": 1.1234}, time.Unix(1530939936, 0))
 	require.EqualValues(t, parsedMetrics[0], testMetric)
 
 	parsedMetrics, err = parser.Parse([]byte("\"test.metric\" -1.1234 1530939936 \"source\"=\"mysource\" tag2=value2"))
 	require.NoError(t, err)
-	testMetric = metric.New(
-		"test.metric",
-		map[string]string{"source": "mysource", "tag2": "value2"},
-		map[string]interface{}{"value": -1.1234},
-		time.Unix(1530939936, 0),
-	)
+	testMetric = metric.New("test.metric", map[string]string{"source": "mysource", "tag2": "value2"}, map[string]interface{}{"value": -1.1234}, time.Unix(1530939936, 0))
 	require.EqualValues(t, parsedMetrics[0], testMetric)
 
 	parsedMetrics, err = parser.Parse([]byte("\"test.metric\" 1.1234e04 1530939936 \"source\"=\"mysource\" tag2=value2"))
 	require.NoError(t, err)
-	testMetric = metric.New(
-		"test.metric",
-		map[string]string{"source": "mysource", "tag2": "value2"},
-		map[string]interface{}{"value": 1.1234e04},
-		time.Unix(1530939936, 0),
-	)
+	testMetric = metric.New("test.metric", map[string]string{"source": "mysource", "tag2": "value2"}, map[string]interface{}{"value": 1.1234e04}, time.Unix(1530939936, 0))
 	require.EqualValues(t, parsedMetrics[0], testMetric)
 
 	parsedMetrics, err = parser.Parse([]byte("\"test.metric\" 1.1234e-04 1530939936 \"source\"=\"mysource\" tag2=value2"))
 	require.NoError(t, err)
-	testMetric = metric.New(
-		"test.metric",
-		map[string]string{"source": "mysource", "tag2": "value2"},
-		map[string]interface{}{"value": 1.1234e-04},
-		time.Unix(1530939936, 0),
-	)
+	testMetric = metric.New("test.metric", map[string]string{"source": "mysource", "tag2": "value2"}, map[string]interface{}{"value": 1.1234e-04}, time.Unix(1530939936, 0))
 	require.EqualValues(t, parsedMetrics[0], testMetric)
 
 	parsedMetrics, err = parser.Parse([]byte("test.metric		 1.1234      1530939936 	source=\"mysource\"    tag2=value2     "))
 	require.NoError(t, err)
-	testMetric = metric.New(
-		"test.metric",
-		map[string]string{"source": "mysource", "tag2": "value2"},
-		map[string]interface{}{"value": 1.1234},
-		time.Unix(1530939936, 0),
-	)
+	testMetric = metric.New("test.metric", map[string]string{"source": "mysource", "tag2": "value2"}, map[string]interface{}{"value": 1.1234}, time.Unix(1530939936, 0))
 	require.EqualValues(t, parsedMetrics[0], testMetric)
 }
 
 func TestParseLine(t *testing.T) {
-	parser := &Parser{}
-	require.NoError(t, parser.Init())
+	parser := NewWavefrontParser(nil)
 
 	parsedMetric, err := parser.ParseLine("test.metric 1")
 	require.NoError(t, err)
@@ -135,28 +103,17 @@ func TestParseLine(t *testing.T) {
 
 	parsedMetric, err = parser.ParseLine("\"test.metric\" 1.1234 1530939936 \"source\"=\"mysource\" tag2=value2")
 	require.NoError(t, err)
-	testMetric = metric.New(
-		"test.metric",
-		map[string]string{"source": "mysource", "tag2": "value2"},
-		map[string]interface{}{"value": 1.1234},
-		time.Unix(1530939936, 0),
-	)
+	testMetric = metric.New("test.metric", map[string]string{"source": "mysource", "tag2": "value2"}, map[string]interface{}{"value": 1.1234}, time.Unix(1530939936, 0))
 	require.EqualValues(t, parsedMetric, testMetric)
 
 	parsedMetric, err = parser.ParseLine("test.metric		 1.1234      1530939936 	source=\"mysource\"    tag2=value2     ")
 	require.NoError(t, err)
-	testMetric = metric.New(
-		"test.metric",
-		map[string]string{"source": "mysource", "tag2": "value2"},
-		map[string]interface{}{"value": 1.1234},
-		time.Unix(1530939936, 0),
-	)
+	testMetric = metric.New("test.metric", map[string]string{"source": "mysource", "tag2": "value2"}, map[string]interface{}{"value": 1.1234}, time.Unix(1530939936, 0))
 	require.EqualValues(t, parsedMetric, testMetric)
 }
 
 func TestParseMultiple(t *testing.T) {
-	parser := &Parser{}
-	require.NoError(t, parser.Init())
+	parser := NewWavefrontParser(nil)
 
 	parsedMetrics, err := parser.Parse([]byte("test.metric 1\ntest.metric2 2 1530939936"))
 	require.NoError(t, err)
@@ -174,31 +131,14 @@ func TestParseMultiple(t *testing.T) {
 	testMetrics = []telegraf.Metric{testMetric1, testMetric2}
 	require.EqualValues(t, parsedMetrics, testMetrics)
 
-	parsedMetrics, err = parser.Parse(
-		[]byte(
-			"\"test.metric\" 1.1234 1530939936 \"source\"=\"mysource\" tag2=value2\n" +
-				"test.metric		 1.1234      1530939936 	source=\"mysource\"    tag2=value2     ",
-		),
-	)
+	parsedMetrics, err = parser.Parse([]byte("\"test.metric\" 1.1234 1530939936 \"source\"=\"mysource\" tag2=value2\ntest.metric		 1.1234      1530939936 	source=\"mysource\"    tag2=value2     "))
 	require.NoError(t, err)
-	testMetric1 = metric.New(
-		"test.metric",
-		map[string]string{"source": "mysource", "tag2": "value2"},
-		map[string]interface{}{"value": 1.1234},
-		time.Unix(1530939936, 0),
-	)
-	testMetric2 = metric.New(
-		"test.metric",
-		map[string]string{"source": "mysource", "tag2": "value2"},
-		map[string]interface{}{"value": 1.1234},
-		time.Unix(1530939936, 0),
-	)
+	testMetric1 = metric.New("test.metric", map[string]string{"source": "mysource", "tag2": "value2"}, map[string]interface{}{"value": 1.1234}, time.Unix(1530939936, 0))
+	testMetric2 = metric.New("test.metric", map[string]string{"source": "mysource", "tag2": "value2"}, map[string]interface{}{"value": 1.1234}, time.Unix(1530939936, 0))
 	testMetrics = []telegraf.Metric{testMetric1, testMetric2}
 	require.EqualValues(t, parsedMetrics, testMetrics)
 
-	parsedMetrics, err = parser.Parse(
-		[]byte("test.metric 1 1530939936 source=mysource\n\"test.metric\" 1.1234 1530939936 source=\"mysource\"\ntest.metric3 333 1530939936 tagit=valueit"),
-	)
+	parsedMetrics, err = parser.Parse([]byte("test.metric 1 1530939936 source=mysource\n\"test.metric\" 1.1234 1530939936 source=\"mysource\"\ntest.metric3 333 1530939936 tagit=valueit"))
 	require.NoError(t, err)
 	testMetric1 = metric.New("test.metric", map[string]string{"source": "mysource"}, map[string]interface{}{"value": 1.}, time.Unix(1530939936, 0))
 	testMetric2 = metric.New("test.metric", map[string]string{"source": "mysource"}, map[string]interface{}{"value": 1.1234}, time.Unix(1530939936, 0))
@@ -208,8 +148,7 @@ func TestParseMultiple(t *testing.T) {
 }
 
 func TestParseSpecial(t *testing.T) {
-	parser := &Parser{}
-	require.NoError(t, parser.Init())
+	parser := NewWavefrontParser(nil)
 
 	parsedMetric, err := parser.ParseLine("\"test.metric\" 1 1530939936")
 	require.NoError(t, err)
@@ -223,8 +162,7 @@ func TestParseSpecial(t *testing.T) {
 }
 
 func TestParseInvalid(t *testing.T) {
-	parser := &Parser{}
-	require.NoError(t, parser.Init())
+	parser := NewWavefrontParser(nil)
 
 	_, err := parser.Parse([]byte("test.metric"))
 	require.Error(t, err)
@@ -255,37 +193,20 @@ func TestParseInvalid(t *testing.T) {
 }
 
 func TestParseDefaultTags(t *testing.T) {
-	parser := &Parser{}
-	require.NoError(t, parser.Init())
-	parser.SetDefaultTags(map[string]string{"myDefault": "value1", "another": "test2"})
+	parser := NewWavefrontParser(map[string]string{"myDefault": "value1", "another": "test2"})
 
 	parsedMetrics, err := parser.Parse([]byte("test.metric 1 1530939936"))
 	require.NoError(t, err)
-	testMetric := metric.New(
-		"test.metric",
-		map[string]string{"myDefault": "value1", "another": "test2"},
-		map[string]interface{}{"value": 1.},
-		time.Unix(1530939936, 0),
-	)
+	testMetric := metric.New("test.metric", map[string]string{"myDefault": "value1", "another": "test2"}, map[string]interface{}{"value": 1.}, time.Unix(1530939936, 0))
 	require.EqualValues(t, parsedMetrics[0], testMetric)
 
 	parsedMetrics, err = parser.Parse([]byte("test.metric 1 1530939936 source=mysource"))
 	require.NoError(t, err)
-	testMetric = metric.New(
-		"test.metric",
-		map[string]string{"myDefault": "value1", "another": "test2", "source": "mysource"},
-		map[string]interface{}{"value": 1.},
-		time.Unix(1530939936, 0),
-	)
+	testMetric = metric.New("test.metric", map[string]string{"myDefault": "value1", "another": "test2", "source": "mysource"}, map[string]interface{}{"value": 1.}, time.Unix(1530939936, 0))
 	require.EqualValues(t, parsedMetrics[0], testMetric)
 
 	parsedMetrics, err = parser.Parse([]byte("\"test.metric\" 1.1234 1530939936 another=\"test3\""))
 	require.NoError(t, err)
-	testMetric = metric.New(
-		"test.metric",
-		map[string]string{"myDefault": "value1", "another": "test2"},
-		map[string]interface{}{"value": 1.1234},
-		time.Unix(1530939936, 0),
-	)
+	testMetric = metric.New("test.metric", map[string]string{"myDefault": "value1", "another": "test2"}, map[string]interface{}{"value": 1.1234}, time.Unix(1530939936, 0))
 	require.EqualValues(t, parsedMetrics[0], testMetric)
 }

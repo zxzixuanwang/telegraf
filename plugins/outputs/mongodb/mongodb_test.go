@@ -1,18 +1,13 @@
 package mongodb
 
 import (
-	"fmt"
-	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/docker/go-connections/nat"
-	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConnectAndWriteIntegrationNoAuth(t *testing.T) {
@@ -20,25 +15,8 @@ func TestConnectAndWriteIntegrationNoAuth(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	servicePort := "27017"
-	container := testutil.Container{
-		Image:        "mongo",
-		ExposedPorts: []string{servicePort},
-		WaitingFor: wait.ForAll(
-			wait.NewHTTPStrategy("/").WithPort(nat.Port(servicePort)),
-			wait.ForLog("Waiting for connections"),
-		),
-	}
-	err := container.Start()
-	require.NoError(t, err, "failed to start container")
-	defer container.Terminate()
-
-	// Run test
 	plugin := &MongoDB{
-		Dsn: fmt.Sprintf("mongodb://%s:%s",
-			container.Address,
-			container.Ports[servicePort],
-		),
+		Dsn:                "mongodb://localhost:27017",
 		AuthenticationType: "NONE",
 		MetricDatabase:     "telegraf_test",
 		MetricGranularity:  "seconds",
@@ -56,25 +34,6 @@ func TestConnectAndWriteIntegrationSCRAMAuth(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	initdb, err := filepath.Abs("testdata/auth_scram")
-	require.NoError(t, err)
-
-	servicePort := "27017"
-	container := testutil.Container{
-		Image:        "mongo",
-		ExposedPorts: []string{servicePort},
-		BindMounts: map[string]string{
-			"/docker-entrypoint-initdb.d": initdb,
-		},
-		WaitingFor: wait.ForAll(
-			wait.NewHTTPStrategy("/").WithPort(nat.Port(servicePort)),
-			wait.ForLog("Waiting for connections").WithOccurrence(2),
-		),
-	}
-	err = container.Start()
-	require.NoError(t, err, "failed to start container")
-	defer container.Terminate()
-
 	tests := []struct {
 		name        string
 		plugin      *MongoDB
@@ -83,11 +42,10 @@ func TestConnectAndWriteIntegrationSCRAMAuth(t *testing.T) {
 		{
 			name: "success with scram authentication",
 			plugin: &MongoDB{
-				Dsn: fmt.Sprintf("mongodb://%s:%s/admin",
-					container.Address, container.Ports[servicePort]),
+				Dsn:                "mongodb://localhost:27018/admin",
 				AuthenticationType: "SCRAM",
-				Username:           config.NewSecret([]byte("root")),
-				Password:           config.NewSecret([]byte("changeme")),
+				Username:           "root",
+				Password:           "changeme",
 				MetricDatabase:     "telegraf_test",
 				MetricGranularity:  "seconds",
 			},
@@ -98,11 +56,10 @@ func TestConnectAndWriteIntegrationSCRAMAuth(t *testing.T) {
 		{
 			name: "fail with scram authentication bad password",
 			plugin: &MongoDB{
-				Dsn: fmt.Sprintf("mongodb://%s:%s/admin",
-					container.Address, container.Ports[servicePort]),
+				Dsn:                 "mongodb://localhost:27018/admin",
 				AuthenticationType:  "SCRAM",
-				Username:            config.NewSecret([]byte("root")),
-				Password:            config.NewSecret([]byte("root")),
+				Username:            "root",
+				Password:            "root",
 				MetricDatabase:      "telegraf_test",
 				MetricGranularity:   "seconds",
 				ServerSelectTimeout: config.Duration(time.Duration(5) * time.Second),
@@ -143,41 +100,6 @@ func TestConnectAndWriteIntegrationX509Auth(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	pki := testutil.NewPKI("../../../testutil/pki")
-
-	// bind mount files
-	initdb, err := filepath.Abs("testdata/auth_x509")
-	require.NoError(t, err)
-	cacert, err := filepath.Abs(pki.CACertPath())
-	require.NoError(t, err)
-	serverpem, err := filepath.Abs(pki.ServerCertAndKeyPath())
-	require.NoError(t, err)
-
-	servicePort := "27017"
-	container := testutil.Container{
-		Image:        "mongo",
-		ExposedPorts: []string{servicePort},
-		BindMounts: map[string]string{
-			"/docker-entrypoint-initdb.d": initdb,
-			"/cacert.pem":                 cacert,
-			"/server.pem":                 serverpem,
-		},
-		Entrypoint: []string{
-			"docker-entrypoint.sh",
-			"--auth", "--setParameter", "authenticationMechanisms=MONGODB-X509",
-			"--tlsMode", "preferTLS",
-			"--tlsCAFile", "/cacert.pem",
-			"--tlsCertificateKeyFile", "/server.pem",
-		},
-		WaitingFor: wait.ForAll(
-			wait.NewHTTPStrategy("/").WithPort(nat.Port(servicePort)),
-			wait.ForLog("Waiting for connections").WithOccurrence(2),
-		),
-	}
-	err = container.Start()
-	require.NoError(t, err, "failed to start container")
-	defer container.Terminate()
-
 	tests := []struct {
 		name        string
 		plugin      *MongoDB
@@ -186,16 +108,15 @@ func TestConnectAndWriteIntegrationX509Auth(t *testing.T) {
 		{
 			name: "success with x509 authentication",
 			plugin: &MongoDB{
-				Dsn: fmt.Sprintf("mongodb://%s:%s",
-					container.Address, container.Ports[servicePort]),
+				Dsn:                 "mongodb://localhost:27019",
 				AuthenticationType:  "X509",
 				MetricDatabase:      "telegraf_test",
 				MetricGranularity:   "seconds",
 				ServerSelectTimeout: config.Duration(time.Duration(5) * time.Second),
 				TTL:                 config.Duration(time.Duration(5) * time.Minute),
 				ClientConfig: tls.ClientConfig{
-					TLSCA:              pki.CACertPath(),
-					TLSKey:             pki.ClientCertAndKeyPath(),
+					TLSCA:              "dev/cacert.pem",
+					TLSKey:             "dev/client.pem",
 					InsecureSkipVerify: false,
 				},
 			},
@@ -206,16 +127,15 @@ func TestConnectAndWriteIntegrationX509Auth(t *testing.T) {
 		{
 			name: "success with x509 authentication using encrypted key file",
 			plugin: &MongoDB{
-				Dsn: fmt.Sprintf("mongodb://%s:%s",
-					container.Address, container.Ports[servicePort]),
+				Dsn:                 "mongodb://localhost:27019",
 				AuthenticationType:  "X509",
 				MetricDatabase:      "telegraf_test",
 				MetricGranularity:   "seconds",
 				ServerSelectTimeout: config.Duration(time.Duration(5) * time.Second),
 				TTL:                 config.Duration(time.Duration(5) * time.Minute),
 				ClientConfig: tls.ClientConfig{
-					TLSCA:              pki.CACertPath(),
-					TLSKey:             pki.ClientCertAndEncKeyPath(),
+					TLSCA:              "dev/cacert.pem",
+					TLSKey:             "dev/clientenc.pem",
 					TLSKeyPwd:          "changeme",
 					InsecureSkipVerify: false,
 				},
@@ -227,15 +147,14 @@ func TestConnectAndWriteIntegrationX509Auth(t *testing.T) {
 		{
 			name: "success with x509 authentication missing ca and using insceure tls",
 			plugin: &MongoDB{
-				Dsn: fmt.Sprintf("mongodb://%s:%s",
-					container.Address, container.Ports[servicePort]),
+				Dsn:                 "mongodb://localhost:27019",
 				AuthenticationType:  "X509",
 				MetricDatabase:      "telegraf_test",
 				MetricGranularity:   "seconds",
 				ServerSelectTimeout: config.Duration(time.Duration(5) * time.Second),
 				TTL:                 config.Duration(time.Duration(5) * time.Minute),
 				ClientConfig: tls.ClientConfig{
-					TLSKey:             pki.ClientCertAndKeyPath(),
+					TLSKey:             "dev/client.pem",
 					InsecureSkipVerify: true,
 				},
 			},
@@ -246,15 +165,14 @@ func TestConnectAndWriteIntegrationX509Auth(t *testing.T) {
 		{
 			name: "fail with x509 authentication missing ca",
 			plugin: &MongoDB{
-				Dsn: fmt.Sprintf("mongodb://%s:%s",
-					container.Address, container.Ports[servicePort]),
+				Dsn:                 "mongodb://localhost:27019",
 				AuthenticationType:  "X509",
 				MetricDatabase:      "telegraf_test",
 				MetricGranularity:   "seconds",
 				ServerSelectTimeout: config.Duration(time.Duration(5) * time.Second),
 				TTL:                 config.Duration(time.Duration(5) * time.Minute),
 				ClientConfig: tls.ClientConfig{
-					TLSKey:             pki.ClientCertAndKeyPath(),
+					TLSKey:             "dev/client.pem",
 					InsecureSkipVerify: false,
 				},
 			},
@@ -265,16 +183,15 @@ func TestConnectAndWriteIntegrationX509Auth(t *testing.T) {
 		{
 			name: "fail with x509 authentication using encrypted key file",
 			plugin: &MongoDB{
-				Dsn: fmt.Sprintf("mongodb://%s:%s",
-					container.Address, container.Ports[servicePort]),
+				Dsn:                 "mongodb://localhost:27019",
 				AuthenticationType:  "X509",
 				MetricDatabase:      "telegraf_test",
 				MetricGranularity:   "seconds",
 				ServerSelectTimeout: config.Duration(time.Duration(5) * time.Second),
 				TTL:                 config.Duration(time.Duration(5) * time.Minute),
 				ClientConfig: tls.ClientConfig{
-					TLSCA:              pki.CACertPath(),
-					TLSKey:             pki.ClientCertAndEncKeyPath(),
+					TLSCA:              "dev/cacert.pem",
+					TLSKey:             "dev/clientenc.pem",
 					TLSKeyPwd:          "badpassword",
 					InsecureSkipVerify: false,
 				},
@@ -286,16 +203,15 @@ func TestConnectAndWriteIntegrationX509Auth(t *testing.T) {
 		{
 			name: "fail with x509 authentication using invalid ca",
 			plugin: &MongoDB{
-				Dsn: fmt.Sprintf("mongodb://%s:%s",
-					container.Address, container.Ports[servicePort]),
+				Dsn:                 "mongodb://localhost:27019",
 				AuthenticationType:  "X509",
 				MetricDatabase:      "telegraf_test",
 				MetricGranularity:   "seconds",
 				ServerSelectTimeout: config.Duration(time.Duration(5) * time.Second),
 				TTL:                 config.Duration(time.Duration(5) * time.Minute),
 				ClientConfig: tls.ClientConfig{
-					TLSCA:              pki.ClientCertAndKeyPath(),
-					TLSKey:             pki.ClientCertAndKeyPath(),
+					TLSCA:              "dev/client.pem",
+					TLSKey:             "dev/client.pem",
 					InsecureSkipVerify: false,
 				},
 			},
@@ -306,16 +222,15 @@ func TestConnectAndWriteIntegrationX509Auth(t *testing.T) {
 		{
 			name: "fail with x509 authentication using invalid key",
 			plugin: &MongoDB{
-				Dsn: fmt.Sprintf("mongodb://%s:%s",
-					container.Address, container.Ports[servicePort]),
+				Dsn:                 "mongodb://localhost:27019",
 				AuthenticationType:  "X509",
 				MetricDatabase:      "telegraf_test",
 				MetricGranularity:   "seconds",
 				ServerSelectTimeout: config.Duration(time.Duration(5) * time.Second),
 				TTL:                 config.Duration(time.Duration(5) * time.Minute),
 				ClientConfig: tls.ClientConfig{
-					TLSCA:              pki.CACertPath(),
-					TLSKey:             pki.CACertPath(),
+					TLSCA:              "dev/cacert.pem",
+					TLSKey:             "dev/cacert.pem",
 					InsecureSkipVerify: false,
 				},
 			},
@@ -380,7 +295,7 @@ func TestConfiguration(t *testing.T) {
 			plugin: &MongoDB{
 				Dsn:                "mongodb://localhost:27017",
 				AuthenticationType: "SCRAM",
-				Password:           config.NewSecret([]byte("somerandompasswordthatwontwork")),
+				Password:           "somerandompasswordthatwontwork",
 				MetricDatabase:     "telegraf_test",
 				MetricGranularity:  "seconds",
 			},
@@ -390,7 +305,7 @@ func TestConfiguration(t *testing.T) {
 			plugin: &MongoDB{
 				Dsn:                "mongodb://localhost:27017",
 				AuthenticationType: "SCRAM",
-				Username:           config.NewSecret([]byte("somerandomusernamethatwontwork")),
+				Username:           "somerandomusernamethatwontwork",
 				MetricDatabase:     "telegraf_test",
 				MetricGranularity:  "seconds",
 			},

@@ -1,33 +1,19 @@
 # RAS Daemon Input Plugin
 
-This plugin is only available on Linux (only for `386`, `amd64`, `arm` and
-`arm64` architectures).
+This plugin is only available on Linux (only for `386`, `amd64`, `arm` and `arm64` architectures).
 
-The `RAS` plugin gathers and counts errors provided by
-[RASDaemon](https://github.com/mchehab/rasdaemon).
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+The `RAS` plugin gathers and counts errors provided by [RASDaemon](https://github.com/mchehab/rasdaemon).
 
 ## Configuration
 
-```toml @sample.conf
-# RAS plugin exposes counter metrics for Machine Check Errors provided by RASDaemon (sqlite3 output is required).
-# This plugin ONLY supports Linux on 386, amd64, arm, and arm64
+```toml
 [[inputs.ras]]
   ## Optional path to RASDaemon sqlite3 database.
   ## Default: /var/lib/rasdaemon/ras-mc_event.db
   # db_path = ""
 ```
 
-In addition `RASDaemon` runs, by default, with `--enable-sqlite3` flag. In case
-of problems with SQLite3 database please verify this is still a default option.
+In addition `RASDaemon` runs, by default, with `--enable-sqlite3` flag. In case of problems with SQLite3 database please verify this is still a default option.
 
 ## Metrics
 
@@ -53,8 +39,7 @@ of problems with SQLite3 database please verify this is still a default option.
     - microcode_rom_parity_errors
     - unclassified_mce_errors
 
-Please note that `processor_base_errors` is aggregate counter measuring the
-following MCE events:
+Please note that `processor_base_errors` is aggregate counter measuring the following MCE events:
 
 - internal_timer_errors
 - smm_handler_code_access_violation_errors
@@ -66,8 +51,7 @@ following MCE events:
 
 ## Permissions
 
-This plugin requires access to SQLite3 database from `RASDaemon`. Please make
-sure that user has required permissions to this database.
+This plugin requires access to SQLite3 database from `RASDaemon`. Please make sure that user has required permissions to this database.
 
 ## Example Output
 

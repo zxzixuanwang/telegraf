@@ -1,4 +1,5 @@
 //go:build linux
+// +build linux
 
 package dpdk
 
@@ -126,7 +127,7 @@ func Test_getCommandResponse(t *testing.T) {
 		buf, err := dpdk.connector.getCommandResponse(command)
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to get connection to execute \"/\" command")
+		require.Contains(t, err.Error(), "failed to get connection to execute / command")
 		require.Equal(t, 0, len(buf))
 	})
 

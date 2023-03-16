@@ -23,9 +23,11 @@ func TestBuildDimensions(t *testing.T) {
 	testPoint := testutil.TestMetric(1)
 	dimensions := BuildDimensions(testPoint.Tags())
 
-	tagKeys := make([]string, 0, len(testPoint.Tags()))
+	tagKeys := make([]string, len(testPoint.Tags()))
+	i := 0
 	for k := range testPoint.Tags() {
-		tagKeys = append(tagKeys, k)
+		tagKeys[i] = k
+		i++
 	}
 
 	sort.Strings(tagKeys)

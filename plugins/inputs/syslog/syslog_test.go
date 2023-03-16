@@ -1,6 +1,7 @@
 package syslog
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -20,8 +21,7 @@ var defaultTime = time.Unix(0, 0)
 var maxP = uint8(191)
 var maxV = uint16(999)
 var maxTS = "2017-12-31T23:59:59.999999+00:00"
-var maxH = "abcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqr" +
-	"stuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabc"
+var maxH = "abcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabc"
 var maxA = "abcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdef"
 var maxPID = "abcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzabcdefghilmnopqrstuvzab"
 var maxMID = "abcdefghilmnopqrstuvzabcdefghilm"
@@ -35,17 +35,19 @@ func TestAddress(t *testing.T) {
 		Address: "localhost:6514",
 	}
 	err = rec.Start(&testutil.Accumulator{})
-	require.EqualError(t, err, `missing protocol within address "localhost:6514"`)
+	require.EqualError(t, err, "missing protocol within address 'localhost:6514'")
 	require.Error(t, err)
 
 	rec = &Syslog{
 		Address: "unsupported://example.com:6514",
 	}
 	err = rec.Start(&testutil.Accumulator{})
-	require.EqualError(t, err, `unknown protocol "unsupported" in "example.com:6514"`)
+	require.EqualError(t, err, "unknown protocol 'unsupported' in 'example.com:6514'")
 	require.Error(t, err)
 
-	tmpdir := t.TempDir()
+	tmpdir, err := os.MkdirTemp("", "telegraf")
+	defer os.RemoveAll(tmpdir)
+	require.NoError(t, err)
 	sock := filepath.Join(tmpdir, "syslog.TestAddress.sock")
 
 	if runtime.GOOS != "windows" {

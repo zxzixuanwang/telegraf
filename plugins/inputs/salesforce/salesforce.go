@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package salesforce
 
 import (
-	_ "embed"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -18,8 +16,24 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
+var sampleConfig = `
+  ## specify your credentials
+  ##
+  username = "your_username"
+  password = "your_password"
+  ##
+  ## (optional) security token
+  # security_token = "your_security_token"
+  ##
+  ## (optional) environment type (sandbox or production)
+  ## default is: production
+  ##
+  # environment = "production"
+  ##
+  ## (optional) API version (default: "39.0")
+  ##
+  # version = "39.0"
+`
 
 type limit struct {
 	Max       int
@@ -59,8 +73,12 @@ func NewSalesforce() *Salesforce {
 		Environment: defaultEnvironment}
 }
 
-func (*Salesforce) SampleConfig() string {
+func (s *Salesforce) SampleConfig() string {
 	return sampleConfig
+}
+
+func (s *Salesforce) Description() string {
+	return "Read API usage and limits for a Salesforce organisation"
 }
 
 // Reads limits values from Salesforce API

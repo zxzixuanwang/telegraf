@@ -57,7 +57,7 @@ func TestExec(t *testing.T) {
 				runner:  &CommandRunner{},
 			}
 
-			s := serializers.NewInfluxSerializer()
+			s, _ := serializers.NewInfluxSerializer()
 			e.SetSerializer(s)
 
 			require.NoError(t, e.Connect())
@@ -94,6 +94,7 @@ func TestTruncate(t *testing.T) {
 
 func TestExecDocs(t *testing.T) {
 	e := &Exec{}
+	e.Description()
 	e.SampleConfig()
 	require.NoError(t, e.Close())
 

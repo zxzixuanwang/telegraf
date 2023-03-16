@@ -16,6 +16,7 @@ import (
 const DefaultTemplate = "host.tags.measurement.field"
 
 var (
+	strictAllowedChars          = regexp.MustCompile(`[^a-zA-Z0-9-:._=\p{L}]`)
 	compatibleAllowedCharsName  = regexp.MustCompile(`[^ "-:\<>-\]_a-~\p{L}]`)
 	compatibleAllowedCharsValue = regexp.MustCompile(`[^ -:<-~\p{L}]`)
 	compatibleLeadingTildeDrop  = regexp.MustCompile(`^[~]*(.*)`)
@@ -38,20 +39,15 @@ type GraphiteTemplate struct {
 }
 
 type GraphiteSerializer struct {
-	Prefix             string              `json:"prefix"`
-	Template           string              `json:"template"`
-	StrictAllowedChars *regexp.Regexp      `json:"graphite_strict_sanitize_regex"`
-	TagSupport         bool                `json:"graphite_tag_support"`
-	TagSanitizeMode    string              `json:"graphite_tag_sanitize_mode"`
-	Separator          string              `json:"graphite_separator"`
-	Templates          []*GraphiteTemplate `json:"templates"`
+	Prefix          string
+	Template        string
+	TagSupport      bool
+	TagSanitizeMode string
+	Separator       string
+	Templates       []*GraphiteTemplate
 }
 
 func (s *GraphiteSerializer) Serialize(metric telegraf.Metric) ([]byte, error) {
-	if s.StrictAllowedChars == nil {
-		s.StrictAllowedChars = regexp.MustCompile(`[^a-zA-Z0-9-:._=\p{L}]`)
-	}
-
 	out := []byte{}
 
 	// Convert UnixNano to Unix timestamps
@@ -64,7 +60,7 @@ func (s *GraphiteSerializer) Serialize(metric telegraf.Metric) ([]byte, error) {
 			if fieldValue == "" {
 				continue
 			}
-			bucket := s.SerializeBucketNameWithTags(metric.Name(), metric.Tags(), s.Prefix, s.Separator, fieldName, s.TagSanitizeMode)
+			bucket := SerializeBucketNameWithTags(metric.Name(), metric.Tags(), s.Prefix, s.Separator, fieldName, s.TagSanitizeMode)
 			metricString := fmt.Sprintf("%s %s %d\n",
 				// insert "field" section of template
 				bucket,
@@ -95,7 +91,7 @@ func (s *GraphiteSerializer) Serialize(metric telegraf.Metric) ([]byte, error) {
 			}
 			metricString := fmt.Sprintf("%s %s %d\n",
 				// insert "field" section of template
-				s.strictSanitize(InsertField(bucket, fieldName)),
+				strictSanitize(InsertField(bucket, fieldName)),
 				fieldValue,
 				timestamp)
 			point := []byte(metricString)
@@ -184,7 +180,7 @@ func SerializeBucketName(
 		default:
 			// This is a tag being applied
 			if tagvalue, ok := tagsCopy[templatePart]; ok {
-				out = append(out, strings.ReplaceAll(tagvalue, ".", "_"))
+				out = append(out, strings.Replace(tagvalue, ".", "_", -1))
 				delete(tagsCopy, templatePart)
 			}
 		}
@@ -209,8 +205,9 @@ func SerializeBucketName(
 }
 
 func InitGraphiteTemplates(templates []string) ([]*GraphiteTemplate, string, error) {
+	var graphiteTemplates []*GraphiteTemplate
 	defaultTemplate := ""
-	graphiteTemplates := make([]*GraphiteTemplate, 0, len(templates))
+
 	for i, t := range templates {
 		parts := strings.Fields(t)
 
@@ -228,7 +225,7 @@ func InitGraphiteTemplates(templates []string) ([]*GraphiteTemplate, string, err
 		}
 
 		if len(parts) > 2 {
-			return nil, "", fmt.Errorf("invalid template format: %q", t)
+			return nil, "", fmt.Errorf("invalid template format: '%s'", t)
 		}
 
 		tFilter, err := filter.Compile([]string{parts[0]})
@@ -249,7 +246,7 @@ func InitGraphiteTemplates(templates []string) ([]*GraphiteTemplate, string, err
 // SerializeBucketNameWithTags will take the given measurement name and tags and
 // produce a graphite bucket. It will use the Graphite11Serializer.
 // http://graphite.readthedocs.io/en/latest/tags.html
-func (s *GraphiteSerializer) SerializeBucketNameWithTags(
+func SerializeBucketNameWithTags(
 	measurement string,
 	tags map[string]string,
 	prefix string,
@@ -266,7 +263,7 @@ func (s *GraphiteSerializer) SerializeBucketNameWithTags(
 		if tagSanitizeMode == "compatible" {
 			tagsCopy = append(tagsCopy, compatibleSanitize(k, v))
 		} else {
-			tagsCopy = append(tagsCopy, s.strictSanitize(k+"="+v))
+			tagsCopy = append(tagsCopy, strictSanitize(k+"="+v))
 		}
 	}
 	sort.Strings(tagsCopy)
@@ -281,7 +278,7 @@ func (s *GraphiteSerializer) SerializeBucketNameWithTags(
 		out += separator + field
 	}
 
-	out = s.strictSanitize(out)
+	out = strictSanitize(out)
 
 	if len(tagsCopy) > 0 {
 		out += ";" + strings.Join(tagsCopy, ";")
@@ -302,7 +299,7 @@ func InsertField(bucket, fieldName string) string {
 }
 
 func buildTags(tags map[string]string) string {
-	keys := make([]string, 0, len(tags))
+	var keys []string
 	for k := range tags {
 		keys = append(keys, k)
 	}
@@ -310,7 +307,7 @@ func buildTags(tags map[string]string) string {
 
 	var tagStr string
 	for i, k := range keys {
-		tagValue := strings.ReplaceAll(tags[k], ".", "_")
+		tagValue := strings.Replace(tags[k], ".", "_", -1)
 		if i == 0 {
 			tagStr += tagValue
 		} else {
@@ -320,13 +317,13 @@ func buildTags(tags map[string]string) string {
 	return tagStr
 }
 
-func (s *GraphiteSerializer) strictSanitize(value string) string {
+func strictSanitize(value string) string {
 	// Apply special hyphenation rules to preserve backwards compatibility
 	value = hyphenChars.Replace(value)
 	// Apply rule to drop some chars to preserve backwards compatibility
 	value = dropChars.Replace(value)
 	// Replace any remaining illegal chars
-	return s.StrictAllowedChars.ReplaceAllLiteralString(value, "_")
+	return strictAllowedChars.ReplaceAllLiteralString(value, "_")
 }
 
 func compatibleSanitize(name string, value string) string {

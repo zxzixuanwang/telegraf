@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package ravendb
 
 import (
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,9 +15,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 // defaultURL will set a default value that corresponds to the default value
 // used by RavenDB
@@ -51,8 +46,46 @@ type RavenDB struct {
 	requestURLCollection string
 }
 
-func (*RavenDB) SampleConfig() string {
+var sampleConfig = `
+  ## Node URL and port that RavenDB is listening on
+  url = "https://localhost:8080"
+
+  ## RavenDB X509 client certificate setup
+  # tls_cert = "/etc/telegraf/raven.crt"
+  # tls_key = "/etc/telegraf/raven.key"
+
+  ## Optional request timeout
+  ##
+  ## Timeout, specifies the amount of time to wait
+  ## for a server's response headers after fully writing the request and 
+  ## time limit for requests made by this client
+  # timeout = "5s"
+
+  ## List of statistics which are collected
+  # At least one is required
+  # Allowed values: server, databases, indexes, collections
+  #
+  # stats_include = ["server", "databases", "indexes", "collections"]
+
+  ## List of db where database stats are collected
+  ## If empty, all db are concerned
+  # db_stats_dbs = []
+
+  ## List of db where index status are collected
+  ## If empty, all indexes from all db are concerned
+  # index_stats_dbs = []
+
+  ## List of db where collection status are collected
+  ## If empty, all collections from all db are concerned
+  # collection_stats_dbs = []
+`
+
+func (r *RavenDB) SampleConfig() string {
 	return sampleConfig
+}
+
+func (r *RavenDB) Description() string {
+	return "Reads metrics from RavenDB servers via the Monitoring Endpoints"
 }
 
 func (r *RavenDB) Gather(acc telegraf.Accumulator) error {
@@ -126,7 +159,7 @@ func (r *RavenDB) requestJSON(u string, target interface{}) error {
 
 	r.Log.Debugf("%s: %s", u, resp.Status)
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("invalid response code to request %q: %d - %s", r.URL, resp.StatusCode, resp.Status)
+		return fmt.Errorf("invalid response code to request '%s': %d - %s", r.URL, resp.StatusCode, resp.Status)
 	}
 
 	return json.NewDecoder(resp.Body).Decode(target)

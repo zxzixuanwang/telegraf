@@ -1,32 +1,22 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package opentelemetry
 
 import (
 	"context"
-	ntls "crypto/tls"
-	_ "embed"
 	"time"
 
 	"github.com/influxdata/influxdb-observability/common"
 	"github.com/influxdata/influxdb-observability/influx2otel"
-	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
-	_ "google.golang.org/grpc/encoding/gzip" // Blank import to allow gzip encoding
-	"google.golang.org/grpc/metadata"
-
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
-	"github.com/influxdata/telegraf/internal"
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/outputs"
+	"go.opentelemetry.io/collector/model/otlpgrpc"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	// This causes the gRPC library to register gzip compression.
+	_ "google.golang.org/grpc/encoding/gzip"
+	"google.golang.org/grpc/metadata"
 )
-
-var userAgent = internal.ProductToken()
-
-//go:embed sample.conf
-var sampleConfig string
 
 type OpenTelemetry struct {
 	ServiceAddress string `toml:"service_address"`
@@ -36,24 +26,55 @@ type OpenTelemetry struct {
 	Compression string            `toml:"compression"`
 	Headers     map[string]string `toml:"headers"`
 	Attributes  map[string]string `toml:"attributes"`
-	Coralogix   *CoralogixConfig  `toml:"coralogix"`
 
 	Log telegraf.Logger `toml:"-"`
 
 	metricsConverter     *influx2otel.LineProtocolToOtelMetrics
 	grpcClientConn       *grpc.ClientConn
-	metricsServiceClient pmetricotlp.GRPCClient
+	metricsServiceClient otlpgrpc.MetricsClient
 	callOptions          []grpc.CallOption
 }
 
-type CoralogixConfig struct {
-	AppName    string `toml:"application"`
-	SubSystem  string `toml:"subsystem"`
-	PrivateKey string `toml:"private_key"`
+const sampleConfig = `
+  ## Override the default (localhost:4317) OpenTelemetry gRPC service
+  ## address:port
+  # service_address = "localhost:4317"
+
+  ## Override the default (5s) request timeout
+  # timeout = "5s"
+
+  ## Optional TLS Config.
+  ##
+  ## Root certificates for verifying server certificates encoded in PEM format.
+  # tls_ca = "/etc/telegraf/ca.pem"
+  ## The public and private keypairs for the client encoded in PEM format.
+  ## May contain intermediate certificates.
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS, but skip TLS chain and host verification.
+  # insecure_skip_verify = false
+  ## Send the specified TLS server name via SNI.
+  # tls_server_name = "foo.example.com"
+
+  ## Override the default (gzip) compression used to send data.
+  ## Supports: "gzip", "none"
+  # compression = "gzip"
+
+  ## Additional OpenTelemetry resource attributes
+  # [outputs.opentelemetry.attributes]
+  # "service.name" = "demo"
+
+  ## Additional gRPC request metadata
+  # [outputs.opentelemetry.headers]
+  # key1 = "value1"
+`
+
+func (o *OpenTelemetry) SampleConfig() string {
+	return sampleConfig
 }
 
-func (*OpenTelemetry) SampleConfig() string {
-	return sampleConfig
+func (o *OpenTelemetry) Description() string {
+	return "Send OpenTelemetry metrics over gRPC"
 }
 
 func (o *OpenTelemetry) Connect() error {
@@ -68,14 +89,6 @@ func (o *OpenTelemetry) Connect() error {
 	if o.Compression == "" {
 		o.Compression = defaultCompression
 	}
-	if o.Coralogix != nil {
-		if o.Headers == nil {
-			o.Headers = make(map[string]string)
-		}
-		o.Headers["ApplicationName"] = o.Coralogix.AppName
-		o.Headers["ApiName"] = o.Coralogix.SubSystem
-		o.Headers["Authorization"] = "Bearer " + o.Coralogix.PrivateKey
-	}
 
 	metricsConverter, err := influx2otel.NewLineProtocolToOtelMetrics(logger)
 	if err != nil {
@@ -87,19 +100,16 @@ func (o *OpenTelemetry) Connect() error {
 		return err
 	} else if tlsConfig != nil {
 		grpcTLSDialOption = grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig))
-	} else if o.Coralogix != nil {
-		// For coralogix, we enforce GRPC connection with TLS
-		grpcTLSDialOption = grpc.WithTransportCredentials(credentials.NewTLS(&ntls.Config{}))
 	} else {
-		grpcTLSDialOption = grpc.WithTransportCredentials(insecure.NewCredentials())
+		grpcTLSDialOption = grpc.WithInsecure()
 	}
 
-	grpcClientConn, err := grpc.Dial(o.ServiceAddress, grpcTLSDialOption, grpc.WithUserAgent(userAgent))
+	grpcClientConn, err := grpc.Dial(o.ServiceAddress, grpcTLSDialOption)
 	if err != nil {
 		return err
 	}
 
-	metricsServiceClient := pmetricotlp.NewGRPCClient(grpcClientConn)
+	metricsServiceClient := otlpgrpc.NewMetricsClient(grpcClientConn)
 
 	o.metricsConverter = metricsConverter
 	o.grpcClientConn = grpcClientConn
@@ -147,7 +157,8 @@ func (o *OpenTelemetry) Write(metrics []telegraf.Metric) error {
 		}
 	}
 
-	md := pmetricotlp.NewExportRequestFromMetrics(batch.GetMetrics())
+	md := otlpgrpc.NewMetricsRequest()
+	md.SetMetrics(batch.GetMetrics())
 	if md.Metrics().ResourceMetrics().Len() == 0 {
 		return nil
 	}
@@ -155,7 +166,7 @@ func (o *OpenTelemetry) Write(metrics []telegraf.Metric) error {
 	if len(o.Attributes) > 0 {
 		for i := 0; i < md.Metrics().ResourceMetrics().Len(); i++ {
 			for k, v := range o.Attributes {
-				md.Metrics().ResourceMetrics().At(i).Resource().Attributes().PutStr(k, v)
+				md.Metrics().ResourceMetrics().At(i).Resource().Attributes().UpsertString(k, v)
 			}
 		}
 	}

@@ -3,20 +3,9 @@
 The Beat plugin will collect metrics from the given Beat instances. It is
 known to work with Filebeat and Kafkabeat.
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
-# Read metrics exposed by Beat
-[[inputs.beat]]
+```toml
   ## An URL from which to read Beat-formatted JSON
   ## Default is "http://127.0.0.1:5066".
   url = "http://127.0.0.1:5066"
@@ -50,7 +39,7 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   # insecure_skip_verify = false
 ```
 
-## Metrics
+## Measurements & Fields
 
 - **beat**
   - Fields:
@@ -144,7 +133,7 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
     - beat_name
     - beat_version
 
-## Example Output
+## Example
 
 ```shell
 $ telegraf --input-filter beat --test

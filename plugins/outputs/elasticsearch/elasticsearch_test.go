@@ -2,7 +2,6 @@ package elasticsearch
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -10,46 +9,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/go-connections/nat"
-	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go/wait"
-
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/testutil"
+	"github.com/stretchr/testify/require"
 )
-
-const servicePort = "9200"
-
-func launchTestContainer(t *testing.T) *testutil.Container {
-	container := testutil.Container{
-		Image:        "elasticsearch:6.8.23",
-		ExposedPorts: []string{servicePort},
-		Env: map[string]string{
-			"discovery.type": "single-node",
-		},
-		WaitingFor: wait.ForAll(
-			wait.ForLog("] mode [basic] - valid"),
-			wait.ForListeningPort(nat.Port(servicePort)),
-		),
-	}
-	err := container.Start()
-	require.NoError(t, err, "failed to start container")
-
-	return &container
-}
 
 func TestConnectAndWriteIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	container := launchTestContainer(t)
-	defer container.Terminate()
-
-	urls := []string{
-		fmt.Sprintf("http://%s:%s", container.Address, container.Ports[servicePort]),
-	}
+	urls := []string{"http://" + testutil.GetLocalHost() + ":9200"}
 
 	e := &Elasticsearch{
 		URLs:                urls,
@@ -60,7 +31,6 @@ func TestConnectAndWriteIntegration(t *testing.T) {
 		TemplateName:        "telegraf",
 		OverwriteTemplate:   false,
 		HealthCheckInterval: config.Duration(time.Second * 10),
-		HealthCheckTimeout:  config.Duration(time.Second * 1),
 		Log:                 testutil.Logger{},
 	}
 
@@ -73,17 +43,12 @@ func TestConnectAndWriteIntegration(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestConnectAndWriteMetricWithNaNValueEmptyIntegration(t *testing.T) {
+func TestConnectAndWriteMetricWithNaNValueEmpty(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	container := launchTestContainer(t)
-	defer container.Terminate()
-
-	urls := []string{
-		fmt.Sprintf("http://%s:%s", container.Address, container.Ports[servicePort]),
-	}
+	urls := []string{"http://" + testutil.GetLocalHost() + ":9200"}
 
 	e := &Elasticsearch{
 		URLs:                urls,
@@ -93,7 +58,6 @@ func TestConnectAndWriteMetricWithNaNValueEmptyIntegration(t *testing.T) {
 		TemplateName:        "telegraf",
 		OverwriteTemplate:   false,
 		HealthCheckInterval: config.Duration(time.Second * 10),
-		HealthCheckTimeout:  config.Duration(time.Second * 1),
 		Log:                 testutil.Logger{},
 	}
 
@@ -114,17 +78,12 @@ func TestConnectAndWriteMetricWithNaNValueEmptyIntegration(t *testing.T) {
 	}
 }
 
-func TestConnectAndWriteMetricWithNaNValueNoneIntegration(t *testing.T) {
+func TestConnectAndWriteMetricWithNaNValueNone(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	container := launchTestContainer(t)
-	defer container.Terminate()
-
-	urls := []string{
-		fmt.Sprintf("http://%s:%s", container.Address, container.Ports[servicePort]),
-	}
+	urls := []string{"http://" + testutil.GetLocalHost() + ":9200"}
 
 	e := &Elasticsearch{
 		URLs:                urls,
@@ -134,7 +93,6 @@ func TestConnectAndWriteMetricWithNaNValueNoneIntegration(t *testing.T) {
 		TemplateName:        "telegraf",
 		OverwriteTemplate:   false,
 		HealthCheckInterval: config.Duration(time.Second * 10),
-		HealthCheckTimeout:  config.Duration(time.Second * 1),
 		FloatHandling:       "none",
 		Log:                 testutil.Logger{},
 	}
@@ -156,17 +114,12 @@ func TestConnectAndWriteMetricWithNaNValueNoneIntegration(t *testing.T) {
 	}
 }
 
-func TestConnectAndWriteMetricWithNaNValueDropIntegration(t *testing.T) {
+func TestConnectAndWriteMetricWithNaNValueDrop(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	container := launchTestContainer(t)
-	defer container.Terminate()
-
-	urls := []string{
-		fmt.Sprintf("http://%s:%s", container.Address, container.Ports[servicePort]),
-	}
+	urls := []string{"http://" + testutil.GetLocalHost() + ":9200"}
 
 	e := &Elasticsearch{
 		URLs:                urls,
@@ -176,7 +129,6 @@ func TestConnectAndWriteMetricWithNaNValueDropIntegration(t *testing.T) {
 		TemplateName:        "telegraf",
 		OverwriteTemplate:   false,
 		HealthCheckInterval: config.Duration(time.Second * 10),
-		HealthCheckTimeout:  config.Duration(time.Second * 1),
 		FloatHandling:       "drop",
 		Log:                 testutil.Logger{},
 	}
@@ -198,73 +150,39 @@ func TestConnectAndWriteMetricWithNaNValueDropIntegration(t *testing.T) {
 	}
 }
 
-func TestConnectAndWriteMetricWithNaNValueReplacementIntegration(t *testing.T) {
+func TestConnectAndWriteMetricWithNaNValueReplacement(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	tests := []struct {
-		floatHandle      string
-		floatReplacement float64
-		expectError      bool
-	}{
-		{
-			"none",
-			0.0,
-			true,
-		},
-		{
-			"drop",
-			0.0,
-			false,
-		},
-		{
-			"replace",
-			0.0,
-			false,
-		},
+	urls := []string{"http://" + testutil.GetLocalHost() + ":9200"}
+
+	e := &Elasticsearch{
+		URLs:                urls,
+		IndexName:           "test-%Y.%m.%d",
+		Timeout:             config.Duration(time.Second * 5),
+		ManageTemplate:      true,
+		TemplateName:        "telegraf",
+		OverwriteTemplate:   false,
+		HealthCheckInterval: config.Duration(time.Second * 10),
+		FloatHandling:       "3.1415",
+		Log:                 testutil.Logger{},
 	}
 
-	container := launchTestContainer(t)
-	defer container.Terminate()
-
-	urls := []string{
-		fmt.Sprintf("http://%s:%s", container.Address, container.Ports[servicePort]),
+	metrics := []telegraf.Metric{
+		testutil.TestMetric(math.NaN()),
+		testutil.TestMetric(math.Inf(1)),
+		testutil.TestMetric(math.Inf(-1)),
 	}
 
-	for _, test := range tests {
-		e := &Elasticsearch{
-			URLs:                urls,
-			IndexName:           "test-%Y.%m.%d",
-			Timeout:             config.Duration(time.Second * 5),
-			ManageTemplate:      true,
-			TemplateName:        "telegraf",
-			OverwriteTemplate:   false,
-			HealthCheckInterval: config.Duration(time.Second * 10),
-			HealthCheckTimeout:  config.Duration(time.Second * 1),
-			FloatHandling:       test.floatHandle,
-			FloatReplacement:    test.floatReplacement,
-			Log:                 testutil.Logger{},
-		}
+	// Verify that we can connect to Elasticsearch
+	err := e.Connect()
+	require.NoError(t, err)
 
-		metrics := []telegraf.Metric{
-			testutil.TestMetric(math.NaN()),
-			testutil.TestMetric(math.Inf(1)),
-			testutil.TestMetric(math.Inf(-1)),
-		}
-
-		err := e.Connect()
+	// Verify that we can fail for metric with unhandled NaN/inf/-inf values
+	for _, m := range metrics {
+		err = e.Write([]telegraf.Metric{m})
 		require.NoError(t, err)
-
-		for _, m := range metrics {
-			err = e.Write([]telegraf.Metric{m})
-
-			if test.expectError {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-			}
-		}
 	}
 }
 
@@ -273,12 +191,7 @@ func TestTemplateManagementEmptyTemplateIntegration(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	container := launchTestContainer(t)
-	defer container.Terminate()
-
-	urls := []string{
-		fmt.Sprintf("http://%s:%s", container.Address, container.Ports[servicePort]),
-	}
+	urls := []string{"http://" + testutil.GetLocalHost() + ":9200"}
 
 	ctx := context.Background()
 
@@ -302,12 +215,7 @@ func TestTemplateManagementIntegration(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	container := launchTestContainer(t)
-	defer container.Terminate()
-
-	urls := []string{
-		fmt.Sprintf("http://%s:%s", container.Address, container.Ports[servicePort]),
-	}
+	urls := []string{"http://" + testutil.GetLocalHost() + ":9200"}
 
 	e := &Elasticsearch{
 		URLs:              urls,
@@ -335,12 +243,7 @@ func TestTemplateInvalidIndexPatternIntegration(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	container := launchTestContainer(t)
-	defer container.Terminate()
-
-	urls := []string{
-		fmt.Sprintf("http://%s:%s", container.Address, container.Ports[servicePort]),
-	}
+	urls := []string{"http://" + testutil.GetLocalHost() + ":9200"}
 
 	e := &Elasticsearch{
 		URLs:              urls,
@@ -509,149 +412,6 @@ func TestGetIndexName(t *testing.T) {
 	}
 }
 
-func TestGetPipelineName(t *testing.T) {
-	e := &Elasticsearch{
-		UsePipeline:     "{{es-pipeline}}",
-		DefaultPipeline: "myDefaultPipeline",
-		Log:             testutil.Logger{},
-	}
-	e.pipelineName, e.pipelineTagKeys = e.GetTagKeys(e.UsePipeline)
-
-	tests := []struct {
-		EventTime       time.Time
-		Tags            map[string]string
-		PipelineTagKeys []string
-		Expected        string
-	}{
-		{
-			time.Date(2014, 12, 01, 23, 30, 00, 00, time.UTC),
-			map[string]string{"tag1": "value1", "tag2": "value2"},
-			[]string{},
-			"myDefaultPipeline",
-		},
-		{
-			time.Date(2014, 12, 01, 23, 30, 00, 00, time.UTC),
-			map[string]string{"tag1": "value1", "tag2": "value2"},
-			[]string{},
-			"myDefaultPipeline",
-		},
-		{
-			time.Date(2014, 12, 01, 23, 30, 00, 00, time.UTC),
-			map[string]string{"tag1": "value1", "es-pipeline": "myOtherPipeline"},
-			[]string{},
-			"myOtherPipeline",
-		},
-		{
-			time.Date(2014, 12, 01, 23, 30, 00, 00, time.UTC),
-			map[string]string{"tag1": "value1", "es-pipeline": "pipeline2"},
-			[]string{},
-			"pipeline2",
-		},
-	}
-	for _, test := range tests {
-		pipelineName := e.getPipelineName(e.pipelineName, e.pipelineTagKeys, test.Tags)
-		require.Equal(t, test.Expected, pipelineName)
-	}
-
-	// Setup testing for testing no pipeline set. All the tests in this case should return "".
-	e = &Elasticsearch{
-		Log: testutil.Logger{},
-	}
-	e.pipelineName, e.pipelineTagKeys = e.GetTagKeys(e.UsePipeline)
-
-	for _, test := range tests {
-		pipelineName := e.getPipelineName(e.pipelineName, e.pipelineTagKeys, test.Tags)
-		require.Equal(t, "", pipelineName)
-	}
-}
-
-func TestPipelineConfigs(t *testing.T) {
-	tests := []struct {
-		EventTime       time.Time
-		Tags            map[string]string
-		PipelineTagKeys []string
-		Expected        string
-		Elastic         *Elasticsearch
-	}{
-		{
-			time.Date(2014, 12, 01, 23, 30, 00, 00, time.UTC),
-			map[string]string{"tag1": "value1", "tag2": "value2"},
-			[]string{},
-			"",
-			&Elasticsearch{
-				Log: testutil.Logger{},
-			},
-		},
-		{
-			time.Date(2014, 12, 01, 23, 30, 00, 00, time.UTC),
-			map[string]string{"tag1": "value1", "tag2": "value2"},
-			[]string{},
-			"",
-			&Elasticsearch{
-				DefaultPipeline: "myDefaultPipeline",
-				Log:             testutil.Logger{},
-			},
-		},
-		{
-			time.Date(2014, 12, 01, 23, 30, 00, 00, time.UTC),
-			map[string]string{"tag1": "value1", "es-pipeline": "myOtherPipeline"},
-			[]string{},
-			"myDefaultPipeline",
-			&Elasticsearch{
-				UsePipeline: "myDefaultPipeline",
-				Log:         testutil.Logger{},
-			},
-		},
-		{
-			time.Date(2014, 12, 01, 23, 30, 00, 00, time.UTC),
-			map[string]string{"tag1": "value1", "es-pipeline": "pipeline2"},
-			[]string{},
-			"",
-			&Elasticsearch{
-				DefaultPipeline: "myDefaultPipeline",
-				Log:             testutil.Logger{},
-			},
-		},
-		{
-			time.Date(2014, 12, 01, 23, 30, 00, 00, time.UTC),
-			map[string]string{"tag1": "value1", "es-pipeline": "pipeline2"},
-			[]string{},
-			"pipeline2",
-			&Elasticsearch{
-				UsePipeline: "{{es-pipeline}}",
-				Log:         testutil.Logger{},
-			},
-		},
-		{
-			time.Date(2014, 12, 01, 23, 30, 00, 00, time.UTC),
-			map[string]string{"tag1": "value1", "es-pipeline": "pipeline2"},
-			[]string{},
-			"value1-pipeline2",
-			&Elasticsearch{
-				UsePipeline: "{{tag1}}-{{es-pipeline}}",
-				Log:         testutil.Logger{},
-			},
-		},
-		{
-			time.Date(2014, 12, 01, 23, 30, 00, 00, time.UTC),
-			map[string]string{"tag1": "value1"},
-			[]string{},
-			"",
-			&Elasticsearch{
-				UsePipeline: "{{es-pipeline}}",
-				Log:         testutil.Logger{},
-			},
-		},
-	}
-
-	for _, test := range tests {
-		e := test.Elastic
-		e.pipelineName, e.pipelineTagKeys = e.GetTagKeys(e.UsePipeline)
-		pipelineName := e.getPipelineName(e.pipelineName, e.pipelineTagKeys, test.Tags)
-		require.Equal(t, test.Expected, pipelineName)
-	}
-}
-
 func TestRequestHeaderWhenGzipIsEnabled(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -712,41 +472,6 @@ func TestRequestHeaderWhenGzipIsDisabled(t *testing.T) {
 		EnableGzip:     false,
 		ManageTemplate: false,
 		Log:            testutil.Logger{},
-	}
-
-	err := e.Connect()
-	require.NoError(t, err)
-
-	err = e.Write(testutil.MockMetrics())
-	require.NoError(t, err)
-}
-
-func TestAuthorizationHeaderWhenBearerTokenIsPresent(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/_bulk":
-			require.Equal(t, "Bearer 0123456789abcdef", r.Header.Get("Authorization"))
-			_, err := w.Write([]byte("{}"))
-			require.NoError(t, err)
-			return
-		default:
-			_, err := w.Write([]byte(`{"version": {"number": "7.8"}}`))
-			require.NoError(t, err)
-			return
-		}
-	}))
-	defer ts.Close()
-
-	urls := []string{"http://" + ts.Listener.Addr().String()}
-
-	e := &Elasticsearch{
-		URLs:            urls,
-		IndexName:       "{{host}}-%Y.%m.%d",
-		Timeout:         config.Duration(time.Second * 5),
-		EnableGzip:      false,
-		ManageTemplate:  false,
-		Log:             testutil.Logger{},
-		AuthBearerToken: config.NewSecret([]byte("0123456789abcdef")),
 	}
 
 	err := e.Connect()

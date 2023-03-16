@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/internal"
 	"github.com/influxdata/telegraf/testutil"
 )
@@ -88,7 +87,7 @@ func TestStatusCode(t *testing.T) {
 			plugin: &Loki{
 				Domain: u.String(),
 			},
-			statusCode: http.StatusSwitchingProtocols,
+			statusCode: 103,
 			errFunc: func(t *testing.T, err error) {
 				require.Error(t, err)
 			},
@@ -251,17 +250,22 @@ func TestBasicAuth(t *testing.T) {
 	require.NoError(t, err)
 
 	tests := []struct {
-		name     string
-		username string
-		password string
+		name   string
+		plugin *Loki
 	}{
 		{
 			name: "default",
+			plugin: &Loki{
+				Domain: u.String(),
+			},
 		},
 		{
-			name:     "username and password",
-			username: "username",
-			password: "pa$$word",
+			name: "username and password",
+			plugin: &Loki{
+				Domain:   u.String(),
+				Username: "username",
+				Password: "pa$$word",
+			},
 		},
 	}
 
@@ -269,19 +273,16 @@ func TestBasicAuth(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ts.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				username, password, _ := r.BasicAuth()
-				require.Equal(t, tt.username, username)
-				require.Equal(t, tt.password, password)
+				require.Equal(t, tt.plugin.Username, username)
+				require.Equal(t, tt.plugin.Password, password)
 				w.WriteHeader(http.StatusOK)
 			})
 
-			plugin := &Loki{
-				Domain:   u.String(),
-				Username: config.NewSecret([]byte(tt.username)),
-				Password: config.NewSecret([]byte(tt.password)),
-			}
-			require.NoError(t, plugin.Connect())
+			err = tt.plugin.Connect()
+			require.NoError(t, err)
 
-			require.NoError(t, plugin.Write([]telegraf.Metric{getMetric()}))
+			err = tt.plugin.Write([]telegraf.Metric{getMetric()})
+			require.NoError(t, err)
 		})
 	}
 }

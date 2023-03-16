@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package activemq
 
 import (
-	_ "embed"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -19,12 +17,9 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 type ActiveMQ struct {
-	Server          string          `toml:"server" deprecated:"1.11.0;use 'url' instead"`
-	Port            int             `toml:"port" deprecated:"1.11.0;use 'url' instead"`
+	Server          string          `toml:"server"`
+	Port            int             `toml:"port"`
 	URL             string          `toml:"url"`
 	Username        string          `toml:"username"`
 	Password        string          `toml:"password"`
@@ -87,6 +82,41 @@ type Stats struct {
 	DequeueCounter      int      `xml:"dequeueCounter,attr"`
 }
 
+var sampleConfig = `
+  ## ActiveMQ WebConsole URL
+  url = "http://127.0.0.1:8161"
+
+  ## Required ActiveMQ Endpoint
+  ##   deprecated in 1.11; use the url option
+  # server = "127.0.0.1"
+  # port = 8161
+
+  ## Credentials for basic HTTP authentication
+  # username = "admin"
+  # password = "admin"
+
+  ## Required ActiveMQ webadmin root path
+  # webadmin = "admin"
+
+  ## Maximum time to receive response.
+  # response_timeout = "5s"
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+  `
+
+func (a *ActiveMQ) Description() string {
+	return "Gather ActiveMQ metrics"
+}
+
+func (a *ActiveMQ) SampleConfig() string {
+	return sampleConfig
+}
+
 func (a *ActiveMQ) createHTTPClient() (*http.Client, error) {
 	tlsCfg, err := a.ClientConfig.TLSConfig()
 	if err != nil {
@@ -101,10 +131,6 @@ func (a *ActiveMQ) createHTTPClient() (*http.Client, error) {
 	}
 
 	return client, nil
-}
-
-func (*ActiveMQ) SampleConfig() string {
-	return sampleConfig
 }
 
 func (a *ActiveMQ) Init() error {
@@ -229,7 +255,7 @@ func (a *ActiveMQ) Gather(acc telegraf.Accumulator) error {
 	queues := Queues{}
 	err = xml.Unmarshal(dataQueues, &queues)
 	if err != nil {
-		return fmt.Errorf("queues XML unmarshal error: %w", err)
+		return fmt.Errorf("queues XML unmarshal error: %v", err)
 	}
 
 	dataTopics, err := a.GetMetrics(a.TopicsURL())
@@ -239,7 +265,7 @@ func (a *ActiveMQ) Gather(acc telegraf.Accumulator) error {
 	topics := Topics{}
 	err = xml.Unmarshal(dataTopics, &topics)
 	if err != nil {
-		return fmt.Errorf("topics XML unmarshal error: %w", err)
+		return fmt.Errorf("topics XML unmarshal error: %v", err)
 	}
 
 	dataSubscribers, err := a.GetMetrics(a.SubscribersURL())
@@ -249,7 +275,7 @@ func (a *ActiveMQ) Gather(acc telegraf.Accumulator) error {
 	subscribers := Subscribers{}
 	err = xml.Unmarshal(dataSubscribers, &subscribers)
 	if err != nil {
-		return fmt.Errorf("subscribers XML unmarshal error: %w", err)
+		return fmt.Errorf("subscribers XML unmarshal error: %v", err)
 	}
 
 	a.GatherQueuesMetrics(acc, queues)

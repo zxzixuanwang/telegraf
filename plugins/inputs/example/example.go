@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package example
 
 import (
-	_ "embed"
 	"fmt"
 	"math/rand"
 	"time"
@@ -11,9 +9,6 @@ import (
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 // Example struct should be named the same as the Plugin
 type Example struct {
@@ -29,10 +24,6 @@ type Example struct {
 	// Example of passing a duration option allowing the format of e.g. "100ms", "5m" or "1h"
 	Timeout config.Duration `toml:"timeout"`
 
-	// Example of passing a password/token/username or other sensitive data with the secret-store
-	UserName config.Secret `toml:"username"`
-	Password config.Secret `toml:"password"`
-
 	// Telegraf logging facility
 	// The exact name is important to allow automatic initialization by telegraf.
 	Log telegraf.Logger `toml:"-"`
@@ -41,7 +32,34 @@ type Example struct {
 	count int64
 }
 
-func (*Example) SampleConfig() string {
+// Usually the default (example) configuration is contained in this constant.
+// Please use '## '' to denote comments and '# ' to specify default settings and start each line with two spaces.
+const sampleConfig = `
+  ## Device name used as a tag
+  ## This is a mandatory option that needs to be set by the user, so we do not
+  ## comment it.
+  device_name = ""
+
+  ## Number of fields contained in the output
+  ## This should be greater than zero and less then ten.
+	## Here, two is the default, so we comment the option with the default value shown.
+  # number_fields = 2
+
+  ## Enable setting the field(s) to random values
+  ## By default, the field values are set to zero.
+  # enable_random = false
+
+  ## Specify a duration allowing time-unit suffixes ('ns','ms', 's', 'm', etc.)
+	# timeout = "100ms"
+`
+
+// Description will appear directly above the plugin definition in the config file
+func (m *Example) Description() string {
+	return `This is an example plugin`
+}
+
+// SampleConfig will populate the sample configuration portion of the plugin's configuration
+func (m *Example) SampleConfig() string {
 	return sampleConfig
 }
 
@@ -59,19 +77,6 @@ func (m *Example) Init() error {
 		m.Log.Debugf("Setting number of fields to default from invalid value %d", m.NumberFields)
 		m.NumberFields = 2
 	}
-
-	// Check using the secret-store
-	if m.UserName.Empty() {
-		// For example, use a default value
-		m.Log.Debug("using default username")
-	}
-
-	// Retrieve credentials using the secret-store
-	password, err := m.Password.Get()
-	if err != nil {
-		return fmt.Errorf("getting password failed: %w", err)
-	}
-	defer config.ReleaseSecret(password)
 
 	// Initialze your internal states
 	m.count = 1

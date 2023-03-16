@@ -1,20 +1,16 @@
 package filestack
 
 import (
-	"io"
+	"github.com/influxdata/telegraf/testutil"
 	"net/http"
 	"net/http/httptest"
-	"os"
+
 	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/require"
-
-	"github.com/influxdata/telegraf/testutil"
 )
 
-func postWebhooks(md *FilestackWebhook, eventBodyFile io.Reader) *httptest.ResponseRecorder {
-	req, _ := http.NewRequest("POST", "/filestack", eventBodyFile)
+func postWebhooks(md *FilestackWebhook, eventBody string) *httptest.ResponseRecorder {
+	req, _ := http.NewRequest("POST", "/filestack", strings.NewReader(eventBody))
 	w := httptest.NewRecorder()
 
 	md.eventHandler(w, req)
@@ -25,7 +21,7 @@ func postWebhooks(md *FilestackWebhook, eventBodyFile io.Reader) *httptest.Respo
 func TestDialogEvent(t *testing.T) {
 	var acc testutil.Accumulator
 	fs := &FilestackWebhook{Path: "/filestack", acc: &acc}
-	resp := postWebhooks(fs, getFile(t, "testdata/dialog_open.json"))
+	resp := postWebhooks(fs, DialogOpenJSON())
 	if resp.Code != http.StatusOK {
 		t.Errorf("POST returned HTTP status code %v.\nExpected %v", resp.Code, http.StatusOK)
 	}
@@ -43,7 +39,7 @@ func TestDialogEvent(t *testing.T) {
 
 func TestParseError(t *testing.T) {
 	fs := &FilestackWebhook{Path: "/filestack"}
-	resp := postWebhooks(fs, strings.NewReader(""))
+	resp := postWebhooks(fs, "")
 	if resp.Code != http.StatusBadRequest {
 		t.Errorf("POST returned HTTP status code %v.\nExpected %v", resp.Code, http.StatusBadRequest)
 	}
@@ -52,7 +48,7 @@ func TestParseError(t *testing.T) {
 func TestUploadEvent(t *testing.T) {
 	var acc testutil.Accumulator
 	fs := &FilestackWebhook{Path: "/filestack", acc: &acc}
-	resp := postWebhooks(fs, getFile(t, "testdata/upload.json"))
+	resp := postWebhooks(fs, UploadJSON())
 	if resp.Code != http.StatusOK {
 		t.Errorf("POST returned HTTP status code %v.\nExpected %v", resp.Code, http.StatusOK)
 	}
@@ -71,15 +67,8 @@ func TestUploadEvent(t *testing.T) {
 func TestVideoConversionEvent(t *testing.T) {
 	var acc testutil.Accumulator
 	fs := &FilestackWebhook{Path: "/filestack", acc: &acc}
-	resp := postWebhooks(fs, getFile(t, "testdata/video_conversion.json"))
+	resp := postWebhooks(fs, VideoConversionJSON())
 	if resp.Code != http.StatusBadRequest {
 		t.Errorf("POST returned HTTP status code %v.\nExpected %v", resp.Code, http.StatusBadRequest)
 	}
-}
-
-func getFile(t *testing.T, filePath string) io.Reader {
-	file, err := os.Open(filePath)
-	require.NoErrorf(t, err, "could not read from file %s", filePath)
-
-	return file
 }

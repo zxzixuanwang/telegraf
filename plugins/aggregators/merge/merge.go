@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
-package merge
+package seriesgrouper
 
 import (
-	_ "embed"
 	"time"
 
 	"github.com/influxdata/telegraf"
@@ -10,20 +8,30 @@ import (
 	"github.com/influxdata/telegraf/plugins/aggregators"
 )
 
-//go:embed sample.conf
-var sampleConfig string
+const (
+	description  = "Merge metrics into multifield metrics by series key"
+	sampleConfig = `
+  ## If true, the original metric will be dropped by the
+  ## aggregator and will not get sent to the output plugins.
+  drop_original = true
+`
+)
 
 type Merge struct {
 	grouper *metric.SeriesGrouper
 }
 
-func (*Merge) SampleConfig() string {
-	return sampleConfig
-}
-
 func (a *Merge) Init() error {
 	a.grouper = metric.NewSeriesGrouper()
 	return nil
+}
+
+func (a *Merge) Description() string {
+	return description
+}
+
+func (a *Merge) SampleConfig() string {
+	return sampleConfig
 }
 
 func (a *Merge) Add(m telegraf.Metric) {

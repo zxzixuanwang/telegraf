@@ -1,4 +1,4 @@
-package port_name
+package portname
 
 import (
 	"strings"

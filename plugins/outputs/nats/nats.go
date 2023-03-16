@@ -1,31 +1,25 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package nats
 
 import (
-	_ "embed"
 	"fmt"
 	"strings"
 
 	"github.com/nats-io/nats.go"
 
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/outputs"
 	"github.com/influxdata/telegraf/plugins/serializers"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 type NATS struct {
-	Servers     []string      `toml:"servers"`
-	Secure      bool          `toml:"secure"`
-	Name        string        `toml:"name"`
-	Username    config.Secret `toml:"username"`
-	Password    config.Secret `toml:"password"`
-	Credentials string        `toml:"credentials"`
-	Subject     string        `toml:"subject"`
+	Servers     []string `toml:"servers"`
+	Secure      bool     `toml:"secure"`
+	Name        string   `toml:"name"`
+	Username    string   `toml:"username"`
+	Password    string   `toml:"password"`
+	Credentials string   `toml:"credentials"`
+	Subject     string   `toml:"subject"`
 
 	tls.ClientConfig
 
@@ -35,9 +29,39 @@ type NATS struct {
 	serializer serializers.Serializer
 }
 
-func (*NATS) SampleConfig() string {
-	return sampleConfig
-}
+var sampleConfig = `
+  ## URLs of NATS servers
+  servers = ["nats://localhost:4222"]
+
+  ## Optional client name
+  # name = ""
+
+  ## Optional credentials
+  # username = ""
+  # password = ""
+
+  ## Optional NATS 2.0 and NATS NGS compatible user credentials
+  # credentials = "/etc/telegraf/nats.creds"
+
+  ## NATS subject for producer messages
+  subject = "telegraf"
+
+  ## Use Transport Layer Security
+  # secure = false
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+
+  ## Data format to output.
+  ## Each data format has its own unique set of configuration options, read
+  ## more about them here:
+  ## https://github.com/influxdata/telegraf/blob/master/docs/DATA_FORMATS_OUTPUT.md
+  data_format = "influx"
+`
 
 func (n *NATS) SetSerializer(serializer serializers.Serializer) {
 	n.serializer = serializer
@@ -51,19 +75,8 @@ func (n *NATS) Connect() error {
 	}
 
 	// override authentication, if any was specified
-	if !n.Username.Empty() && !n.Password.Empty() {
-		username, err := n.Username.Get()
-		if err != nil {
-			return fmt.Errorf("getting username failed: %w", err)
-		}
-		password, err := n.Password.Get()
-		if err != nil {
-			config.ReleaseSecret(username)
-			return fmt.Errorf("getting password failed: %w", err)
-		}
-		opts = append(opts, nats.UserInfo(string(username), string(password)))
-		config.ReleaseSecret(username)
-		config.ReleaseSecret(password)
+	if n.Username != "" && n.Password != "" {
+		opts = append(opts, nats.UserInfo(n.Username, n.Password))
 	}
 
 	if n.Credentials != "" {
@@ -94,6 +107,14 @@ func (n *NATS) Close() error {
 	return nil
 }
 
+func (n *NATS) SampleConfig() string {
+	return sampleConfig
+}
+
+func (n *NATS) Description() string {
+	return "Send telegraf measurements to NATS"
+}
+
 func (n *NATS) Write(metrics []telegraf.Metric) error {
 	if len(metrics) == 0 {
 		return nil
@@ -108,7 +129,7 @@ func (n *NATS) Write(metrics []telegraf.Metric) error {
 
 		err = n.conn.Publish(n.Subject, buf)
 		if err != nil {
-			return fmt.Errorf("FAILED to send NATS message: %w", err)
+			return fmt.Errorf("FAILED to send NATS message: %s", err)
 		}
 	}
 	return nil

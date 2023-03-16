@@ -1,8 +1,10 @@
 # PuppetAgent Input Plugin
 
-The puppetagent plugin collects variables outputted from the
-'last_run_summary.yaml' file usually located in `/var/lib/puppet/state/`
-[PuppetAgent Runs][1].
+## Description
+
+The puppetagent plugin collects variables outputted from the 'last_run_summary.yaml' file
+usually located in `/var/lib/puppet/state/`
+[PuppetAgent Runs](https://puppet.com/blog/puppet-monitoring-how-to-monitor-success-or-failure-of-puppet-runs/).
 
 ```sh
 cat /var/lib/puppet/state/last_run_summary.yaml
@@ -75,27 +77,7 @@ jcross@pit-devops-02 ~ >sudo ./telegraf_linux_amd64 --input-filter puppetagent -
 > [] puppetagent_version_puppet value=3.7.5
 ```
 
-[1]: https://puppet.com/blog/puppet-monitoring-how-to-monitor-success-or-failure-of-puppet-runs/
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
-## Configuration
-
-```toml @sample.conf
-# Reads last_run_summary.yaml file and converts to measurements
-[[inputs.puppetagent]]
-  ## Location of puppet last run summary file
-  location = "/var/lib/puppet/state/last_run_summary.yaml"
-```
-
-## Metrics
+## Measurements
 
 ### PuppetAgent int64 measurements
 
@@ -164,5 +146,3 @@ Meta:
 Measurement names:
 
 - puppetagent_version_puppet
-
-## Example Output

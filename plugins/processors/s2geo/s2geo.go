@@ -1,18 +1,12 @@
-//go:generate ../../../tools/readme_config_includer/generator
-package s2geo
+package geo
 
 import (
-	_ "embed"
 	"fmt"
 
 	"github.com/golang/geo/s2"
-
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/processors"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 type Geo struct {
 	LatField  string `toml:"lat_field"`
@@ -21,8 +15,25 @@ type Geo struct {
 	CellLevel int    `toml:"cell_level"`
 }
 
-func (*Geo) SampleConfig() string {
-	return sampleConfig
+var SampleConfig = `
+  ## The name of the lat and lon fields containing WGS-84 latitude and
+  ## longitude in decimal degrees.
+  # lat_field = "lat"
+  # lon_field = "lon"
+
+  ## New tag to create
+  # tag_key = "s2_cell_id"
+
+  ## Cell level (see https://s2geometry.io/resources/s2cell_statistics.html)
+  # cell_level = 9
+`
+
+func (g *Geo) SampleConfig() string {
+	return SampleConfig
+}
+
+func (g *Geo) Description() string {
+	return "Add the S2 Cell ID as a tag based on latitude and longitude fields"
 }
 
 func (g *Geo) Init() error {

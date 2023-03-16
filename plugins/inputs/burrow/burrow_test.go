@@ -16,7 +16,7 @@ import (
 // remap uri to json file, eg: /v3/kafka -> ./testdata/v3_kafka.json
 func getResponseJSON(requestURI string) ([]byte, int) {
 	uri := strings.TrimLeft(requestURI, "/")
-	mappedFile := strings.ReplaceAll(uri, "/", "_")
+	mappedFile := strings.Replace(uri, "/", "_", -1)
 	jsonFile := fmt.Sprintf("./testdata/%s.json", mappedFile)
 
 	code := 200
@@ -37,7 +37,9 @@ func getHTTPServer() *httptest.Server {
 		body, code := getResponseJSON(r.RequestURI)
 		w.WriteHeader(code)
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(body) //nolint:errcheck,revive // ignore the returned error as the test will fail anyway
+		// Ignore the returned error as the test will fail anyway
+		//nolint:errcheck,revive
+		w.Write(body)
 	}))
 }
 
@@ -61,7 +63,9 @@ func getHTTPServerBasicAuth() *httptest.Server {
 		body, code := getResponseJSON(r.RequestURI)
 		w.WriteHeader(code)
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(body) //nolint:errcheck,revive // ignore the returned error as the test will fail anyway
+		// Ignore the returned error as the test will fail anyway
+		//nolint:errcheck,revive
+		w.Write(body)
 	}))
 }
 

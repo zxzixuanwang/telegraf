@@ -1,23 +1,31 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package pivot
 
 import (
-	_ "embed"
-
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/processors"
 )
 
-//go:embed sample.conf
-var sampleConfig string
+const (
+	description  = "Rotate a single valued metric into a multi field metric"
+	sampleConfig = `
+  ## Tag to use for naming the new field.
+  tag_key = "name"
+  ## Field to use as the value of the new field.
+  value_key = "value"
+`
+)
 
 type Pivot struct {
 	TagKey   string `toml:"tag_key"`
 	ValueKey string `toml:"value_key"`
 }
 
-func (*Pivot) SampleConfig() string {
+func (p *Pivot) SampleConfig() string {
 	return sampleConfig
+}
+
+func (p *Pivot) Description() string {
+	return description
 }
 
 func (p *Pivot) Apply(metrics ...telegraf.Metric) []telegraf.Metric {

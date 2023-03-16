@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package riak
 
 import (
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,9 +10,6 @@ import (
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 // Type Riak gathers statistics from one or more Riak instances
 type Riak struct {
@@ -84,8 +79,20 @@ type riakStats struct {
 	ReadRepairsTotal         int64  `json:"read_repairs_total"`
 }
 
-func (*Riak) SampleConfig() string {
+// A sample configuration to only gather stats from localhost, default port.
+const sampleConfig = `
+  # Specify a list of one or more riak http servers
+  servers = ["http://localhost:8098"]
+`
+
+// Returns a sample configuration for the plugin
+func (r *Riak) SampleConfig() string {
 	return sampleConfig
+}
+
+// Returns a description of the plugin
+func (r *Riak) Description() string {
+	return "Read metrics one or many Riak servers"
 }
 
 // Reads stats from all configured servers.
@@ -108,7 +115,7 @@ func (r *Riak) gatherServer(s string, acc telegraf.Accumulator) error {
 	// Parse the given URL to extract the server tag
 	u, err := url.Parse(s)
 	if err != nil {
-		return fmt.Errorf("riak unable to parse given server URL %q: %w", s, err)
+		return fmt.Errorf("riak unable to parse given server url %s: %s", s, err)
 	}
 
 	// Perform the GET request to the riak /stats endpoint
@@ -126,7 +133,7 @@ func (r *Riak) gatherServer(s string, acc telegraf.Accumulator) error {
 	// Decode the response JSON into a new stats struct
 	stats := &riakStats{}
 	if err := json.NewDecoder(resp.Body).Decode(stats); err != nil {
-		return fmt.Errorf("unable to decode riak response: %w", err)
+		return fmt.Errorf("unable to decode riak response: %s", err)
 	}
 
 	// Build a map of tags

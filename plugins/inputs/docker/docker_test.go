@@ -108,6 +108,10 @@ var baseClient = MockClient{
 	},
 }
 
+func newClient(_ string, _ *tls.Config) (Client, error) {
+	return &baseClient, nil
+}
+
 func TestDockerGatherContainerStats(t *testing.T) {
 	var acc testutil.Accumulator
 	stats := testStats()
@@ -921,7 +925,7 @@ func TestDockerGatherInfo(t *testing.T) {
 	var acc testutil.Accumulator
 	d := Docker{
 		Log:       testutil.Logger{},
-		newClient: func(string, *tls.Config) (Client, error) { return &baseClient, nil },
+		newClient: newClient,
 		TagEnvironment: []string{"ENVVAR1", "ENVVAR2", "ENVVAR3", "ENVVAR5",
 			"ENVVAR6", "ENVVAR7", "ENVVAR8", "ENVVAR9"},
 		PerDeviceInclude: []string{"cpu", "network", "blkio"},
@@ -1074,7 +1078,7 @@ func TestDockerGatherSwarmInfo(t *testing.T) {
 	var acc testutil.Accumulator
 	d := Docker{
 		Log:       testutil.Logger{},
-		newClient: func(string, *tls.Config) (Client, error) { return &baseClient, nil },
+		newClient: newClient,
 	}
 
 	err := acc.GatherError(d.Gather)
@@ -1100,7 +1104,7 @@ func TestDockerGatherSwarmInfo(t *testing.T) {
 		"docker_swarm",
 		map[string]interface{}{
 			"tasks_running": int(1),
-			"tasks_desired": uint64(1),
+			"tasks_desired": int(1),
 		},
 		map[string]string{
 			"service_id":   "qolkls9g5iasdiuihcyz9rn3",

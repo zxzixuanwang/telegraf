@@ -1,10 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package redis
 
 import (
 	"bufio"
-	"context"
-	_ "embed"
 	"fmt"
 	"io"
 	"net/url"
@@ -15,15 +12,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-redis/redis/v8"
-
+	"github.com/go-redis/redis"
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 type RedisCommand struct {
 	Command []interface{}
@@ -34,11 +27,10 @@ type RedisCommand struct {
 type Redis struct {
 	Commands []*RedisCommand
 	Servers  []string
-	Username string
 	Password string
 	tls.ClientConfig
 
-	Log telegraf.Logger `toml:"-"`
+	Log telegraf.Logger
 
 	clients   []Client
 	connected bool
@@ -48,7 +40,6 @@ type Client interface {
 	Do(returnType string, args ...interface{}) (interface{}, error)
 	Info() *redis.StringCmd
 	BaseTags() map[string]string
-	Close() error
 }
 
 type RedisClient struct {
@@ -168,22 +159,22 @@ type RedisFieldTypes struct {
 }
 
 func (r *RedisClient) Do(returnType string, args ...interface{}) (interface{}, error) {
-	rawVal := r.client.Do(context.Background(), args...)
+	rawVal := r.client.Do(args...)
 
 	switch returnType {
 	case "integer":
 		return rawVal.Int64()
 	case "string":
-		return rawVal.Text()
+		return rawVal.String()
 	case "float":
 		return rawVal.Float64()
 	default:
-		return rawVal.Text()
+		return rawVal.String()
 	}
 }
 
 func (r *RedisClient) Info() *redis.StringCmd {
-	return r.client.Info(context.Background(), "ALL")
+	return r.client.Info("ALL")
 }
 
 func (r *RedisClient) BaseTags() map[string]string {
@@ -194,20 +185,53 @@ func (r *RedisClient) BaseTags() map[string]string {
 	return tags
 }
 
-func (r *RedisClient) Close() error {
-	return r.client.Close()
+var replicationSlaveMetricPrefix = regexp.MustCompile(`^slave\d+`)
+
+var sampleConfig = `
+  ## specify servers via a url matching:
+  ##  [protocol://][:password]@address[:port]
+  ##  e.g.
+  ##    tcp://localhost:6379
+  ##    tcp://:password@192.168.99.100
+  ##    unix:///var/run/redis.sock
+  ##
+  ## If no servers are specified, then localhost is used as the host.
+  ## If no port is specified, 6379 is used
+  servers = ["tcp://localhost:6379"]
+
+  ## Optional. Specify redis commands to retrieve values
+  # [[inputs.redis.commands]]
+  #   # The command to run where each argument is a separate element 
+  #   command = ["get", "sample-key"]
+  #   # The field to store the result in
+  #   field = "sample-key-value"
+  #   # The type of the result
+  #   # Can be "string", "integer", or "float"
+  #   type = "string"
+
+  ## specify server password
+  # password = "s#cr@t%"
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = true
+`
+
+func (r *Redis) SampleConfig() string {
+	return sampleConfig
 }
 
-var replicationSlaveMetricPrefix = regexp.MustCompile(`^slave\d+`)
+func (r *Redis) Description() string {
+	return "Read metrics from one or many redis servers"
+}
 
 var Tracking = map[string]string{
 	"uptime_in_seconds": "uptime",
 	"connected_clients": "clients",
 	"role":              "replication_role",
-}
-
-func (*Redis) SampleConfig() string {
-	return sampleConfig
 }
 
 func (r *Redis) Init() error {
@@ -229,8 +253,9 @@ func (r *Redis) connect() error {
 		r.Servers = []string{"tcp://localhost:6379"}
 	}
 
-	r.clients = make([]Client, 0, len(r.Servers))
-	for _, serv := range r.Servers {
+	r.clients = make([]Client, len(r.Servers))
+
+	for i, serv := range r.Servers {
 		if !strings.HasPrefix(serv, "tcp://") && !strings.HasPrefix(serv, "unix://") {
 			r.Log.Warn("Server URL found without scheme; please update your configuration file")
 			serv = "tcp://" + serv
@@ -238,20 +263,15 @@ func (r *Redis) connect() error {
 
 		u, err := url.Parse(serv)
 		if err != nil {
-			return fmt.Errorf("unable to parse to address %q: %w", serv, err)
+			return fmt.Errorf("unable to parse to address %q: %s", serv, err.Error())
 		}
 
-		username := ""
 		password := ""
 		if u.User != nil {
-			username = u.User.Username()
 			pw, ok := u.User.Password()
 			if ok {
 				password = pw
 			}
-		}
-		if len(r.Username) > 0 {
-			username = r.Username
 		}
 		if len(r.Password) > 0 {
 			password = r.Password
@@ -272,7 +292,6 @@ func (r *Redis) connect() error {
 		client := redis.NewClient(
 			&redis.Options{
 				Addr:      address,
-				Username:  username,
 				Password:  password,
 				Network:   u.Scheme,
 				PoolSize:  1,
@@ -288,10 +307,10 @@ func (r *Redis) connect() error {
 			tags["port"] = u.Port()
 		}
 
-		r.clients = append(r.clients, &RedisClient{
+		r.clients[i] = &RedisClient{
 			client: client,
 			tags:   tags,
-		})
+		}
 	}
 
 	r.connected = true
@@ -329,7 +348,7 @@ func (r *Redis) gatherCommandValues(client Client, acc telegraf.Accumulator) err
 		val, err := client.Do(command.Type, command.Command...)
 		if err != nil {
 			if strings.Contains(err.Error(), "unexpected type=") {
-				return fmt.Errorf("could not get command result: %w", err)
+				return fmt.Errorf("could not get command result: %s", err)
 			}
 
 			return err
@@ -475,9 +494,7 @@ func gatherInfoOutput(
 
 // Parse the special Keyspace line at end of redis stats
 // This is a special line that looks something like:
-//
-//	db0:keys=2,expires=0,avg_ttl=0
-//
+//     db0:keys=2,expires=0,avg_ttl=0
 // And there is one for each db on the redis instance
 func gatherKeyspaceLine(
 	name string,
@@ -506,9 +523,7 @@ func gatherKeyspaceLine(
 
 // Parse the special cmdstat lines.
 // Example:
-//
-//	cmdstat_publish:calls=33791,usec=208789,usec_per_call=6.18
-//
+//     cmdstat_publish:calls=33791,usec=208789,usec_per_call=6.18
 // Tag: cmdstat=publish; Fields: calls=33791i,usec=208789i,usec_per_call=6.18
 func gatherCommandstateLine(
 	name string,
@@ -553,9 +568,7 @@ func gatherCommandstateLine(
 
 // Parse the special Replication line
 // Example:
-//
-//	slave0:ip=127.0.0.1,port=7379,state=online,offset=4556468,lag=0
-//
+//     slave0:ip=127.0.0.1,port=7379,state=online,offset=4556468,lag=0
 // This line will only be visible when a node has a replica attached.
 func gatherReplicationLine(
 	name string,
@@ -713,18 +726,4 @@ func coerceType(value interface{}, typ reflect.Type) reflect.Value {
 		panic(fmt.Sprintf("unhandled source type %T", sourceType))
 	}
 	return reflect.ValueOf(value)
-}
-
-func (r *Redis) Start(telegraf.Accumulator) error {
-	return nil
-}
-
-// Stop close the client through ServiceInput interface Start/Stop methods impl.
-func (r *Redis) Stop() {
-	for _, c := range r.clients {
-		err := c.Close()
-		if err != nil {
-			r.Log.Errorf("error closing client: %v", err)
-		}
-	}
 }

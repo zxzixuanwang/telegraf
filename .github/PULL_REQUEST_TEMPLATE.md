@@ -1,14 +1,4 @@
-# Required for all PRs
-
-<!-- Before opening a pull request you should run the following checks locally to make sure the CI will pass.
-
-make lint
-make check
-make check-deps
-make test
-make docs
-
--->
+### Required for all PRs:
 
 <!-- Complete the tasks in the following list. Change [ ] to [x] to
 show completion. -->

@@ -27,7 +27,7 @@ func mockExecCommand(arg0 string, args ...string) *exec.Cmd {
 	return cmd
 }
 func TestMockExecCommand(_ *testing.T) {
-	var cmd []string //nolint:prealloc // Pre-allocated this slice would break the algorithm
+	var cmd []string
 	for _, arg := range os.Args {
 		if arg == "--" {
 			cmd = []string{}
@@ -44,6 +44,7 @@ func TestMockExecCommand(_ *testing.T) {
 	cmdline := strings.Join(cmd, " ")
 
 	if cmdline == "systemctl show TestGather_systemdUnitPIDs" {
+		//nolint:errcheck,revive
 		fmt.Printf(`PIDFile=
 GuessMainPID=yes
 MainPID=11408
@@ -54,6 +55,7 @@ ExecMainPID=11408
 		os.Exit(0)
 	}
 
+	//nolint:errcheck,revive
 	fmt.Printf("command not found\n")
 	//nolint:revive // error code is important for this "test"
 	os.Exit(1)
@@ -384,8 +386,10 @@ func TestGather_cgroupPIDs(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("no cgroups in windows")
 	}
-	td := t.TempDir()
-	err := os.WriteFile(filepath.Join(td, "cgroup.procs"), []byte("1234\n5678\n"), 0644)
+	td, err := os.MkdirTemp("", "")
+	require.NoError(t, err)
+	defer os.RemoveAll(td)
+	err = os.WriteFile(filepath.Join(td, "cgroup.procs"), []byte("1234\n5678\n"), 0644)
 	require.NoError(t, err)
 
 	p := Procstat{

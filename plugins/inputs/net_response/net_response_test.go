@@ -12,39 +12,54 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestSample(t *testing.T) {
+	c := &NetResponse{}
+	output := c.SampleConfig()
+	require.Equal(t, output, sampleConfig, "Sample config doesn't match")
+}
+
+func TestDescription(t *testing.T) {
+	c := &NetResponse{}
+	output := c.Description()
+	require.Equal(t, output, description, "Description output is not correct")
+}
 func TestBadProtocol(t *testing.T) {
+	var acc testutil.Accumulator
 	// Init plugin
 	c := NetResponse{
 		Protocol: "unknownprotocol",
 		Address:  ":9999",
 	}
 	// Error
-	err := c.Init()
+	err := c.Gather(&acc)
 	require.Error(t, err)
-	require.Equal(t, "config option protocol: unknown choice unknownprotocol", err.Error())
+	require.Equal(t, "bad protocol", err.Error())
 }
 
 func TestNoPort(t *testing.T) {
+	var acc testutil.Accumulator
 	c := NetResponse{
 		Protocol: "tcp",
 		Address:  ":",
 	}
-	err := c.Init()
+	err := c.Gather(&acc)
 	require.Error(t, err)
-	require.Equal(t, "bad port in config option address", err.Error())
+	require.Equal(t, "bad port", err.Error())
 }
 
 func TestAddressOnly(t *testing.T) {
+	var acc testutil.Accumulator
 	c := NetResponse{
 		Protocol: "tcp",
 		Address:  "127.0.0.1",
 	}
-	err := c.Init()
+	err := c.Gather(&acc)
 	require.Error(t, err)
 	require.Equal(t, "address 127.0.0.1: missing port in address", err.Error())
 }
 
 func TestSendExpectStrings(t *testing.T) {
+	var acc testutil.Accumulator
 	tc := NetResponse{
 		Protocol: "udp",
 		Address:  "127.0.0.1:7",
@@ -57,10 +72,10 @@ func TestSendExpectStrings(t *testing.T) {
 		Send:     "toast",
 		Expect:   "",
 	}
-	err := tc.Init()
+	err := tc.Gather(&acc)
 	require.Error(t, err)
 	require.Equal(t, "send string cannot be empty", err.Error())
-	err = uc.Init()
+	err = uc.Gather(&acc)
 	require.Error(t, err)
 	require.Equal(t, "expected string cannot be empty", err.Error())
 }
@@ -73,7 +88,6 @@ func TestTCPError(t *testing.T) {
 		Address:  ":9999",
 		Timeout:  config.Duration(time.Second * 30),
 	}
-	require.NoError(t, c.Init())
 	// Gather
 	require.NoError(t, c.Gather(&acc))
 	acc.AssertContainsTaggedFields(t,
@@ -83,7 +97,7 @@ func TestTCPError(t *testing.T) {
 			"result_type": "connection_failed",
 		},
 		map[string]string{
-			"server":   "localhost",
+			"server":   "",
 			"port":     "9999",
 			"protocol": "tcp",
 			"result":   "connection_failed",
@@ -103,7 +117,6 @@ func TestTCPOK1(t *testing.T) {
 		Timeout:     config.Duration(time.Second),
 		Protocol:    "tcp",
 	}
-	require.NoError(t, c.Init())
 	// Start TCP server
 	wg.Add(1)
 	go TCPServer(t, &wg)
@@ -148,7 +161,6 @@ func TestTCPOK2(t *testing.T) {
 		Timeout:     config.Duration(time.Second),
 		Protocol:    "tcp",
 	}
-	require.NoError(t, c.Init())
 	// Start TCP server
 	wg.Add(1)
 	go TCPServer(t, &wg)
@@ -191,7 +203,6 @@ func TestUDPError(t *testing.T) {
 		Expect:   "test",
 		Protocol: "udp",
 	}
-	require.NoError(t, c.Init())
 	// Gather
 	require.NoError(t, c.Gather(&acc))
 	acc.Wait(1)
@@ -211,7 +222,7 @@ func TestUDPError(t *testing.T) {
 		},
 		map[string]string{
 			"result":   "read_failed",
-			"server":   "localhost",
+			"server":   "",
 			"port":     "9999",
 			"protocol": "udp",
 		},
@@ -230,7 +241,6 @@ func TestUDPOK1(t *testing.T) {
 		Timeout:     config.Duration(time.Second),
 		Protocol:    "udp",
 	}
-	require.NoError(t, c.Init())
 	// Start UDP server
 	wg.Add(1)
 	go UDPServer(t, &wg)
@@ -266,29 +276,24 @@ func TestUDPOK1(t *testing.T) {
 
 func UDPServer(t *testing.T, wg *sync.WaitGroup) {
 	defer wg.Done()
-	udpAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:2004")
-	require.NoError(t, err)
-	conn, err := net.ListenUDP("udp", udpAddr)
-	require.NoError(t, err)
+	udpAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:2004")
+	conn, _ := net.ListenUDP("udp", udpAddr)
 	wg.Done()
 	buf := make([]byte, 1024)
 	_, remoteaddr, _ := conn.ReadFromUDP(buf)
-	_, err = conn.WriteToUDP(buf, remoteaddr)
+	_, err := conn.WriteToUDP(buf, remoteaddr)
 	require.NoError(t, err)
 	require.NoError(t, conn.Close())
 }
 
 func TCPServer(t *testing.T, wg *sync.WaitGroup) {
 	defer wg.Done()
-	tcpAddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:2004")
-	require.NoError(t, err)
-	tcpServer, err := net.ListenTCP("tcp", tcpAddr)
-	require.NoError(t, err)
+	tcpAddr, _ := net.ResolveTCPAddr("tcp", "127.0.0.1:2004")
+	tcpServer, _ := net.ListenTCP("tcp", tcpAddr)
 	wg.Done()
-	conn, err := tcpServer.AcceptTCP()
-	require.NoError(t, err)
+	conn, _ := tcpServer.AcceptTCP()
 	buf := make([]byte, 1024)
-	_, err = conn.Read(buf)
+	_, err := conn.Read(buf)
 	require.NoError(t, err)
 	_, err = conn.Write(buf)
 	require.NoError(t, err)

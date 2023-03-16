@@ -11,42 +11,9 @@ configurable.
 Path is a global variable, separate snmp instances will append the specified
 path onto the global path variable
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
-## Secret-store support
-
-This plugin supports secrets from secret-stores for the `sec_name`,
-`auth_password` and `priv_password` option.
-See the [secret-store documentation][SECRETSTORE] for more details on how
-to use them.
-
-[SECRETSTORE]: ../../../docs/CONFIGURATION.md#secret-store-secrets
-
-## SNMP backend: gosmi and netsnmp
-
-Telegraf has two backends to translate SNMP objects. By default, Telegraf will
-use `netsnmp`, however, this option is deprecated and it is encouraged that
-users migrate to `gosmi`. If users find issues with `gosmi` that do not occur
-with `netsnmp` please open a project issue on GitHub.
-
-The SNMP backend setting is a global-level setting that applies to all use of
-SNMP in Telegraf. Users can set this option in the `[agent]` configuration via
-the `snmp_translator` option. See the [agent configuration][AGENT] for more
-details.
-
-[AGENT]: ../../../docs/CONFIGURATION.md#agent
-
 ## Configuration
 
-```toml @sample.conf
-# Receive SNMP traps
+```toml
 [[inputs.snmp_trap]]
   ## Transport, local address, and port to listen on.  Transport must
   ## be "udp://".  Omit local address to listen on all interfaces.
@@ -58,8 +25,6 @@ details.
   # service_address = "udp://:162"
   ##
   ## Path to mib files
-  ## Used by the gosmi translator.
-  ## To add paths when translating with netsnmp, use the MIBDIRS environment variable
   # path = ["/usr/share/snmp/mibs"]
   ##
   ## Deprecated in 1.20.0; no longer running snmptranslate
@@ -108,7 +73,7 @@ setcap cap_net_bind_service=+ep /usr/bin/telegraf
 On Mac OS, listening on privileged ports is unrestricted on versions
 10.14 and later.
 
-## Metrics
+### Metrics
 
 - snmp_trap
   - tags:
@@ -125,14 +90,12 @@ On Mac OS, listening on privileged ports is unrestricted on versions
       the trap variable names after MIB lookup. Field values are trap
       variable values.
 
-## Example Output
+### Example Output
 
 ```shell
 snmp_trap,mib=SNMPv2-MIB,name=coldStart,oid=.1.3.6.1.6.3.1.1.5.1,source=192.168.122.102,version=2c,community=public snmpTrapEnterprise.0="linux",sysUpTimeInstance=1i 1574109187723429814
 snmp_trap,mib=NET-SNMP-AGENT-MIB,name=nsNotifyShutdown,oid=.1.3.6.1.4.1.8072.4.0.2,source=192.168.122.102,version=2c,community=public sysUpTimeInstance=5803i,snmpTrapEnterprise.0="netSnmpNotificationPrefix" 1574109186555115459
 ```
 
-## References
-
-- [net-snmp project home](http://www.net-snmp.org)
-- [`snmpcmd` man-page](http://net-snmp.sourceforge.net/docs/man/snmpcmd.html)
+[net-snmp]: http://www.net-snmp.org/
+[man snmpcmd]: http://net-snmp.sourceforge.net/docs/man/snmpcmd.html#lbAK

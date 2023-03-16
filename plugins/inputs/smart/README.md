@@ -1,19 +1,11 @@
 # S.M.A.R.T. Input Plugin
 
-Get metrics using the command line utility `smartctl` for
-S.M.A.R.T. (Self-Monitoring, Analysis and Reporting Technology) storage
-devices. SMART is a monitoring system included in computer hard disk drives
-(HDDs) and solid-state drives (SSDs) that detects and reports on various
-indicators of drive reliability, with the intent of enabling the anticipation of
-hardware failures.  See smartmontools (<https://www.smartmontools.org/>).
+Get metrics using the command line utility `smartctl` for S.M.A.R.T. (Self-Monitoring, Analysis and Reporting Technology) storage devices. SMART is a monitoring system included in computer hard disk drives (HDDs) and solid-state drives (SSDs) that detects and reports on various indicators of drive reliability, with the intent of enabling the anticipation of hardware failures.
+See smartmontools (<https://www.smartmontools.org/>).
 
-SMART information is separated between different measurements: `smart_device` is
-used for general information, while `smart_attribute` stores the detailed
-attribute information if `attributes = true` is enabled in the plugin
-configuration.
+SMART information is separated between different measurements: `smart_device` is used for general information, while `smart_attribute` stores the detailed attribute information if `attributes = true` is enabled in the plugin configuration.
 
-If no devices are specified, the plugin will scan for SMART devices via the
-following command:
+If no devices are specified, the plugin will scan for SMART devices via the following command:
 
 ```sh
 smartctl --scan
@@ -25,9 +17,9 @@ Metrics will be reported from the following `smartctl` command:
 smartctl --info --attributes --health -n <nocheck> --format=brief <device>
 ```
 
-This plugin supports _smartmontools_ version 5.41 and above, but v. 5.41 and
-v. 5.42 might require setting `nocheck`, see the comment in the sample
-configuration.  Also, NVMe capabilities were introduced in version 6.5.
+This plugin supports _smartmontools_ version 5.41 and above, but v. 5.41 and v. 5.42
+might require setting `nocheck`, see the comment in the sample configuration.
+Also, NVMe capabilities were introduced in version 6.5.
 
 To enable SMART on a storage device run:
 
@@ -37,23 +29,20 @@ smartctl -s on <device>
 
 ## NVMe vendor specific attributes
 
-For NVMe disk type, plugin can use command line utility `nvme-cli`. It has a
-feature to easy access a vendor specific attributes.  This plugin supports
-nmve-cli version 1.5 and above (<https://github.com/linux-nvme/nvme-cli>).  In
-case of `nvme-cli` absence NVMe vendor specific metrics will not be obtained.
+For NVMe disk type, plugin can use command line utility `nvme-cli`. It has a feature
+to easy access a vendor specific attributes.
+This plugin supports nmve-cli version 1.5 and above (<https://github.com/linux-nvme/nvme-cli>).
+In case of `nvme-cli` absence NVMe vendor specific metrics will not be obtained.
 
-Vendor specific SMART metrics for NVMe disks may be reported from the following
-`nvme` command:
+Vendor specific SMART metrics for NVMe disks may be reported from the following `nvme` command:
 
 ```sh
 nvme <vendor> smart-log-add <device>
 ```
 
-Note that vendor plugins for `nvme-cli` could require different naming
-convention and report format.
+Note that vendor plugins for `nvme-cli` could require different naming convention and report format.
 
-To see installed plugin extensions, depended on the nvme-cli version, look at
-the bottom of:
+To see installed plugin extensions, depended on the nvme-cli version, look at the bottom of:
 
 ```sh
 nvme help
@@ -65,8 +54,7 @@ To gather disk vendor id (vid) `id-ctrl` could be used:
 nvme id-ctrl <device>
 ```
 
-Association between a vid and company can be found there:
-<https://pcisig.com/membership/member-companies>.
+Association between a vid and company can be found there: <https://pcisig.com/membership/member-companies>.
 
 Devices affiliation to being NVMe or non NVMe will be determined thanks to:
 
@@ -80,37 +68,28 @@ and:
 smartctl --scan -d nvme
 ```
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
+```toml
 # Read metrics from storage devices supporting S.M.A.R.T.
 [[inputs.smart]]
     ## Optionally specify the path to the smartctl executable
     # path_smartctl = "/usr/bin/smartctl"
-
+  
     ## Optionally specify the path to the nvme-cli executable
     # path_nvme = "/usr/bin/nvme"
-
+  
     ## Optionally specify if vendor specific attributes should be propagated for NVMe disk case
     ## ["auto-on"] - automatically find and enable additional vendor specific disk info
     ## ["vendor1", "vendor2", ...] - e.g. "Intel" enable additional Intel specific disk info
     # enable_extensions = ["auto-on"]
-
+  
     ## On most platforms used cli utilities requires root access.
     ## Setting 'use_sudo' to true will make use of sudo to run smartctl or nvme-cli.
     ## Sudo must be configured to allow the telegraf user to run smartctl or nvme-cli
     ## without a password.
     # use_sudo = false
-
+  
     ## Skip checking disks in this power mode. Defaults to
     ## "standby" to not wake up disks that have stopped rotating.
     ## See --nocheck in the man pages for smartctl.
@@ -118,22 +97,22 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
     ## power mode and might require changing this value to
     ## "never" depending on your disks.
     # nocheck = "standby"
-
+  
     ## Gather all returned S.M.A.R.T. attribute metrics and the detailed
     ## information from each drive into the 'smart_attribute' measurement.
     # attributes = false
-
+  
     ## Optionally specify devices to exclude from reporting if disks auto-discovery is performed.
     # excludes = [ "/dev/pass6" ]
-
+  
     ## Optionally specify devices and device type, if unset
     ## a scan (smartctl --scan and smartctl --scan -d nvme) for S.M.A.R.T. devices will be done
     ## and all found will be included except for the excluded in excludes.
     # devices = [ "/dev/ada0 -d atacam", "/dev/nvme0"]
-
+  
     ## Timeout for the cli command to complete.
     # timeout = "30s"
-
+    
     ## Optionally call smartctl and nvme-cli with a specific concurrency policy.
     ## By default, smartctl and nvme-cli are called in separate threads (goroutines) to gather disk attributes.
     ## Some devices (e.g. disks in RAID arrays) may have access limitations that require sequential reading of
@@ -145,10 +124,8 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
 
 ## Permissions
 
-It's important to note that this plugin references smartctl and nvme-cli, which
-may require additional permissions to execute successfully.  Depending on the
-user/group permissions of the telegraf user executing this plugin, you may need
-to use sudo.
+It's important to note that this plugin references smartctl and nvme-cli, which may require additional permissions to execute successfully.
+Depending on the user/group permissions of the telegraf user executing this plugin, you may need to use sudo.
 
 You will need the following in your telegraf config:
 
@@ -172,9 +149,8 @@ telegraf  ALL=(ALL) NOPASSWD: NVME
 Defaults!NVME !logfile, !syslog, !pam_session
 ```
 
-To run smartctl or nvme with `sudo` wrapper script can be
-created. `path_smartctl` or `path_nvme` in the configuration should be set to
-execute this script.
+To run smartctl or nvme with `sudo` wrapper script can be created. `path_smartctl` or
+`path_nvme` in the configuration should be set to execute this script.
 
 ## Metrics
 
@@ -189,13 +165,10 @@ execute this script.
   - fields:
     - exit_status
     - health_ok
-    - media_wearout_indicator
-    - percent_lifetime_remain
     - read_error_rate
     - seek_error
     - temp_c
     - udma_crc_errors
-    - wear_leveling_count
 
 - smart_attribute:
   - tags:
@@ -229,31 +202,29 @@ The interpretation of the tag `flags` is:
 
 ### Exit Status
 
-The `exit_status` field captures the exit status of the used cli utilities
-command which is defined by a bitmask. For the interpretation of the bitmask see
-the man page for smartctl or nvme-cli.
+The `exit_status` field captures the exit status of the used cli utilities command which
+is defined by a bitmask. For the interpretation of the bitmask see the man page for
+smartctl or nvme-cli.
 
 ## Device Names
 
-Device names, e.g., `/dev/sda`, are _not persistent_, and may be
+Device names, e.g., `/dev/sda`, are *not persistent*, and may be
 subject to change across reboots or system changes. Instead, you can use the
-_World Wide Name_ (WWN) or serial number to identify devices. On Linux block
+*World Wide Name* (WWN) or serial number to identify devices. On Linux block
 devices can be referenced by the WWN in the following location:
 `/dev/disk/by-id/`.
 
 ## Troubleshooting
 
-If you expect to see more SMART metrics than this plugin shows, be sure to use a
-proper version of smartctl or nvme-cli utility which has the functionality to
-gather desired data. Also, check your device capability because not every SMART
-metrics are mandatory. For example the number of temperature sensors depends on
-the device specification.
+If you expect to see more SMART metrics than this plugin shows, be sure to use a proper version
+of smartctl or nvme-cli utility which has the functionality to gather desired data. Also, check
+your device capability because not every SMART metrics are mandatory.
+For example the number of temperature sensors depends on the device specification.
 
 If this plugin is not working as expected for your SMART enabled device,
 please run these commands and include the output in a bug report:
 
-For non NVMe devices (from smartctl version >= 7.0 this will also return NVMe
-devices by default):
+For non NVMe devices (from smartctl version >= 7.0 this will also return NVMe devices by default):
 
 ```sh
 smartctl --scan
@@ -279,11 +250,9 @@ and replace vendor and device to match your case:
 nvme VENDOR smart-log-add DEVICE
 ```
 
-If you have specified devices array in configuration file, and Telegraf only
-shows data from one device, you should change the plugin configuration to
-sequentially gather disk attributes instead of collecting it in separate threads
-(goroutines). To do this find in plugin configuration read_method and change it
-to sequential:
+If you have specified devices array in configuration file, and Telegraf only shows data from one device, you should
+change the plugin configuration to sequentially gather disk attributes instead of collecting it in separate threads
+(goroutines). To do this find in plugin configuration read_method and change it to sequential:
 
 ```toml
     ## Optionally call smartctl and nvme-cli with a specific concurrency policy.
@@ -295,7 +264,7 @@ to sequential:
     read_method = "sequential"
 ```
 
-## Example Output
+## Example SMART Plugin Outputs
 
 ```shell
 smart_device,enabled=Enabled,host=mbpro.local,device=rdisk0,model=APPLE\ SSD\ SM0512F,serial_no=S1K5NYCD964433,wwn=5002538655584d30,capacity=500277790720 udma_crc_errors=0i,exit_status=0i,health_ok=true,read_error_rate=0i,temp_c=40i 1502536854000000000

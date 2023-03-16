@@ -4,11 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/metric"
 	"github.com/influxdata/telegraf/testutil"
+
+	"github.com/stretchr/testify/require"
 )
 
 func newM1() telegraf.Metric {
@@ -39,21 +38,6 @@ func newM2() telegraf.Metric {
 		},
 		time.Now(),
 	)
-}
-
-func newUUIDTags() telegraf.Metric {
-	m1 := metric.New("access_log",
-		map[string]string{
-			"compound": "other-18cb0b46-73b8-4084-9fc4-5105f32a8a68",
-			"simple":   "d60be57c-2f43-4e4f-a68a-4ca8204bae41",
-			"control":  "not_uuid",
-		},
-		map[string]interface{}{
-			"request": "/users/42/",
-		},
-		time.Now(),
-	)
-	return m1
 }
 
 func TestFieldConversions(t *testing.T) {
@@ -273,9 +257,9 @@ func TestMetricNameConversions(t *testing.T) {
 
 	for _, test := range tests {
 		// Copy the inputs as they will be modified by the processor
-		input := make([]telegraf.Metric, 0, len(inputTemplate))
-		for _, m := range inputTemplate {
-			input = append(input, m.Copy())
+		input := make([]telegraf.Metric, len(inputTemplate))
+		for i, m := range inputTemplate {
+			input[i] = m.Copy()
 		}
 
 		t.Run(test.name, func(t *testing.T) {
@@ -483,9 +467,9 @@ func TestFieldRenameConversions(t *testing.T) {
 
 	for _, test := range tests {
 		// Copy the inputs as they will be modified by the processor
-		input := make([]telegraf.Metric, 0, len(inputTemplate))
-		for _, m := range inputTemplate {
-			input = append(input, m.Copy())
+		input := make([]telegraf.Metric, len(inputTemplate))
+		for i, m := range inputTemplate {
+			input[i] = m.Copy()
 		}
 
 		t.Run(test.name, func(t *testing.T) {
@@ -691,9 +675,9 @@ func TestTagRenameConversions(t *testing.T) {
 
 	for _, test := range tests {
 		// Copy the inputs as they will be modified by the processor
-		input := make([]telegraf.Metric, 0, len(inputTemplate))
-		for _, m := range inputTemplate {
-			input = append(input, m.Copy())
+		input := make([]telegraf.Metric, len(inputTemplate))
+		for i, m := range inputTemplate {
+			input[i] = m.Copy()
 		}
 
 		t.Run(test.name, func(t *testing.T) {
@@ -842,45 +826,5 @@ func BenchmarkConversions(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		processed := regex.Apply(newM1())
 		_ = processed
-	}
-}
-
-func TestAnyTagConversion(t *testing.T) {
-	tests := []struct {
-		message      string
-		converter    converter
-		expectedTags map[string]string
-	}{
-		{
-			message: "Should change existing tag",
-			converter: converter{
-				Key:         "*",
-				Pattern:     "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-				Replacement: "{UUID}",
-			},
-			expectedTags: map[string]string{
-				"compound": "other-{UUID}",
-				"simple":   "{UUID}",
-				"control":  "not_uuid",
-			},
-		},
-	}
-
-	for _, test := range tests {
-		regex := Regex{
-			Tags: []converter{test.converter},
-			Log:  testutil.Logger{},
-		}
-		require.NoError(t, regex.Init())
-
-		processed := regex.Apply(newUUIDTags())
-
-		expectedFields := map[string]interface{}{
-			"request": "/users/42/",
-		}
-
-		require.Equal(t, expectedFields, processed[0].Fields(), test.message, "Should not change fields")
-		require.Equal(t, test.expectedTags, processed[0].Tags(), test.message)
-		require.Equal(t, "access_log", processed[0].Name(), "Should not change name")
 	}
 }

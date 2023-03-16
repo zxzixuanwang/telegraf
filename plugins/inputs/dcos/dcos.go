@@ -1,10 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package dcos
 
 import (
 	"context"
-	_ "embed"
-	"errors"
 	"net/url"
 	"os"
 	"sort"
@@ -20,9 +17,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 const (
 	defaultMaxConnections  = 10
@@ -75,7 +69,54 @@ type DCOS struct {
 	appFilter       filter.Filter
 }
 
-func (*DCOS) SampleConfig() string {
+func (d *DCOS) Description() string {
+	return "Input plugin for DC/OS metrics"
+}
+
+var sampleConfig = `
+  ## The DC/OS cluster URL.
+  cluster_url = "https://dcos-ee-master-1"
+
+  ## The ID of the service account.
+  service_account_id = "telegraf"
+  ## The private key file for the service account.
+  service_account_private_key = "/etc/telegraf/telegraf-sa-key.pem"
+
+  ## Path containing login token.  If set, will read on every gather.
+  # token_file = "/home/dcos/.dcos/token"
+
+  ## In all filter options if both include and exclude are empty all items
+  ## will be collected.  Arrays may contain glob patterns.
+  ##
+  ## Node IDs to collect metrics from.  If a node is excluded, no metrics will
+  ## be collected for its containers or apps.
+  # node_include = []
+  # node_exclude = []
+  ## Container IDs to collect container metrics from.
+  # container_include = []
+  # container_exclude = []
+  ## Container IDs to collect app metrics from.
+  # app_include = []
+  # app_exclude = []
+
+  ## Maximum concurrent connections to the cluster.
+  # max_connections = 10
+  ## Maximum time to receive a response from cluster.
+  # response_timeout = "20s"
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## If false, skip chain & host verification
+  # insecure_skip_verify = true
+
+  ## Recommended filtering to reduce series cardinality.
+  # [inputs.dcos.tagdrop]
+  #   path = ["/var/lib/mesos/slave/slaves/*"]
+`
+
+func (d *DCOS) SampleConfig() string {
 	return sampleConfig
 }
 
@@ -147,8 +188,7 @@ func (d *DCOS) GatherContainers(ctx context.Context, acc telegraf.Accumulator, c
 				defer wg.Done()
 				m, err := d.client.GetContainerMetrics(ctx, node, container)
 				if err != nil {
-					var apiErr APIError
-					if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+					if err, ok := err.(APIError); ok && err.StatusCode == 404 {
 						return
 					}
 					acc.AddError(err)
@@ -164,8 +204,7 @@ func (d *DCOS) GatherContainers(ctx context.Context, acc telegraf.Accumulator, c
 				defer wg.Done()
 				m, err := d.client.GetAppMetrics(ctx, node, container)
 				if err != nil {
-					var apiErr APIError
-					if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+					if err, ok := err.(APIError); ok && err.StatusCode == 404 {
 						return
 					}
 					acc.AddError(err)
@@ -187,7 +226,7 @@ type point struct {
 func (d *DCOS) createPoints(m *Metrics) []*point {
 	points := make(map[string]*point)
 	for _, dp := range m.Datapoints {
-		fieldKey := strings.ReplaceAll(dp.Name, ".", "_")
+		fieldKey := strings.Replace(dp.Name, ".", "_", -1)
 
 		tags := dp.Tags
 		if tags == nil {

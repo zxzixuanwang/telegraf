@@ -2,15 +2,15 @@ package snmp
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
+	"github.com/influxdata/telegraf"
 	"github.com/sleepinggenius2/gosmi"
 	"github.com/sleepinggenius2/gosmi/types"
-
-	"github.com/influxdata/telegraf"
 )
 
 // must init, append path for each directory, load module for every file
@@ -20,12 +20,8 @@ var once sync.Once
 var cache = make(map[string]bool)
 
 type MibLoader interface {
-	// appendPath takes the path of a directory
-	appendPath(path string)
-
-	// loadModule takes the name of a file in one of the
-	// directories. Basename only, no relative or absolute path
 	loadModule(path string) error
+	appendPath(path string)
 }
 
 type GosmiMibLoader struct{}
@@ -45,7 +41,11 @@ func (*GosmiMibLoader) loadModule(path string) error {
 	return err
 }
 
-// will give all found folders to gosmi and load in all modules found in the folders
+func ClearCache() {
+	cache = make(map[string]bool)
+}
+
+//will give all found folders to gosmi and load in all modules found in the folders
 func LoadMibsFromPath(paths []string, log telegraf.Logger, loader MibLoader) error {
 	folders, err := walkPaths(paths, log)
 	if err != nil {
@@ -53,36 +53,29 @@ func LoadMibsFromPath(paths []string, log telegraf.Logger, loader MibLoader) err
 	}
 	for _, path := range folders {
 		loader.appendPath(path)
-		modules, err := os.ReadDir(path)
+		modules, err := ioutil.ReadDir(path)
 		if err != nil {
 			log.Warnf("Can't read directory %v", modules)
-			continue
 		}
 
-		for _, entry := range modules {
-			info, err := entry.Info()
-			if err != nil {
-				log.Warnf("Couldn't get info for %v: %v", entry.Name(), err)
-				continue
-			}
+		for _, info := range modules {
 			if info.Mode()&os.ModeSymlink != 0 {
-				symlink := filepath.Join(path, info.Name())
-				target, err := filepath.EvalSymlinks(symlink)
+				target, err := filepath.EvalSymlinks(path)
 				if err != nil {
-					log.Warnf("Couldn't evaluate symbolic links for %v: %v", symlink, err)
+					log.Warnf("Bad symbolic link %v", target)
 					continue
 				}
-				//replace symlink's info with the target's info
-				info, err = os.Lstat(target)
+				info, err = os.Lstat(filepath.Join(path, target))
 				if err != nil {
-					log.Warnf("Couldn't stat target %v: %v", target, err)
+					log.Warnf("Couldn't stat target %v", target)
 					continue
 				}
+				path = target
 			}
 			if info.Mode().IsRegular() {
 				err := loader.loadModule(info.Name())
 				if err != nil {
-					log.Warnf("Couldn't load module %v: %v", info.Name(), err)
+					log.Warnf("module %v could not be loaded", info.Name())
 					continue
 				}
 			}
@@ -91,7 +84,7 @@ func LoadMibsFromPath(paths []string, log telegraf.Logger, loader MibLoader) err
 	return nil
 }
 
-// should walk the paths given and find all folders
+//should walk the paths given and find all folders
 func walkPaths(paths []string, log telegraf.Logger) ([]string, error) {
 	once.Do(gosmi.Init)
 	folders := []string{}
@@ -120,11 +113,11 @@ func walkPaths(paths []string, log telegraf.Logger) ([]string, error) {
 			if info.Mode()&os.ModeSymlink != 0 {
 				target, err := filepath.EvalSymlinks(path)
 				if err != nil {
-					log.Warnf("Couldn't evaluate symbolic links for %v: %v", path, err)
+					log.Warnf("Could not evaluate link %v", target)
 				}
 				info, err = os.Lstat(target)
 				if err != nil {
-					log.Warnf("Couldn't stat target %v: %v", target, err)
+					log.Warnf("Couldn't stat target %v", path)
 				}
 				path = target
 			}
@@ -135,7 +128,7 @@ func walkPaths(paths []string, log telegraf.Logger) ([]string, error) {
 			return nil
 		})
 		if err != nil {
-			return folders, fmt.Errorf("couldn't walk path %q: %w", mibPath, err)
+			return folders, fmt.Errorf("Filepath %q could not be walked: %v", mibPath, err)
 		}
 	}
 	return folders, nil
@@ -176,12 +169,13 @@ func TrapLookup(oid string) (e MibEntry, err error) {
 
 // The following is for snmp
 
-func GetIndex(mibPrefix string, node gosmi.SmiNode) (col []string, tagOids map[string]struct{}) {
+func GetIndex(oidNum string, mibPrefix string, node gosmi.SmiNode) (col []string, tagOids map[string]struct{}, err error) {
 	// first attempt to get the table's tags
 	tagOids = map[string]struct{}{}
 
 	// mimcks grabbing INDEX {} that is returned from snmptranslate -Td MibName
 	for _, index := range node.GetIndex() {
+		//nolint:staticcheck //assaignment to nil map to keep backwards compatibilty
 		tagOids[mibPrefix+index.Name] = struct{}{}
 	}
 
@@ -189,7 +183,7 @@ func GetIndex(mibPrefix string, node gosmi.SmiNode) (col []string, tagOids map[s
 	// mimmicks grabbing everything returned from snmptable -Ch -Cl -c public 127.0.0.1 oidFullName
 	_, col = node.GetColumns()
 
-	return col, tagOids
+	return col, tagOids, nil
 }
 
 //nolint:revive //Too many return variable but necessary
@@ -207,7 +201,7 @@ func SnmpTranslateCall(oid string) (mibName string, oidNum string, oidText strin
 			return oid, oid, oid, oid, gosmi.SmiNode{}, err
 		}
 		if s[1] == "" {
-			return "", oid, oid, oid, gosmi.SmiNode{}, fmt.Errorf("cannot parse %v", oid)
+			return "", oid, oid, oid, gosmi.SmiNode{}, fmt.Errorf("cannot parse %v\n", oid)
 		}
 		// node becomes sysUpTime.0
 		node := s[1]
@@ -246,7 +240,8 @@ func SnmpTranslateCall(oid string) (mibName string, oidNum string, oidText strin
 		out, err = gosmi.GetNodeByOID(types.OidMustFromString(oid))
 		oidNum = oid
 		// ensure modules are loaded or node will be empty (might not error)
-		//nolint:nilerr // do not return the err as the oid is numeric and telegraf can continue
+		// do not return the err as the oid is numeric and telegraf can continue
+		//nolint:nilerr
 		if err != nil || out.Name == "iso" {
 			return oid, oid, oid, oid, out, nil
 		}

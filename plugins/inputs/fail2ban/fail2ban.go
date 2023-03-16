@@ -1,20 +1,16 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package fail2ban
 
 import (
-	_ "embed"
 	"errors"
 	"fmt"
 	"os/exec"
-	"strconv"
 	"strings"
+
+	"strconv"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 var (
 	execCommand = exec.Command // execCommand is used to mock commands in tests.
@@ -24,6 +20,11 @@ type Fail2ban struct {
 	path    string
 	UseSudo bool
 }
+
+var sampleConfig = `
+  ## Use sudo to run fail2ban-client
+  use_sudo = false
+`
 
 var metricsTargets = []struct {
 	target string
@@ -39,28 +40,12 @@ var metricsTargets = []struct {
 	},
 }
 
-const cmd = "fail2ban-client"
-
-func (*Fail2ban) SampleConfig() string {
-	return sampleConfig
+func (f *Fail2ban) Description() string {
+	return "Read metrics from fail2ban."
 }
 
-func (f *Fail2ban) Init() error {
-	// Set defaults
-	if f.path == "" {
-		path, err := exec.LookPath(cmd)
-		if err != nil {
-			return fmt.Errorf("looking up %q failed: %w", cmd, err)
-		}
-		f.path = path
-	}
-
-	// Check parameters
-	if f.path == "" {
-		return fmt.Errorf("%q not found", cmd)
-	}
-
-	return nil
+func (f *Fail2ban) SampleConfig() string {
+	return sampleConfig
 }
 
 func (f *Fail2ban) Gather(acc telegraf.Accumulator) error {
@@ -81,7 +66,7 @@ func (f *Fail2ban) Gather(acc telegraf.Accumulator) error {
 	cmd := execCommand(name, args...)
 	out, err := cmd.Output()
 	if err != nil {
-		return fmt.Errorf("failed to run command %q: %w - %s", strings.Join(cmd.Args, " "), err, string(out))
+		return fmt.Errorf("failed to run command %s: %s - %s", strings.Join(cmd.Args, " "), err, string(out))
 	}
 	lines := strings.Split(string(out), "\n")
 	const targetString = "Jail list:"
@@ -102,7 +87,7 @@ func (f *Fail2ban) Gather(acc telegraf.Accumulator) error {
 		cmd := execCommand(name, args...)
 		out, err := cmd.Output()
 		if err != nil {
-			return fmt.Errorf("failed to run command %q: %w - %s", strings.Join(cmd.Args, " "), err, string(out))
+			return fmt.Errorf("failed to run command %s: %s - %s", strings.Join(cmd.Args, " "), err, string(out))
 		}
 
 		lines := strings.Split(string(out), "\n")
@@ -134,7 +119,13 @@ func extractCount(line string) (string, int) {
 }
 
 func init() {
+	f := Fail2ban{}
+	path, _ := exec.LookPath("fail2ban-client")
+	if len(path) > 0 {
+		f.path = path
+	}
 	inputs.Add("fail2ban", func() telegraf.Input {
-		return &Fail2ban{}
+		f := f
+		return &f
 	})
 }

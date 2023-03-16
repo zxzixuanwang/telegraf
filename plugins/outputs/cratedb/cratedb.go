@@ -1,11 +1,9 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package cratedb
 
 import (
 	"context"
 	"crypto/sha512"
 	"database/sql"
-	_ "embed"
 	"encoding/binary"
 	"fmt"
 	"sort"
@@ -20,9 +18,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/outputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 const MaxInt64 = int64(^uint64(0) >> 1)
 
 type CrateDB struct {
@@ -34,9 +29,19 @@ type CrateDB struct {
 	DB           *sql.DB
 }
 
-func (*CrateDB) SampleConfig() string {
-	return sampleConfig
-}
+var sampleConfig = `
+  # A github.com/jackc/pgx/v4 connection string.
+  # See https://pkg.go.dev/github.com/jackc/pgx/v4#ParseConfig
+  url = "postgres://user:password@localhost/schema?sslmode=disable"
+  # Timeout for all CrateDB queries.
+  timeout = "5s"
+  # Name of the table to store metrics in.
+  table = "metrics"
+  # If true, and the metrics table does not exist, create it automatically.
+  table_create = true
+  # The character(s) to replace any '.' in an object key with
+  key_separator = "_"
+`
 
 func (c *CrateDB) Connect() error {
 	db, err := sql.Open("pgx", c.URL)
@@ -82,8 +87,8 @@ func (c *CrateDB) Write(metrics []telegraf.Metric) error {
 }
 
 func insertSQL(table string, keyReplacement string, metrics []telegraf.Metric) (string, error) {
-	rows := make([]string, 0, len(metrics))
-	for _, m := range metrics {
+	rows := make([]string, len(metrics))
+	for i, m := range metrics {
 		cols := []interface{}{
 			hashID(m),
 			m.Time().UTC(),
@@ -92,15 +97,15 @@ func insertSQL(table string, keyReplacement string, metrics []telegraf.Metric) (
 			m.Fields(),
 		}
 
-		escapedCols := make([]string, 0, len(cols))
-		for _, col := range cols {
+		escapedCols := make([]string, len(cols))
+		for i, col := range cols {
 			escaped, err := escapeValue(col, keyReplacement)
 			if err != nil {
 				return "", err
 			}
-			escapedCols = append(escapedCols, escaped)
+			escapedCols[i] = escaped
 		}
-		rows = append(rows, `(`+strings.Join(escapedCols, ", ")+`)`)
+		rows[i] = `(` + strings.Join(escapedCols, ", ") + `)`
 	}
 	query := `INSERT INTO ` + table + ` ("hash_id", "timestamp", "name", "tags", "fields")
 VALUES
@@ -192,7 +197,7 @@ func escapeObject(m map[string]interface{}, keyReplacement string) (string, erro
 // escapeString wraps s in the given quote string and replaces all occurrences
 // of it inside of s with a double quote.
 func escapeString(s string, quote string) string {
-	return quote + strings.ReplaceAll(s, quote, quote+quote) + quote
+	return quote + strings.Replace(s, quote, quote+quote, -1) + quote
 }
 
 // hashID returns a cryptographic hash int64 hash that includes the metric name
@@ -204,9 +209,11 @@ func hashID(m telegraf.Metric) int64 {
 	h := sha512.New()
 	h.Write([]byte(m.Name())) //nolint:revive // from hash.go: "It never returns an error"
 	tags := m.Tags()
-	tmp := make([]string, 0, len(tags))
+	tmp := make([]string, len(tags))
+	i := 0
 	for k, v := range tags {
-		tmp = append(tmp, k+v)
+		tmp[i] = k + v
+		i++
 	}
 	sort.Strings(tmp)
 
@@ -222,6 +229,14 @@ func hashID(m telegraf.Metric) int64 {
 	// INSERT INTO my_long(val) VALUES (14305102049502225714);
 	// -> ERROR:  SQLParseException: For input string: "14305102049502225714"
 	return int64(binary.LittleEndian.Uint64(sum))
+}
+
+func (c *CrateDB) SampleConfig() string {
+	return sampleConfig
+}
+
+func (c *CrateDB) Description() string {
+	return "Configuration for CrateDB to send metrics to."
 }
 
 func (c *CrateDB) Close() error {

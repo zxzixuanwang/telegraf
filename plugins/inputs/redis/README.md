@@ -1,20 +1,9 @@
 # Redis Input Plugin
 
-The Redis input plugin gathers metrics from one or many Redis servers.
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
-# Read metrics from one or many redis servers
+```toml
+# Read Redis's basic status information
 [[inputs.redis]]
   ## specify servers via a url matching:
   ##  [protocol://][:password]@address[:port]
@@ -29,7 +18,7 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
 
   ## Optional. Specify redis commands to retrieve values
   # [[inputs.redis.commands]]
-  #   # The command to run where each argument is a separate element
+  #   # The command to run where each argument is a separate element 
   #   command = ["get", "sample-key"]
   #   # The field to store the result in
   #   field = "sample-key-value"
@@ -40,9 +29,6 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   ## specify server password
   # password = "s#cr@t%"
 
-  ## specify username for ACL auth (Redis 6.0+)
-  # username = "default"
-
   ## Optional TLS Config
   # tls_ca = "/etc/telegraf/ca.pem"
   # tls_cert = "/etc/telegraf/cert.pem"
@@ -51,14 +37,12 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   # insecure_skip_verify = true
 ```
 
-## Metrics
+## Measurements & Fields
 
-The plugin gathers the results of the [INFO](https://redis.io/commands/info)
-redis command.  There are two separate measurements: _redis_ and
-_redis\_keyspace_, the latter is used for gathering database related statistics.
+The plugin gathers the results of the [INFO](https://redis.io/commands/info) redis command.
+There are two separate measurements: _redis_ and _redis\_keyspace_, the latter is used for gathering database related statistics.
 
-Additionally the plugin also calculates the hit/miss ratio (keyspace\_hitrate)
-and the elapsed time since the last rdb save (rdb\_last\_save\_time\_elapsed).
+Additionally the plugin also calculates the hit/miss ratio (keyspace\_hitrate) and the elapsed time since the last rdb save (rdb\_last\_save\_time\_elapsed).
 
 - redis
   - keyspace_hitrate(float, number)
@@ -164,7 +148,7 @@ and the elapsed time since the last rdb save (rdb\_last\_save\_time\_elapsed).
     - lag(int, number)
     - offset(int, number)
 
-### Tags
+## Tags
 
 - All measurements have the following tags:
   - port

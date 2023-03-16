@@ -6,19 +6,9 @@ Query data from Google Cloud Monitoring (formerly Stackdriver) using the
 This plugin accesses APIs which are [chargeable][pricing]; you might incur
 costs.
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
-# Gather timeseries from Google Cloud Platform v3 monitoring API
+```toml
 [[inputs.stackdriver]]
   ## GCP Project
   project = "erudite-bloom-151019"
@@ -79,11 +69,9 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   ##
   ## The logical operators when combining filters are defined statically using
   ## the following values:
-  ##   filter ::= <resource_labels> {AND <metric_labels> AND <user_labels> AND <system_labels>}
+  ##   filter ::= <resource_labels> {AND <metric_labels>}
   ##   resource_labels ::= <resource_labels> {OR <resource_label>}
   ##   metric_labels ::= <metric_labels> {OR <metric_label>}
-  ##   user_labels ::= <user_labels> {OR <user_label>}
-  ##   system_labels ::= <system_labels> {OR <system_label>}
   ##
   ## For more details, see https://cloud.google.com/monitoring/api/v3/filters
   #
@@ -98,18 +86,6 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   #  [[inputs.stackdriver.filter.metric_labels]]
   #    key = "device_name"
   #    value = 'one_of("sda", "sdb")'
-  #
-  ## User labels refine the time series selection with the following expression:
-  ##   metadata.user_labels."<key>" = <value>
-  #  [[inputs.stackdriver.filter.user_labels]]
-  #    key = "environment"
-  #    value = 'one_of("prod", "staging")'
-  #
-  ## System labels refine the time series selection with the following expression:
-  ##   metadata.system_labels."<key>" = <value>
-  #  [[inputs.stackdriver.filter.system_labels]]
-  #    key = "machine_type"
-  #    value = 'starts_with("e2-")'
 ```
 
 ### Authentication

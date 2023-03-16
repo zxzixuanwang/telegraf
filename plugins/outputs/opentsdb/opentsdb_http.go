@@ -6,11 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-
-	"github.com/influxdata/telegraf"
 )
 
 type HTTPMetric struct {
@@ -28,8 +27,6 @@ type openTSDBHttp struct {
 	BatchSize int
 	Path      string
 	Debug     bool
-
-	log telegraf.Logger
 
 	metricCounter int
 	body          requestBody
@@ -65,20 +62,18 @@ func (r *requestBody) reset(debug bool) {
 
 	r.enc = json.NewEncoder(r.w)
 
-	_, _ = io.WriteString(r.w, "[")
+	io.WriteString(r.w, "[")
 
 	r.empty = true
 }
 
 func (r *requestBody) addMetric(metric *HTTPMetric) error {
 	if !r.empty {
-		if _, err := io.WriteString(r.w, ","); err != nil {
-			return err
-		}
+		io.WriteString(r.w, ",")
 	}
 
 	if err := r.enc.Encode(metric); err != nil {
-		return fmt.Errorf("metric serialization error %w", err)
+		return fmt.Errorf("Metric serialization error %s", err.Error())
 	}
 
 	r.empty = false
@@ -87,12 +82,10 @@ func (r *requestBody) addMetric(metric *HTTPMetric) error {
 }
 
 func (r *requestBody) close() error {
-	if _, err := io.WriteString(r.w, "]"); err != nil {
-		return err
-	}
+	io.WriteString(r.w, "]")
 
 	if err := r.g.Close(); err != nil {
-		return fmt.Errorf("error when closing gzip writer: %w", err)
+		return fmt.Errorf("Error when closing gzip writer: %s", err.Error())
 	}
 
 	return nil
@@ -124,9 +117,7 @@ func (o *openTSDBHttp) flush() error {
 		return nil
 	}
 
-	if err := o.body.close(); err != nil {
-		return err
-	}
+	o.body.close()
 
 	u := url.URL{
 		Scheme: o.Scheme,
@@ -141,7 +132,7 @@ func (o *openTSDBHttp) flush() error {
 
 	req, err := http.NewRequest("POST", u.String(), &o.body.b)
 	if err != nil {
-		return fmt.Errorf("error when building request: %w", err)
+		return fmt.Errorf("Error when building request: %s", err.Error())
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Encoding", "gzip")
@@ -149,7 +140,7 @@ func (o *openTSDBHttp) flush() error {
 	if o.Debug {
 		dump, err := httputil.DumpRequestOut(req, false)
 		if err != nil {
-			return fmt.Errorf("error when dumping request: %w", err)
+			return fmt.Errorf("Error when dumping request: %s", err.Error())
 		}
 
 		fmt.Printf("Sending metrics:\n%s", dump)
@@ -158,14 +149,14 @@ func (o *openTSDBHttp) flush() error {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("error when sending metrics: %w", err)
+		return fmt.Errorf("Error when sending metrics: %s", err.Error())
 	}
 	defer resp.Body.Close()
 
 	if o.Debug {
 		dump, err := httputil.DumpResponse(resp, true)
 		if err != nil {
-			return fmt.Errorf("error when dumping response: %w", err)
+			return fmt.Errorf("Error when dumping response: %s", err.Error())
 		}
 
 		fmt.Printf("Received response\n%s\n\n", dump)
@@ -174,11 +165,14 @@ func (o *openTSDBHttp) flush() error {
 		_, _ = io.Copy(io.Discard, resp.Body)
 	}
 
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		if resp.StatusCode < 400 || resp.StatusCode > 499 {
-			return fmt.Errorf("error sending metrics (status %d)", resp.StatusCode)
+	if resp.StatusCode/100 != 2 {
+		if resp.StatusCode/100 == 4 {
+			log.Printf("E! Received %d status code. Dropping metrics to avoid overflowing buffer.",
+				resp.StatusCode)
+		} else {
+			return fmt.Errorf("Error when sending metrics. Received status %d",
+				resp.StatusCode)
 		}
-		o.log.Errorf("Received %d status code. Dropping metrics to avoid overflowing buffer.", resp.StatusCode)
 	}
 
 	return nil

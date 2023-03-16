@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package dedup
 
 import (
-	_ "embed"
 	"time"
 
 	"github.com/influxdata/telegraf"
@@ -10,13 +8,29 @@ import (
 	"github.com/influxdata/telegraf/plugins/processors"
 )
 
-//go:embed sample.conf
-var sampleConfig string
+var sampleConfig = `
+  ## Maximum time to suppress output
+  dedup_interval = "600s"
+`
 
 type Dedup struct {
 	DedupInterval config.Duration `toml:"dedup_interval"`
 	FlushTime     time.Time
 	Cache         map[uint64]telegraf.Metric
+}
+
+func (d *Dedup) SampleConfig() string {
+	return sampleConfig
+}
+
+func (d *Dedup) Description() string {
+	return "Filter metrics with repeating field values"
+}
+
+// Remove single item from slice
+func remove(slice []telegraf.Metric, i int) []telegraf.Metric {
+	slice[len(slice)-1], slice[i] = slice[i], slice[len(slice)-1]
+	return slice[:len(slice)-1]
 }
 
 // Remove expired items from cache
@@ -41,30 +55,21 @@ func (d *Dedup) save(metric telegraf.Metric, id uint64) {
 	d.Cache[id].Accept()
 }
 
-func (*Dedup) SampleConfig() string {
-	return sampleConfig
-}
-
 // main processing method
 func (d *Dedup) Apply(metrics ...telegraf.Metric) []telegraf.Metric {
-	idx := 0
-	for _, metric := range metrics {
+	for idx, metric := range metrics {
 		id := metric.HashID()
 		m, ok := d.Cache[id]
 
 		// If not in cache then just save it
 		if !ok {
 			d.save(metric, id)
-			metrics[idx] = metric
-			idx++
 			continue
 		}
 
 		// If cache item has expired then refresh it
 		if time.Since(m.Time()) >= time.Duration(d.DedupInterval) {
 			d.save(metric, id)
-			metrics[idx] = metric
-			idx++
 			continue
 		}
 
@@ -98,21 +103,16 @@ func (d *Dedup) Apply(metrics ...telegraf.Metric) []telegraf.Metric {
 		// If any field value has changed then refresh the cache
 		if changed {
 			d.save(metric, id)
-			metrics[idx] = metric
-			idx++
 			continue
 		}
 
 		if sametime && added {
-			metrics[idx] = metric
-			idx++
 			continue
 		}
 
 		// In any other case remove metric from the output
-		metric.Drop()
+		metrics = remove(metrics, idx)
 	}
-	metrics = metrics[:idx]
 	d.cleanup()
 	return metrics
 }

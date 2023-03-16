@@ -1,9 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package zipkin
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
 	"net"
 	"net/http"
@@ -16,9 +14,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 	"github.com/influxdata/telegraf/plugins/inputs/zipkin/trace"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 const (
 	// DefaultPort is the default port zipkin listens on, which zipkin implementations
@@ -52,6 +47,11 @@ type Handler interface {
 	Register(router *mux.Router, recorder Recorder) error
 }
 
+const sampleConfig = `
+  # path = "/api/v1/spans" # URL path for span data
+  # port = 9411            # Port on which Telegraf listens
+`
+
 // Zipkin is a telegraf configuration structure for the zipkin input plugin,
 // but it also contains fields for the management of a separate, concurrent
 // zipkin http server
@@ -68,7 +68,13 @@ type Zipkin struct {
 	waitGroup *sync.WaitGroup
 }
 
-func (*Zipkin) SampleConfig() string {
+// Description is a necessary method implementation from telegraf.ServiceInput
+func (z Zipkin) Description() string {
+	return "This plugin implements the Zipkin http server to gather trace and timing data needed to troubleshoot latency problems in microservice architectures."
+}
+
+// SampleConfig is a  necessary  method implementation from telegraf.ServiceInput
+func (z Zipkin) SampleConfig() string {
 	return sampleConfig
 }
 
@@ -120,7 +126,9 @@ func (z *Zipkin) Stop() {
 	defer z.waitGroup.Wait()
 	defer cancel()
 
-	z.server.Shutdown(ctx) //nolint:errcheck,revive // Ignore the returned error as we cannot do anything about it anyway
+	// Ignore the returned error as we cannot do anything about it anyway
+	//nolint:errcheck,revive
+	z.server.Shutdown(ctx)
 }
 
 // Listen creates an http server on the zipkin instance it is called with, and
@@ -133,7 +141,7 @@ func (z *Zipkin) Listen(ln net.Listener, acc telegraf.Accumulator) {
 		// This interferes with telegraf's internal data collection,
 		// by making it appear as if a serious error occurred.
 		if err != http.ErrServerClosed {
-			acc.AddError(fmt.Errorf("error listening: %w", err))
+			acc.AddError(fmt.Errorf("error listening: %v", err))
 		}
 	}
 }

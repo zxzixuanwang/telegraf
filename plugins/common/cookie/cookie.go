@@ -19,8 +19,6 @@ type CookieAuthConfig struct {
 	URL    string `toml:"cookie_auth_url"`
 	Method string `toml:"cookie_auth_method"`
 
-	Headers map[string]string `toml:"cookie_auth_headers"`
-
 	// HTTP Basic Auth Credentials
 	Username string `toml:"cookie_auth_username"`
 	Password string `toml:"cookie_auth_password"`
@@ -54,6 +52,11 @@ func (c *CookieAuthConfig) initializeClient(client *http.Client) (err error) {
 		c.Method = http.MethodPost
 	}
 
+	// add cookie jar to HTTP client
+	if c.client.Jar, err = cookiejar.New(nil); err != nil {
+		return err
+	}
+
 	return c.auth()
 }
 
@@ -72,19 +75,10 @@ func (c *CookieAuthConfig) authRenewal(ctx context.Context, ticker *clockutil.Ti
 }
 
 func (c *CookieAuthConfig) auth() error {
-	var err error
-
-	// everytime we auth we clear out the cookie jar to ensure that the cookie
-	// is not used as a part of re-authing. The only way to empty or reset is
-	// to create a new cookie jar.
-	c.client.Jar, err = cookiejar.New(nil)
-	if err != nil {
-		return err
-	}
-
-	var body io.Reader
+	var body io.ReadCloser
 	if c.Body != "" {
-		body = strings.NewReader(c.Body)
+		body = io.NopCloser(strings.NewReader(c.Body))
+		defer body.Close()
 	}
 
 	req, err := http.NewRequest(c.Method, c.URL, body)
@@ -96,30 +90,20 @@ func (c *CookieAuthConfig) auth() error {
 		req.SetBasicAuth(c.Username, c.Password)
 	}
 
-	for k, v := range c.Headers {
-		if strings.ToLower(k) == "host" {
-			req.Host = v
-		} else {
-			req.Header.Add(k, v)
-		}
-	}
-
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
+	if _, err = io.Copy(io.Discard, resp.Body); err != nil {
 		return err
 	}
 
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("cookie auth renewal received status code: %v (%v) [%v]",
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("cookie auth renewal received status code: %v (%v)",
 			resp.StatusCode,
 			http.StatusText(resp.StatusCode),
-			string(respBody),
 		)
 	}
 

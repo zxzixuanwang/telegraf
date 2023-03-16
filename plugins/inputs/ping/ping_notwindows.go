@@ -1,4 +1,5 @@
 //go:build !windows
+// +build !windows
 
 package ping
 
@@ -26,8 +27,7 @@ func (p *Ping) pingToURL(u string, acc telegraf.Accumulator) {
 		// the output.
 		// Linux iputils-ping returns 1, BSD-derived ping returns 2.
 		status := -1
-		var exitError *exec.ExitError
-		if errors.As(err, &exitError) {
+		if exitError, ok := err.(*exec.ExitError); ok {
 			if ws, ok := exitError.Sys().(syscall.WaitStatus); ok {
 				status = ws.ExitStatus()
 				fields["result_code"] = status
@@ -48,9 +48,9 @@ func (p *Ping) pingToURL(u string, acc telegraf.Accumulator) {
 			// Combine go err + stderr output
 			out = strings.TrimSpace(out)
 			if len(out) > 0 {
-				acc.AddError(fmt.Errorf("host %q: %w - %s", u, err, out))
+				acc.AddError(fmt.Errorf("host %s: %s, %s", u, out, err))
 			} else {
-				acc.AddError(fmt.Errorf("host %q: %w", u, err))
+				acc.AddError(fmt.Errorf("host %s: %s", u, err))
 			}
 			fields["result_code"] = 2
 			acc.AddFields("ping", fields, tags)
@@ -60,7 +60,7 @@ func (p *Ping) pingToURL(u string, acc telegraf.Accumulator) {
 	stats, err := processPingOutput(out)
 	if err != nil {
 		// fatal error
-		acc.AddError(fmt.Errorf("%q: %w", u, err))
+		acc.AddError(fmt.Errorf("%s: %s", err, u))
 		fields["result_code"] = 2
 		acc.AddFields("ping", fields, tags)
 		return
@@ -106,7 +106,7 @@ func (p *Ping) args(url string, system string) []string {
 		case "darwin":
 			args = append(args, "-W", strconv.FormatFloat(p.Timeout*1000, 'f', -1, 64))
 		case "freebsd":
-			if strings.Contains(p.Binary, "ping6") && freeBSDMajorVersion() <= 12 {
+			if strings.Contains(p.Binary, "ping6") {
 				args = append(args, "-x", strconv.FormatFloat(p.Timeout*1000, 'f', -1, 64))
 			} else {
 				args = append(args, "-W", strconv.FormatFloat(p.Timeout*1000, 'f', -1, 64))
@@ -123,7 +123,7 @@ func (p *Ping) args(url string, system string) []string {
 	if p.Deadline > 0 {
 		switch system {
 		case "freebsd":
-			if strings.Contains(p.Binary, "ping6") && freeBSDMajorVersion() <= 12 {
+			if strings.Contains(p.Binary, "ping6") {
 				args = append(args, "-X", strconv.Itoa(p.Deadline))
 			} else {
 				args = append(args, "-t", strconv.Itoa(p.Deadline))
@@ -156,13 +156,13 @@ func (p *Ping) args(url string, system string) []string {
 
 // processPingOutput takes in a string output from the ping command, like:
 //
-//	ping www.google.com (173.194.115.84): 56 data bytes
-//	64 bytes from 173.194.115.84: icmp_seq=0 ttl=54 time=52.172 ms
-//	64 bytes from 173.194.115.84: icmp_seq=1 ttl=54 time=34.843 ms
+//     ping www.google.com (173.194.115.84): 56 data bytes
+//     64 bytes from 173.194.115.84: icmp_seq=0 ttl=54 time=52.172 ms
+//     64 bytes from 173.194.115.84: icmp_seq=1 ttl=54 time=34.843 ms
 //
-//	--- www.google.com ping statistics ---
-//	2 packets transmitted, 2 packets received, 0.0% packet loss
-//	round-trip min/avg/max/stddev = 34.843/43.508/52.172/8.664 ms
+//     --- www.google.com ping statistics ---
+//     2 packets transmitted, 2 packets received, 0.0% packet loss
+//     round-trip min/avg/max/stddev = 34.843/43.508/52.172/8.664 ms
 //
 // It returns (<transmitted packets>, <received packets>, <average response>)
 func processPingOutput(out string) (stats, error) {
@@ -201,7 +201,7 @@ func processPingOutput(out string) (stats, error) {
 }
 
 func getPacketStats(line string) (trans int, recv int, err error) {
-	recv = 0
+	trans, recv = 0, 0
 
 	stats := strings.Split(line, ", ")
 	// Transmitted packets
@@ -251,22 +251,4 @@ func checkRoundTripTimeStats(line string) (roundTripTimeStats, error) {
 		}
 	}
 	return roundTripTimeStats, err
-}
-
-// Due to different behavior in version of freebsd, get the major
-// version number. In the event of an error we assume we return a low number
-// to avoid changing behavior.
-func freeBSDMajorVersion() int {
-	out, err := exec.Command("freebsd-version", "-u").Output()
-	if err != nil {
-		return -1
-	}
-
-	majorVersionStr := strings.Split(string(out), ".")[0]
-	majorVersion, err := strconv.Atoi(majorVersionStr)
-	if err != nil {
-		return -1
-	}
-
-	return majorVersion
 }

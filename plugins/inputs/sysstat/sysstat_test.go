@@ -1,4 +1,5 @@
 //go:build linux
+// +build linux
 
 package sysstat
 
@@ -14,33 +15,36 @@ import (
 	"github.com/influxdata/telegraf/testutil"
 )
 
+var s = Sysstat{
+	Log:        testutil.Logger{},
+	interval:   10,
+	Sadc:       "/usr/lib/sa/sadc",
+	Sadf:       "/usr/bin/sadf",
+	Group:      false,
+	Activities: []string{"DISK", "SNMP"},
+	Options: map[string]string{
+		"C": "cpu",
+		"d": "disk",
+	},
+	DeviceTags: map[string][]map[string]string{
+		"sda": {
+			{
+				"vg": "rootvg",
+			},
+		},
+	},
+}
+
 func TestGather(t *testing.T) {
 	// overwriting exec commands with mock commands
 	execCommand = fakeExecCommand
 	defer func() { execCommand = exec.Command }()
 	var acc testutil.Accumulator
 
-	s := &Sysstat{
-		Log:        testutil.Logger{},
-		interval:   10,
-		Sadc:       "/usr/lib/sa/sadc",
-		Sadf:       "/usr/bin/sadf",
-		Group:      false,
-		Activities: []string{"DISK", "SNMP"},
-		Options: map[string]string{
-			"C": "cpu",
-			"d": "disk",
-		},
-		DeviceTags: map[string][]map[string]string{
-			"sda": {
-				{
-					"vg": "rootvg",
-				},
-			},
-		},
+	err := acc.GatherError(s.Gather)
+	if err != nil {
+		t.Fatal(err)
 	}
-	require.NoError(t, s.Init())
-	require.NoError(t, acc.GatherError(s.Gather))
 
 	cpuTags := map[string]string{"device": "all"}
 	diskTags := map[string]string{"device": "sda", "vg": "rootvg"}
@@ -154,32 +158,16 @@ func TestGather(t *testing.T) {
 }
 
 func TestGatherGrouped(t *testing.T) {
+	s.Group = true
 	// overwriting exec commands with mock commands
 	execCommand = fakeExecCommand
 	defer func() { execCommand = exec.Command }()
 	var acc testutil.Accumulator
 
-	s := &Sysstat{
-		Log:        testutil.Logger{},
-		interval:   10,
-		Sadc:       "/usr/lib/sa/sadc",
-		Sadf:       "/usr/bin/sadf",
-		Group:      true,
-		Activities: []string{"DISK", "SNMP"},
-		Options: map[string]string{
-			"C": "cpu",
-			"d": "disk",
-		},
-		DeviceTags: map[string][]map[string]string{
-			"sda": {
-				{
-					"vg": "rootvg",
-				},
-			},
-		},
+	err := acc.GatherError(s.Gather)
+	if err != nil {
+		t.Fatal(err)
 	}
-	require.NoError(t, s.Init())
-	require.NoError(t, acc.GatherError(s.Gather))
 
 	var tests = []struct {
 		measurement string

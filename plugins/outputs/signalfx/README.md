@@ -1,30 +1,10 @@
 # SignalFx Output Plugin
 
-The SignalFx output plugin sends metrics to [SignalFx][docs].
-
-[docs]: https://docs.signalfx.com/en/latest/
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
-## Secret-store support
-
-This plugin supports secrets from secret-stores for the `access_token` option.
-See the [secret-store documentation][SECRETSTORE] for more details on how
-to use them.
-
-[SECRETSTORE]: ../../../docs/CONFIGURATION.md#secret-store-secrets
+The SignalFx output plugin sends metrics to [SignalFx](https://docs.signalfx.com/en/latest/).
 
 ## Configuration
 
-```toml @sample.conf
-# Send metrics and events to SignalFx
+```toml
 [[outputs.signalfx]]
   ## SignalFx Org Access Token
   access_token = "my-secret-token"

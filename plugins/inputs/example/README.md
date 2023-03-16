@@ -4,41 +4,32 @@ The `example` plugin gathers metrics about example things.  This description
 explains at a high level what the plugin does and provides links to where
 additional information can be found.
 
-Telegraf minimum version: Telegraf x.x Plugin minimum tested version: x.x
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+Telegraf minimum version: Telegraf x.x
+Plugin minimum tested version: x.x
 
 ## Configuration
 
-```toml @sample.conf
-# This is an example plugin
+This section contains the default TOML to configure the plugin.  You can
+generate it using `telegraf --usage <plugin-name>`.
+
+```toml
 [[inputs.example]]
   example_option = "example_value"
 ```
 
-Running `telegraf --usage <plugin-name>` also gives the sample TOML
-configuration.
-
 ### example_option
 
-A more in depth description of an option can be provided here, but only do so if
-the option cannot be fully described in the sample config.
+A more in depth description of an option can be provided here, but only do so
+if the option cannot be fully described in the sample config.
 
 ## Metrics
 
-Here you should add an optional description and links to where the user can get
-more information about the measurements.
+Here you should add an optional description and links to where the user can
+get more information about the measurements.
 
-If the output is determined dynamically based on the input source, or there are
-more metrics than can reasonably be listed, describe how the input is mapped to
-the output.
+If the output is determined dynamically based on the input source, or there
+are more metrics than can reasonably be listed, describe how the input is
+mapped to the output.
 
 - measurement1
   - tags:
@@ -75,13 +66,13 @@ SELECT max(field1), mean(field1), min(field1) FROM measurement1 WHERE tag1=bar A
 This optional section can provide basic troubleshooting steps that a user can
 perform.
 
-## Example Output
+## Example
 
 This section shows example output in Line Protocol format.  You can often use
 `telegraf --input-filter <plugin-name> --test` or use the `file` output to get
 this information.
 
-```text
+```shell
 measurement1,tag1=foo,tag2=bar field1=1i,field2=2.1 1453831884664956455
 measurement2,tag1=foo,tag2=bar,tag3=baz field3=1i 1453831884664956455
 ```

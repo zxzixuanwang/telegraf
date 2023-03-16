@@ -1,31 +1,22 @@
 # Mailchimp Input Plugin
 
-Pulls campaign reports from the [Mailchimp API][1].
-
-[1]: https://developer.mailchimp.com/
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+Pulls campaign reports from the [Mailchimp API](https://developer.mailchimp.com/).
 
 ## Configuration
 
-```toml @sample.conf
-# Gathers metrics from the /3.0/reports MailChimp API
+This section contains the default TOML to configure the plugin.  You can
+generate it using `telegraf --usage mailchimp`.
+
+```toml
 [[inputs.mailchimp]]
   ## MailChimp API key
   ## get from https://admin.mailchimp.com/account/api/
   api_key = "" # required
-
+  
   ## Reports for campaigns sent more than days_old ago will not be collected.
   ## 0 means collect all and is the default value.
   days_old = 0
-
+  
   ## Campaign ID to get, if empty gets all campaigns, this option overrides days_old
   # campaign_id = ""
 ```
@@ -66,5 +57,3 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
     - list_stats_unsub_rate (double, percentage)
     - list_stats_open_rate (double, percentage)
     - list_stats_click_rate (double, percentage)
-
-## Example Output

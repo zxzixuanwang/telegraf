@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package monit
 
 import (
-	_ "embed"
 	"encoding/xml"
 	"fmt"
 	"net/http"
@@ -15,9 +13,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 const (
 	fileSystem = "0"
@@ -192,7 +187,30 @@ type Messagebody struct {
 	Metrics []string `json:"metrics"`
 }
 
-func (*Monit) SampleConfig() string {
+func (m *Monit) Description() string {
+	return "Read metrics and status information about processes managed by Monit"
+}
+
+var sampleConfig = `
+  ## Monit HTTPD address
+  address = "http://127.0.0.1:2812"
+
+  ## Username and Password for Monit
+  # username = ""
+  # password = ""
+
+  ## Amount of time allowed to complete the HTTP request
+  # timeout = "5s"
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+`
+
+func (m *Monit) SampleConfig() string {
 	return sampleConfig
 }
 
@@ -235,7 +253,7 @@ func (m *Monit) Gather(acc telegraf.Accumulator) error {
 	decoder := xml.NewDecoder(resp.Body)
 	decoder.CharsetReader = charset.NewReaderLabel
 	if err := decoder.Decode(&status); err != nil {
-		return fmt.Errorf("error parsing input: %w", err)
+		return fmt.Errorf("error parsing input: %v", err)
 	}
 
 	tags := map[string]string{

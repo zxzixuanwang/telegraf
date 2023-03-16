@@ -1,12 +1,8 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package tengine
 
 import (
 	"bufio"
-	_ "embed"
-	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,14 +11,13 @@ import (
 	"sync"
 	"time"
 
+	"io"
+
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 type Tengine struct {
 	Urls            []string
@@ -32,8 +27,27 @@ type Tengine struct {
 	client *http.Client
 }
 
-func (*Tengine) SampleConfig() string {
+var sampleConfig = `
+  # An array of Tengine reqstat module URI to gather stats.
+  urls = ["http://127.0.0.1/us"]
+
+  # HTTP response timeout (default: 5s)
+  # response_timeout = "5s"
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.cer"
+  # tls_key = "/etc/telegraf/key.key"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+`
+
+func (n *Tengine) SampleConfig() string {
 	return sampleConfig
+}
+
+func (n *Tengine) Description() string {
+	return "Read Tengine's basic status information (ngx_http_reqstat_module)"
 }
 
 func (n *Tengine) Gather(acc telegraf.Accumulator) error {
@@ -52,7 +66,7 @@ func (n *Tengine) Gather(acc telegraf.Accumulator) error {
 	for _, u := range n.Urls {
 		addr, err := url.Parse(u)
 		if err != nil {
-			acc.AddError(fmt.Errorf("Unable to parse address %q: %w", u, err))
+			acc.AddError(fmt.Errorf("Unable to parse address '%s': %s", u, err))
 			continue
 		}
 
@@ -124,7 +138,7 @@ func (n *Tengine) gatherURL(addr *url.URL, acc telegraf.Accumulator) error {
 	var tengineStatus TengineStatus
 	resp, err := n.client.Get(addr.String())
 	if err != nil {
-		return fmt.Errorf("error making HTTP request to %q: %w", addr.String(), err)
+		return fmt.Errorf("error making HTTP request to %s: %s", addr.String(), err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -135,7 +149,7 @@ func (n *Tengine) gatherURL(addr *url.URL, acc telegraf.Accumulator) error {
 	for {
 		line, err := r.ReadString('\n')
 
-		if err != nil || errors.Is(err, io.EOF) {
+		if err != nil || io.EOF == err {
 			break
 		}
 		lineSplit := strings.Split(strings.TrimSpace(line), ",")

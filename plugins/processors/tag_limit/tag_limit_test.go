@@ -1,4 +1,4 @@
-package tag_limit
+package taglimit
 
 import (
 	"testing"

@@ -69,7 +69,9 @@ func (c *client) doGet(ctx context.Context, url string, v interface{}) error {
 		return err
 	}
 	defer func() {
-		resp.Body.Close() //nolint:revive // ignore the returned error as we cannot do anything about it anyway
+		// Ignore the returned error as we cannot do anything about it anyway
+		//nolint:errcheck,revive
+		resp.Body.Close()
 		<-c.semaphore
 	}()
 	// Clear invalid token if unauthorized

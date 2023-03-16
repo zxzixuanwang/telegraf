@@ -3,35 +3,17 @@
 The Logical Volume Management (LVM) input plugin collects information about
 physical volumes, volume groups, and logical volumes.
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
+The `lvm` command requires elevated permissions. If the user has configured
+sudo with the ability to run these commands, then set the `use_sudo` to true.
+
+```toml
 # Read metrics about LVM physical volumes, volume groups, logical volumes.
 [[inputs.lvm]]
   ## Use sudo to run LVM commands
   use_sudo = false
-
-  ## The default location of the pvs binary can be overridden with:
-  #pvs_binary = "/usr/sbin/pvs"
-
-  ## The default location of the vgs binary can be overridden with:
-  #vgs_binary = "/usr/sbin/vgs"
-
-  ## The default location of the lvs binary can be overridden with:
-  #lvs_binary = "/usr/sbin/lvs"
 ```
-
-The LVM commands requires elevated permissions. If the user has configured sudo
-with the ability to run these commands, then set the `use_sudo` to true.
 
 ### Using sudo
 
@@ -48,9 +30,6 @@ Cmnd_Alias LVM = /usr/sbin/pvs *, /usr/sbin/vgs *, /usr/sbin/lvs *
 <username>  ALL=(root) NOPASSWD: LVM
 Defaults!LVM !logfile, !syslog, !pam_session
 ```
-
-Path to binaries must match those from config file (pvs_binary, vgs_binary and
-lvs_binary)
 
 ## Metrics
 

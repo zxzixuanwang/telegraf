@@ -2,9 +2,10 @@ package docker
 
 import "strings"
 
-// ParseImage Adapts some of the logic from the actual Docker library's image parsing routines:
+// Adapts some of the logic from the actual Docker library's image parsing
+// routines:
 // https://github.com/docker/distribution/blob/release/2.7/reference/normalize.go
-func ParseImage(image string) (imageName string, imageVersion string) {
+func ParseImage(image string) (string, string) {
 	domain := ""
 	remainder := ""
 
@@ -16,7 +17,9 @@ func ParseImage(image string) (imageName string, imageVersion string) {
 		domain, remainder = image[:i], image[i+1:]
 	}
 
-	imageVersion = "unknown"
+	imageName := ""
+	imageVersion := "unknown"
+
 	i = strings.LastIndex(remainder, ":")
 	if i > -1 {
 		imageVersion = remainder[i+1:]

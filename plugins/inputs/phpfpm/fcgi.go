@@ -45,12 +45,14 @@ const (
 	maxPad   = 255
 )
 
+//nolint:varcheck // For having proper order
 const (
 	roleResponder = iota + 1 // only Responders are implemented.
 	roleAuthorizer
 	roleFilter
 )
 
+//nolint:varcheck // For having proper order
 const (
 	statusRequestComplete = iota
 	statusCantMultiplex
@@ -229,7 +231,9 @@ type bufWriter struct {
 
 func (w *bufWriter) Close() error {
 	if err := w.Writer.Flush(); err != nil {
-		w.closer.Close() //nolint:revive // ignore the returned error as we cannot do anything about it anyway
+		// Ignore the returned error as we cannot do anything about it anyway
+		//nolint:errcheck,revive
+		w.closer.Close()
 		return err
 	}
 	return w.closer.Close()

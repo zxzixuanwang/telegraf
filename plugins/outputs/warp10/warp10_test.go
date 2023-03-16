@@ -3,7 +3,6 @@ package warp10
 import (
 	"testing"
 
-	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -17,7 +16,7 @@ func TestWriteWarp10(t *testing.T) {
 	w := Warp10{
 		Prefix:  "unit.test",
 		WarpURL: "http://localhost:8090",
-		Token:   config.NewSecret([]byte("WRITE")),
+		Token:   "WRITE",
 	}
 
 	payload := w.GenWarp10Payload(testutil.MockMetrics())
@@ -28,7 +27,7 @@ func TestWriteWarp10EncodedTags(t *testing.T) {
 	w := Warp10{
 		Prefix:  "unit.test",
 		WarpURL: "http://localhost:8090",
-		Token:   config.NewSecret([]byte("WRITE")),
+		Token:   "WRITE",
 	}
 
 	metrics := testutil.MockMetrics()
@@ -44,7 +43,7 @@ func TestHandleWarp10Error(t *testing.T) {
 	w := Warp10{
 		Prefix:  "unit.test",
 		WarpURL: "http://localhost:8090",
-		Token:   config.NewSecret([]byte("WRITE")),
+		Token:   "WRITE",
 	}
 	tests := [...]*ErrorTest{
 		{

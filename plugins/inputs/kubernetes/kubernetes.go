@@ -1,21 +1,12 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package kubernetes
 
 import (
-	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"time"
-
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
@@ -24,16 +15,13 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 // Kubernetes represents the config object for the plugin
 type Kubernetes struct {
 	URL string
 
 	// Bearer Token authorization file path
 	BearerToken       string `toml:"bearer_token"`
-	BearerTokenString string `toml:"bearer_token_string" deprecated:"1.24.0;use 'BearerToken' with a file instead"`
+	BearerTokenString string `toml:"bearer_token_string"`
 
 	LabelInclude []string `toml:"label_include"`
 	LabelExclude []string `toml:"label_exclude"`
@@ -45,13 +33,38 @@ type Kubernetes struct {
 
 	tls.ClientConfig
 
-	Log telegraf.Logger `toml:"-"`
-
 	RoundTripper http.RoundTripper
 }
 
+var sampleConfig = `
+  ## URL for the kubelet
+  url = "http://127.0.0.1:10255"
+
+  ## Use bearer token for authorization. ('bearer_token' takes priority)
+  ## If both of these are empty, we'll use the default serviceaccount:
+  ## at: /run/secrets/kubernetes.io/serviceaccount/token
+  # bearer_token = "/path/to/bearer/token"
+  ## OR
+  # bearer_token_string = "abc_123"
+
+  ## Pod labels to be added as tags.  An empty array for both include and
+  ## exclude will include all labels.
+  # label_include = []
+  # label_exclude = ["*"]
+
+  ## Set response_timeout (default 5 seconds)
+  # response_timeout = "5s"
+
+  ## Optional TLS Config
+  # tls_ca = /path/to/cafile
+  # tls_cert = /path/to/certfile
+  # tls_key = /path/to/keyfile
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+`
+
 const (
-	defaultServiceAccountPath = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+	defaultServiceAccountPath = "/run/secrets/kubernetes.io/serviceaccount/token"
 )
 
 func init() {
@@ -63,8 +76,14 @@ func init() {
 	})
 }
 
-func (*Kubernetes) SampleConfig() string {
+//SampleConfig returns a sample config
+func (k *Kubernetes) SampleConfig() string {
 	return sampleConfig
+}
+
+//Description returns the description of this plugin
+func (k *Kubernetes) Description() string {
+	return "Read metrics from the kubernetes kubelet api"
 }
 
 func (k *Kubernetes) Init() error {
@@ -73,87 +92,27 @@ func (k *Kubernetes) Init() error {
 		k.BearerToken = defaultServiceAccountPath
 	}
 
+	if k.BearerToken != "" {
+		token, err := os.ReadFile(k.BearerToken)
+		if err != nil {
+			return err
+		}
+		k.BearerTokenString = strings.TrimSpace(string(token))
+	}
+
 	labelFilter, err := filter.NewIncludeExcludeFilter(k.LabelInclude, k.LabelExclude)
 	if err != nil {
 		return err
 	}
 	k.labelFilter = labelFilter
 
-	if k.URL == "" {
-		k.InsecureSkipVerify = true
-	}
-
 	return nil
 }
 
-// Gather collects kubernetes metrics from a given URL
+//Gather collects kubernetes metrics from a given URL
 func (k *Kubernetes) Gather(acc telegraf.Accumulator) error {
-	if k.URL != "" {
-		acc.AddError(k.gatherSummary(k.URL, acc))
-		return nil
-	}
-
-	var wg sync.WaitGroup
-	nodeBaseURLs, err := getNodeURLs(k.Log)
-	if err != nil {
-		return err
-	}
-
-	for _, url := range nodeBaseURLs {
-		wg.Add(1)
-		go func(url string) {
-			defer wg.Done()
-			acc.AddError(k.gatherSummary(url, acc))
-		}(url)
-	}
-	wg.Wait()
-
+	acc.AddError(k.gatherSummary(k.URL, acc))
 	return nil
-}
-
-func getNodeURLs(log telegraf.Logger) ([]string, error) {
-	cfg, err := rest.InClusterConfig()
-	if err != nil {
-		return nil, err
-	}
-	client, err := kubernetes.NewForConfig(cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	nodes, err := client.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	nodeUrls := make([]string, 0, len(nodes.Items))
-	for _, n := range nodes.Items {
-		address := getNodeAddress(n)
-		if address == "" {
-			log.Warnf("Unable to node addresses for Node %q", n.Name)
-			continue
-		}
-		nodeUrls = append(nodeUrls, "https://"+address+":10250")
-	}
-
-	return nodeUrls, nil
-}
-
-// Prefer internal addresses, if none found, use ExternalIP
-func getNodeAddress(node v1.Node) string {
-	extAddresses := make([]string, 0)
-
-	for _, addr := range node.Status.Addresses {
-		if addr.Type == v1.NodeInternalIP {
-			return addr.Address
-		}
-		extAddresses = append(extAddresses, addr.Address)
-	}
-
-	if len(extAddresses) > 0 {
-		return extAddresses[0]
-	}
-	return ""
 }
 
 func (k *Kubernetes) gatherSummary(baseURL string, acc telegraf.Accumulator) error {
@@ -227,7 +186,7 @@ func (k *Kubernetes) gatherPodInfo(baseURL string) ([]Metadata, error) {
 	if err != nil {
 		return nil, err
 	}
-	podInfos := make([]Metadata, 0, len(podAPI.Items))
+	var podInfos []Metadata
 	for _, podMetadata := range podAPI.Items {
 		podInfos = append(podInfos, podMetadata.Metadata)
 	}
@@ -254,18 +213,11 @@ func (k *Kubernetes) LoadJSON(url string, v interface{}) error {
 			ResponseHeaderTimeout: time.Duration(k.ResponseTimeout),
 		}
 	}
-	if k.BearerToken != "" {
-		token, err := os.ReadFile(k.BearerToken)
-		if err != nil {
-			return err
-		}
-		k.BearerTokenString = strings.TrimSpace(string(token))
-	}
 	req.Header.Set("Authorization", "Bearer "+k.BearerTokenString)
 	req.Header.Add("Accept", "application/json")
 	resp, err = k.RoundTripper.RoundTrip(req)
 	if err != nil {
-		return fmt.Errorf("error making HTTP request to %q: %w", url, err)
+		return fmt.Errorf("error making HTTP request to %s: %s", url, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -274,7 +226,7 @@ func (k *Kubernetes) LoadJSON(url string, v interface{}) error {
 
 	err = json.NewDecoder(resp.Body).Decode(v)
 	if err != nil {
-		return fmt.Errorf("error parsing response: %w", err)
+		return fmt.Errorf(`Error parsing response: %s`, err)
 	}
 
 	return nil

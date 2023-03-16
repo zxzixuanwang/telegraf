@@ -2,54 +2,34 @@ package cratedb
 
 import (
 	"database/sql"
-	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/docker/go-connections/nat"
-	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/metric"
 	"github.com/influxdata/telegraf/testutil"
+	"github.com/stretchr/testify/require"
 )
 
-const servicePort = "5432"
-
-func createTestContainer(t *testing.T) *testutil.Container {
-	container := testutil.Container{
-		Image:        "crate",
-		ExposedPorts: []string{servicePort},
-		Entrypoint: []string{
-			"/docker-entrypoint.sh",
-			"-Cdiscovery.type=single-node",
-		},
-		WaitingFor: wait.ForAll(
-			wait.ForListeningPort(nat.Port(servicePort)),
-			wait.ForLog("recovered [0] indices into cluster_state"),
-		),
-	}
-	err := container.Start()
-	require.NoError(t, err, "failed to start container")
-
-	return &container
-}
-
 func TestConnectAndWriteIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
+	t.Skip("Skipping due to trust authentication failure")
+
+	if os.Getenv("CIRCLE_PROJECT_REPONAME") != "" {
+		t.Skip("Skipping test on CircleCI due to docker failures")
 	}
 
-	container := createTestContainer(t)
-	defer container.Terminate()
-	url := fmt.Sprintf("postgres://crate@%s:%s/test", container.Address, container.Ports[servicePort])
+	url := testURL()
+	table := "test-1"
 
-	fmt.Println(url)
-	table := "testing"
+	// dropSQL drops our table before each test. This simplifies changing the
+	// schema during development :).
+	dropSQL := "DROP TABLE IF EXISTS " + escapeString(table, `"`)
 	db, err := sql.Open("pgx", url)
+	require.NoError(t, err)
+	_, err = db.Exec(dropSQL)
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -149,15 +129,13 @@ func escapeValueTests() []escapeValueTest {
 }
 
 func Test_escapeValueIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
+	t.Skip("Skipping due to trust authentication failure")
+
+	if os.Getenv("CIRCLE_PROJECT_REPONAME") != "" {
+		t.Skip("Skipping test on CircleCI due to docker failures")
 	}
 
-	container := createTestContainer(t)
-	defer container.Terminate()
-	url := fmt.Sprintf("postgres://crate@%s:%s/test", container.Address, container.Ports[servicePort])
-
-	db, err := sql.Open("pgx", url)
+	db, err := sql.Open("pgx", testURL())
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -249,4 +227,13 @@ func Test_hashID(t *testing.T) {
 			t.Errorf("test #%d: got=%d want=%d", i, got, test.Want)
 		}
 	}
+}
+
+//nolint:unused // Used in skipped tests
+func testURL() string {
+	url := os.Getenv("CRATE_URL")
+	if url == "" {
+		return "postgres://" + testutil.GetLocalHost() + ":6543/test?sslmode=disable"
+	}
+	return url
 }

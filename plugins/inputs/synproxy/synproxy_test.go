@@ -1,4 +1,5 @@
 //go:build linux
+// +build linux
 
 package synproxy
 
@@ -58,7 +59,9 @@ func TestSynproxyFileInvalidHex(t *testing.T) {
 func TestNoSynproxyFile(t *testing.T) {
 	tmpfile := makeFakeSynproxyFile([]byte(synproxyFileNormal))
 	// Remove file to generate "no such file" error
-	os.Remove(tmpfile) //nolint:revive // Ignore errors if file does not yet exist
+	// Ignore errors if file does not yet exist
+	//nolint:errcheck,revive
+	os.Remove(tmpfile)
 
 	k := Synproxy{
 		statFile: tmpfile,

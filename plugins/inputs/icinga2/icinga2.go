@@ -1,31 +1,21 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package icinga2
 
 import (
-	_ "embed"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
-	"github.com/influxdata/telegraf/internal/choice"
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 type Icinga2 struct {
 	Server          string
-	Objects         []string
-	Status          []string
-	ObjectType      string `toml:"object_type" deprecated:"1.26.0;2.0.0;use 'objects' instead"`
+	ObjectType      string
 	Username        string
 	Password        string
 	ResponseTimeout config.Duration
@@ -36,75 +26,62 @@ type Icinga2 struct {
 	client *http.Client
 }
 
-type ResultObject struct {
-	Results []struct {
-		Attrs struct {
-			CheckCommand string  `json:"check_command"`
-			DisplayName  string  `json:"display_name"`
-			Name         string  `json:"name"`
-			State        float64 `json:"state"`
-			HostName     string  `json:"host_name"`
-		} `json:"attrs"`
-		Name  string   `json:"name"`
-		Joins struct{} `json:"joins"`
-		Meta  struct{} `json:"meta"`
-		Type  string   `json:"type"`
-	} `json:"results"`
+type Result struct {
+	Results []Object `json:"results"`
 }
 
-type ResultCIB struct {
-	Results []struct {
-		Status map[string]interface{} `json:"status"`
-	} `json:"results"`
+type Object struct {
+	Attrs Attribute  `json:"attrs"`
+	Name  string     `json:"name"`
+	Joins struct{}   `json:"joins"`
+	Meta  struct{}   `json:"meta"`
+	Type  ObjectType `json:"type"`
 }
 
-type ResultPerfdata struct {
-	Results []struct {
-		Perfdata []struct {
-			Label string  `json:"label"`
-			Value float64 `json:"value"`
-		} `json:"perfdata"`
-	} `json:"results"`
+type Attribute struct {
+	CheckCommand string  `json:"check_command"`
+	DisplayName  string  `json:"display_name"`
+	Name         string  `json:"name"`
+	State        float64 `json:"state"`
+	HostName     string  `json:"host_name"`
 }
 
 var levels = []string{"ok", "warning", "critical", "unknown"}
 
-func (*Icinga2) SampleConfig() string {
+type ObjectType string
+
+var sampleConfig = `
+  ## Required Icinga2 server address
+  # server = "https://localhost:5665"
+
+  ## Required Icinga2 object type ("services" or "hosts")
+  # object_type = "services"
+
+  ## Credentials for basic HTTP authentication
+  # username = "admin"
+  # password = "admin"
+
+  ## Maximum time to receive response.
+  # response_timeout = "5s"
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = true
+  `
+
+func (i *Icinga2) Description() string {
+	return "Gather Icinga2 status"
+}
+
+func (i *Icinga2) SampleConfig() string {
 	return sampleConfig
 }
 
-func (i *Icinga2) Init() error {
-	statusEndpoints := []string{"ApiListener", "CIB", "IdoMysqlConnection", "IdoPgsqlConnection"}
-	if err := choice.CheckSlice(i.Status, statusEndpoints); err != nil {
-		return fmt.Errorf("config option 'status': %w", err)
-	}
-
-	if i.ResponseTimeout < config.Duration(time.Second) {
-		i.ResponseTimeout = config.Duration(time.Second * 5)
-	}
-
-	client, err := i.createHTTPClient()
-	if err != nil {
-		return err
-	}
-	i.client = client
-
-	// For backward config compatibility
-	// should be removed in 2.0.0
-	if i.ObjectType != "" {
-		i.Objects = []string{i.ObjectType}
-	}
-
-	objectEndpoints := []string{"services", "hosts"}
-	if err := choice.CheckSlice(i.Objects, objectEndpoints); err != nil {
-		return fmt.Errorf("config option 'objects': %w", err)
-	}
-
-	return nil
-}
-
-func (i *Icinga2) gatherObjects(acc telegraf.Accumulator, checks ResultObject, objectType string) {
-	for _, check := range checks.Results {
+func (i *Icinga2) GatherStatus(acc telegraf.Accumulator, checks []Object) {
+	for _, check := range checks {
 		serverURL, err := url.Parse(i.Server)
 		if err != nil {
 			i.Log.Error(err.Error())
@@ -120,7 +97,7 @@ func (i *Icinga2) gatherObjects(acc telegraf.Accumulator, checks ResultObject, o
 
 		// source is dependent on 'services' or 'hosts' check
 		source := check.Attrs.Name
-		if objectType == "services" {
+		if i.ObjectType == "services" {
 			source = check.Attrs.HostName
 		}
 
@@ -134,7 +111,7 @@ func (i *Icinga2) gatherObjects(acc telegraf.Accumulator, checks ResultObject, o
 			"port":          serverURL.Port(),
 		}
 
-		acc.AddFields(fmt.Sprintf("icinga2_%s", objectType), fields, tags)
+		acc.AddFields(fmt.Sprintf("icinga2_%s", i.ObjectType), fields, tags)
 	}
 }
 
@@ -154,10 +131,32 @@ func (i *Icinga2) createHTTPClient() (*http.Client, error) {
 	return client, nil
 }
 
-func (i *Icinga2) icingaRequest(address string) (*http.Response, error) {
+func (i *Icinga2) Gather(acc telegraf.Accumulator) error {
+	if i.ResponseTimeout < config.Duration(time.Second) {
+		i.ResponseTimeout = config.Duration(time.Second * 5)
+	}
+
+	if i.client == nil {
+		client, err := i.createHTTPClient()
+		if err != nil {
+			return err
+		}
+		i.client = client
+	}
+
+	requestURL := "%s/v1/objects/%s?attrs=name&attrs=display_name&attrs=state&attrs=check_command"
+
+	// Note: attrs=host_name is only valid for 'services' requests, using check.Attrs.HostName for the host
+	//       'hosts' requests will need to use attrs=name only, using check.Attrs.Name for the host
+	if i.ObjectType == "services" {
+		requestURL += "&attrs=host_name"
+	}
+
+	address := fmt.Sprintf(requestURL, i.Server, i.ObjectType)
+
 	req, err := http.NewRequest("GET", address, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if i.Username != "" {
@@ -166,125 +165,18 @@ func (i *Icinga2) icingaRequest(address string) (*http.Response, error) {
 
 	resp, err := i.client.Do(req)
 	if err != nil {
-		return nil, err
-	}
-
-	return resp, nil
-}
-
-func (i *Icinga2) parseObjectResponse(resp *http.Response, result *ResultObject) error {
-	err := json.NewDecoder(resp.Body).Decode(&result)
-	if err != nil {
 		return err
 	}
-	err = resp.Body.Close()
+
+	defer resp.Body.Close()
+
+	result := Result{}
+	err = json.NewDecoder(resp.Body).Decode(&result)
 	if err != nil {
 		return err
 	}
 
-	return nil
-}
-
-func (i *Icinga2) parseCIBResponse(resp *http.Response) (map[string]interface{}, error) {
-	result := ResultCIB{}
-
-	err := json.NewDecoder(resp.Body).Decode(&result)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if len(result.Results) == 0 {
-		return nil, errors.New("no results in Icinga2 API response")
-	}
-
-	return result.Results[0].Status, nil
-}
-
-func (i *Icinga2) parsePerfdataResponse(resp *http.Response) (map[string]interface{}, error) {
-	result := ResultPerfdata{}
-
-	err := json.NewDecoder(resp.Body).Decode(&result)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if len(result.Results) == 0 {
-		return nil, errors.New("no results in Icinga2 API response")
-	}
-
-	fields := make(map[string]interface{})
-	for _, item := range result.Results[0].Perfdata {
-		i := strings.Index(item.Label, "-")
-		if i > 0 {
-			fields[item.Label[i+1:]] = item.Value
-		} else {
-			fields[item.Label] = item.Value
-		}
-	}
-
-	return fields, nil
-}
-
-func (i *Icinga2) Gather(acc telegraf.Accumulator) error {
-	// Collect /v1/objects
-	for _, objectType := range i.Objects {
-		requestURL := "%s/v1/objects/%s?attrs=name&attrs=display_name&attrs=state&attrs=check_command"
-
-		// Note: attrs=host_name is only valid for 'services' requests, using check.Attrs.HostName for the host
-		//       'hosts' requests will need to use attrs=name only, using check.Attrs.Name for the host
-		if objectType == "services" {
-			requestURL += "&attrs=host_name"
-		}
-
-		address := fmt.Sprintf(requestURL, i.Server, objectType)
-
-		resp, err := i.icingaRequest(address)
-		if err != nil {
-			return err
-		}
-
-		result := ResultObject{}
-		err = i.parseObjectResponse(resp, &result)
-		if err != nil {
-			return fmt.Errorf("could not parse object response: %w", err)
-		}
-
-		i.gatherObjects(acc, result, objectType)
-	}
-
-	// Collect /v1/status
-	for _, statusType := range i.Status {
-		address := fmt.Sprintf("%s/v1/status/%s", i.Server, statusType)
-
-		resp, err := i.icingaRequest(address)
-		if err != nil {
-			return err
-		}
-
-		tags := map[string]string{
-			"component": statusType,
-		}
-		var fields map[string]interface{}
-
-		switch statusType {
-		case "ApiListener":
-			fields, err = i.parsePerfdataResponse(resp)
-		case "CIB":
-			fields, err = i.parseCIBResponse(resp)
-		case "IdoMysqlConnection":
-			fields, err = i.parsePerfdataResponse(resp)
-		case "IdoPgsqlConnection":
-			fields, err = i.parsePerfdataResponse(resp)
-		}
-
-		if err != nil {
-			return fmt.Errorf("could not parse %s response: %w", statusType, err)
-		}
-
-		acc.AddFields("icinga2_status", fields, tags)
-	}
+	i.GatherStatus(acc, result.Results)
 
 	return nil
 }
@@ -293,7 +185,7 @@ func init() {
 	inputs.Add("icinga2", func() telegraf.Input {
 		return &Icinga2{
 			Server:          "https://localhost:5665",
-			Objects:         []string{"services"},
+			ObjectType:      "services",
 			ResponseTimeout: config.Duration(time.Second * 5),
 		}
 	})

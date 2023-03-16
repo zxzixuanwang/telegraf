@@ -1,24 +1,11 @@
 # JTI OpenConfig Telemetry Input Plugin
 
-This plugin reads Juniper Networks implementation of OpenConfig telemetry data
-from listed sensors using Junos Telemetry Interface. Refer to
-[openconfig.net](http://openconfig.net/) for more details about OpenConfig and
-[Junos Telemetry Interface (JTI)][1].
-
-[1]: https://www.juniper.net/documentation/en_US/junos/topics/concept/junos-telemetry-interface-oveview.html
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+This plugin reads Juniper Networks implementation of OpenConfig telemetry data from listed sensors using Junos Telemetry Interface. Refer to
+[openconfig.net](http://openconfig.net/) for more details about OpenConfig and [Junos Telemetry Interface (JTI)](https://www.juniper.net/documentation/en_US/junos/topics/concept/junos-telemetry-interface-oveview.html).
 
 ## Configuration
 
-```toml @sample.conf
+```toml
 # Subscribe and receive OpenConfig Telemetry data using JTI
 [[inputs.jti_openconfig_telemetry]]
   ## List of device addresses to collect telemetry from
@@ -54,18 +41,11 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
    "/interfaces",
   ]
 
-  ## Timestamp Source
-  ## Set to 'collection' for time of collection, and 'data' for using the time
-  ## provided by the _timestamp field.
-  # timestamp_source = "collection"
-
   ## Optional TLS Config
-  # enable_tls = false
+  # enable_tls = true
   # tls_ca = "/etc/telegraf/ca.pem"
   # tls_cert = "/etc/telegraf/cert.pem"
   # tls_key = "/etc/telegraf/key.pem"
-  ## Minimal TLS version to accept by the client
-  # tls_min_version = "TLS12"
   ## Use TLS but skip chain & host verification
   # insecure_skip_verify = false
 
@@ -81,7 +61,3 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
 
 - All measurements are tagged appropriately using the identifier information
   in incoming data
-
-## Example Output
-
-## Metrics

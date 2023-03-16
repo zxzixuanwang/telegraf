@@ -3,37 +3,50 @@ package wavefront
 import (
 	"log"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/plugins/outputs/wavefront" // TODO: this dependency is going the wrong way: Move MetricPoint into the serializer.
 )
 
 // WavefrontSerializer : WavefrontSerializer struct
 type WavefrontSerializer struct {
-	Prefix                   string
-	UseStrict                bool
-	SourceOverride           []string
-	DisablePrefixConversions bool
-	scratch                  buffer
-	mu                       sync.Mutex // buffer mutex
+	Prefix         string
+	UseStrict      bool
+	SourceOverride []string
+	scratch        buffer
+	mu             sync.Mutex // buffer mutex
 }
 
-type MetricPoint struct {
-	Metric    string
-	Value     float64
-	Timestamp int64
-	Source    string
-	Tags      map[string]string
-}
+// catch many of the invalid chars that could appear in a metric or tag name
+var sanitizedChars = strings.NewReplacer(
+	"!", "-", "@", "-", "#", "-", "$", "-", "%", "-", "^", "-", "&", "-",
+	"*", "-", "(", "-", ")", "-", "+", "-", "`", "-", "'", "-", "\"", "-",
+	"[", "-", "]", "-", "{", "-", "}", "-", ":", "-", ";", "-", "<", "-",
+	">", "-", ",", "-", "?", "-", "/", "-", "\\", "-", "|", "-", " ", "-",
+	"=", "-",
+)
 
-func NewSerializer(prefix string, useStrict bool, sourceOverride []string, disablePrefixConversion bool) *WavefrontSerializer {
+// catch many of the invalid chars that could appear in a metric or tag name
+var strictSanitizedChars = strings.NewReplacer(
+	"!", "-", "@", "-", "#", "-", "$", "-", "%", "-", "^", "-", "&", "-",
+	"*", "-", "(", "-", ")", "-", "+", "-", "`", "-", "'", "-", "\"", "-",
+	"[", "-", "]", "-", "{", "-", "}", "-", ":", "-", ";", "-", "<", "-",
+	">", "-", "?", "-", "\\", "-", "|", "-", " ", "-", "=", "-",
+)
+
+var tagValueReplacer = strings.NewReplacer("\"", "\\\"", "*", "-")
+
+var pathReplacer = strings.NewReplacer("_", ".")
+
+func NewSerializer(prefix string, useStrict bool, sourceOverride []string) (*WavefrontSerializer, error) {
 	s := &WavefrontSerializer{
-		Prefix:                   prefix,
-		UseStrict:                useStrict,
-		SourceOverride:           sourceOverride,
-		DisablePrefixConversions: disablePrefixConversion,
+		Prefix:         prefix,
+		UseStrict:      useStrict,
+		SourceOverride: sourceOverride,
 	}
-	return s
+	return s, nil
 }
 
 func (s *WavefrontSerializer) serializeMetric(m telegraf.Metric) {
@@ -48,11 +61,13 @@ func (s *WavefrontSerializer) serializeMetric(m telegraf.Metric) {
 			name = s.Prefix + m.Name() + metricSeparator + fieldName
 		}
 
-		name = Sanitize(s.UseStrict, name)
-
-		if !s.DisablePrefixConversions {
-			name = pathReplacer.Replace(name)
+		if s.UseStrict {
+			name = strictSanitizedChars.Replace(name)
+		} else {
+			name = sanitizedChars.Replace(name)
 		}
+
+		name = pathReplacer.Replace(name)
 
 		metricValue, valid := buildValue(value, name)
 		if !valid {
@@ -60,7 +75,7 @@ func (s *WavefrontSerializer) serializeMetric(m telegraf.Metric) {
 			continue
 		}
 		source, tags := buildTags(m.Tags(), s)
-		metric := MetricPoint{
+		metric := wavefront.MetricPoint{
 			Metric:    name,
 			Timestamp: m.Time().Unix(),
 			Value:     metricValue,
@@ -143,7 +158,7 @@ func buildValue(v interface{}, name string) (val float64, valid bool) {
 	}
 }
 
-func formatMetricPoint(b *buffer, metricPoint *MetricPoint, s *WavefrontSerializer) []byte {
+func formatMetricPoint(b *buffer, metricPoint *wavefront.MetricPoint, s *WavefrontSerializer) []byte {
 	b.WriteChar('"')
 	b.WriteString(metricPoint.Metric)
 	b.WriteString(`" `)
@@ -156,7 +171,11 @@ func formatMetricPoint(b *buffer, metricPoint *MetricPoint, s *WavefrontSerializ
 
 	for k, v := range metricPoint.Tags {
 		b.WriteString(` "`)
-		b.WriteString(Sanitize(s.UseStrict, k))
+		if s.UseStrict {
+			b.WriteString(strictSanitizedChars.Replace(k))
+		} else {
+			b.WriteString(sanitizedChars.Replace(k))
+		}
 		b.WriteString(`"="`)
 		b.WriteString(tagValueReplacer.Replace(v))
 		b.WriteChar('"')
@@ -172,8 +191,9 @@ type buffer []byte
 func (b *buffer) Reset() { *b = (*b)[:0] }
 
 func (b *buffer) Copy() []byte {
-	p := make([]byte, 0, len(*b))
-	return append(p, *b...)
+	p := make([]byte, len(*b))
+	copy(p, *b)
+	return p
 }
 
 func (b *buffer) WriteString(s string) {
@@ -183,7 +203,8 @@ func (b *buffer) WriteString(s string) {
 // WriteChar has this name instead of WriteByte because the 'stdmethods' check
 // of 'go vet' wants WriteByte to have the signature:
 //
-//	func (b *buffer) WriteByte(c byte) error { ... }
+// 	func (b *buffer) WriteByte(c byte) error { ... }
+//
 func (b *buffer) WriteChar(c byte) {
 	*b = append(*b, c)
 }

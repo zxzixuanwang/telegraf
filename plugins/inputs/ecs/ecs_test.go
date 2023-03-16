@@ -1,6 +1,7 @@
 package ecs
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -773,7 +774,8 @@ func TestResolveEndpoint(t *testing.T) {
 		name   string
 		given  Ecs
 		exp    Ecs
-		setEnv func(*testing.T)
+		preF   func()
+		afterF func()
 	}{
 		{
 			name: "Endpoint is explicitly set => use v2 metadata",
@@ -797,8 +799,11 @@ func TestResolveEndpoint(t *testing.T) {
 		},
 		{
 			name: "Endpoint is not set, ECS_CONTAINER_METADATA_URI is set => use v3 metadata",
-			setEnv: func(t *testing.T) {
-				t.Setenv("ECS_CONTAINER_METADATA_URI", "v3-endpoint.local")
+			preF: func() {
+				require.NoError(t, os.Setenv("ECS_CONTAINER_METADATA_URI", "v3-endpoint.local"))
+			},
+			afterF: func() {
+				require.NoError(t, os.Unsetenv("ECS_CONTAINER_METADATA_URI"))
 			},
 			given: Ecs{
 				EndpointURL: "",
@@ -811,8 +816,11 @@ func TestResolveEndpoint(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.setEnv != nil {
-				tt.setEnv(t)
+			if tt.preF != nil {
+				tt.preF()
+			}
+			if tt.afterF != nil {
+				defer tt.afterF()
 			}
 
 			act := tt.given

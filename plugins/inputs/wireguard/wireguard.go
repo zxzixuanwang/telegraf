@@ -1,10 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package wireguard
 
 import (
-	_ "embed"
 	"fmt"
-	"strings"
 
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
@@ -12,9 +9,6 @@ import (
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 const (
 	measurementDevice = "wireguard_device"
@@ -38,8 +32,16 @@ type Wireguard struct {
 	client *wgctrl.Client
 }
 
-func (*Wireguard) SampleConfig() string {
-	return sampleConfig
+func (wg *Wireguard) Description() string {
+	return "Collect Wireguard server interface and peer statistics"
+}
+
+func (wg *Wireguard) SampleConfig() string {
+	return `
+  ## Optional list of Wireguard device/interface names to query.
+  ## If omitted, all Wireguard interfaces are queried.
+  # devices = ["wg0"]
+`
 }
 
 func (wg *Wireguard) Init() error {
@@ -53,7 +55,7 @@ func (wg *Wireguard) Init() error {
 func (wg *Wireguard) Gather(acc telegraf.Accumulator) error {
 	devices, err := wg.enumerateDevices()
 	if err != nil {
-		return fmt.Errorf("error enumerating Wireguard devices: %w", err)
+		return fmt.Errorf("error enumerating Wireguard devices: %v", err)
 	}
 
 	for _, device := range devices {
@@ -68,6 +70,8 @@ func (wg *Wireguard) Gather(acc telegraf.Accumulator) error {
 }
 
 func (wg *Wireguard) enumerateDevices() ([]*wgtypes.Device, error) {
+	var devices []*wgtypes.Device
+
 	// If no device names are specified, defer to the library to enumerate
 	// all of them
 	if len(wg.Devices) == 0 {
@@ -75,7 +79,6 @@ func (wg *Wireguard) enumerateDevices() ([]*wgtypes.Device, error) {
 	}
 
 	// Otherwise, explicitly populate only device names specified in config
-	devices := make([]*wgtypes.Device, 0, len(wg.Devices))
 	for _, name := range wg.Devices {
 		dev, err := wg.client.Device(name)
 		if err != nil {
@@ -113,14 +116,6 @@ func (wg *Wireguard) gatherDevicePeerMetrics(acc telegraf.Accumulator, device *w
 		"persistent_keepalive_interval_ns": peer.PersistentKeepaliveInterval.Nanoseconds(),
 		"protocol_version":                 peer.ProtocolVersion,
 		"allowed_ips":                      len(peer.AllowedIPs),
-	}
-
-	if len(peer.AllowedIPs) > 0 {
-		cidrs := []string{}
-		for _, ip := range peer.AllowedIPs {
-			cidrs = append(cidrs, ip.String())
-		}
-		fields["allowed_peer_cidr"] = strings.Join(cidrs, ",")
 	}
 
 	gauges := map[string]interface{}{

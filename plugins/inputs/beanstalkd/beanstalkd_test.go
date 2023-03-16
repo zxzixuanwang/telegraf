@@ -1,7 +1,6 @@
 package beanstalkd_test
 
 import (
-	"errors"
 	"io"
 	"net"
 	"net/textproto"
@@ -122,7 +121,7 @@ func startTestServer(t *testing.T) (net.Listener, error) {
 
 		for {
 			cmd, err := tp.ReadLine()
-			if errors.Is(err, io.EOF) {
+			if err == io.EOF {
 				return
 			} else if err != nil {
 				t.Log("Test server: failed read command. Error: ", err)

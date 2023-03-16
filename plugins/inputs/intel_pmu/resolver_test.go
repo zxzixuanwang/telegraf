@@ -1,4 +1,5 @@
 //go:build linux && amd64
+// +build linux,amd64
 
 package intel_pmu
 
@@ -60,7 +61,7 @@ func TestResolveEntities(t *testing.T) {
 		err := mResolver.resolveEntities([]*CoreEventEntity{mCoreEntity}, nil)
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), fmt.Sprintf("failed to resolve core event %q", name))
+		require.Contains(t, err.Error(), fmt.Sprintf("failed to resolve core event `%s`", name))
 		mTransformer.AssertExpectations(t)
 	})
 
@@ -73,7 +74,7 @@ func TestResolveEntities(t *testing.T) {
 		err := mResolver.resolveEntities(nil, []*UncoreEventEntity{mUncoreEntity})
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), fmt.Sprintf("failed to resolve uncore event %q", name))
+		require.Contains(t, err.Error(), fmt.Sprintf("failed to resolve uncore event `%s`", name))
 		mTransformer.AssertExpectations(t)
 	})
 
@@ -159,7 +160,7 @@ func TestResolveEntities(t *testing.T) {
 		err := mResolver.resolveEntities([]*CoreEventEntity{mCoreEntity}, nil)
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), fmt.Sprintf("uncore event %q found in core entity", eventName))
+		require.Contains(t, err.Error(), fmt.Sprintf("uncore event `%s` found in core entity", eventName))
 		mTransformer.AssertExpectations(t)
 	})
 
@@ -179,7 +180,7 @@ func TestResolveEntities(t *testing.T) {
 		err := mResolver.resolveEntities(nil, []*UncoreEventEntity{mUncoreEntity})
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), fmt.Sprintf("core event %q found in uncore entity", eventName))
+		require.Contains(t, err.Error(), fmt.Sprintf("core event `%s` found in uncore entity", eventName))
 		mTransformer.AssertExpectations(t)
 	})
 
@@ -349,7 +350,7 @@ func TestResolveEvent(t *testing.T) {
 
 		_, err := mResolver.resolveEvent(event, qualifiers)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), fmt.Sprintf("failed to build options for event %q", event))
+		require.Contains(t, err.Error(), fmt.Sprintf("failed to build options for event `%s`", event))
 		mTransformer.AssertExpectations(t)
 	})
 

@@ -1,9 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package warp10
 
 import (
 	"bytes"
-	_ "embed"
 	"fmt"
 	"io"
 	"math"
@@ -20,9 +18,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/outputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 const (
 	defaultClientTimeout = 15 * time.Second
 )
@@ -31,7 +26,7 @@ const (
 type Warp10 struct {
 	Prefix             string          `toml:"prefix"`
 	WarpURL            string          `toml:"warp_url"`
-	Token              config.Secret   `toml:"token"`
+	Token              string          `toml:"token"`
 	Timeout            config.Duration `toml:"timeout"`
 	PrintErrorBody     bool            `toml:"print_error_body"`
 	MaxStringErrorSize int             `toml:"max_string_error_size"`
@@ -39,6 +34,33 @@ type Warp10 struct {
 	tls.ClientConfig
 	Log telegraf.Logger `toml:"-"`
 }
+
+var sampleConfig = `
+  # Prefix to add to the measurement.
+  prefix = "telegraf."
+
+  # URL of the Warp 10 server
+  warp_url = "http://localhost:8080"
+
+  # Write token to access your app on warp 10
+  token = "Token"
+
+  # Warp 10 query timeout
+  # timeout = "15s"
+
+  ## Print Warp 10 error body
+  # print_error_body = false
+
+  ## Max string error size
+  # max_string_error_size = 511
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+`
 
 // MetricLine Warp 10 metrics
 type MetricLine struct {
@@ -67,10 +89,6 @@ func (w *Warp10) createClient() (*http.Client, error) {
 	}
 
 	return client, nil
-}
-
-func (*Warp10) SampleConfig() string {
-	return sampleConfig
 }
 
 // Connect to warp10
@@ -122,16 +140,11 @@ func (w *Warp10) Write(metrics []telegraf.Metric) error {
 	addr := w.WarpURL + "/api/v0/update"
 	req, err := http.NewRequest("POST", addr, bytes.NewBufferString(payload))
 	if err != nil {
-		return fmt.Errorf("unable to create new request %q: %w", addr, err)
+		return fmt.Errorf("unable to create new request '%s': %s", addr, err)
 	}
 
+	req.Header.Set("X-Warp10-Token", w.Token)
 	req.Header.Set("Content-Type", "text/plain")
-	token, err := w.Token.Get()
-	if err != nil {
-		return fmt.Errorf("getting token failed: %w", err)
-	}
-	req.Header.Set("X-Warp10-Token", string(token))
-	config.ReleaseSecret(token)
 
 	resp, err := w.client.Do(req)
 	if err != nil {
@@ -156,13 +169,16 @@ func (w *Warp10) Write(metrics []telegraf.Metric) error {
 }
 
 func buildTags(tags []*telegraf.Tag) []string {
-	tagsString := make([]string, 0, len(tags)+1)
-	for _, tag := range tags {
+	tagsString := make([]string, len(tags)+1)
+	indexSource := 0
+	for index, tag := range tags {
 		key := url.QueryEscape(tag.Key)
 		value := url.QueryEscape(tag.Value)
-		tagsString = append(tagsString, fmt.Sprintf("%s=%s", key, value))
+		tagsString[index] = fmt.Sprintf("%s=%s", key, value)
+		indexSource = index
 	}
-	tagsString = append(tagsString, "source=telegraf")
+	indexSource++
+	tagsString[indexSource] = "source=telegraf"
 	sort.Strings(tagsString)
 	return tagsString
 }
@@ -173,7 +189,7 @@ func buildValue(v interface{}) (string, error) {
 	case int64:
 		retv = intToString(p)
 	case string:
-		retv = fmt.Sprintf("'%s'", strings.ReplaceAll(p, "'", "\\'"))
+		retv = fmt.Sprintf("'%s'", strings.Replace(p, "'", "\\'", -1))
 	case bool:
 		retv = boolToString(p)
 	case uint64:
@@ -200,6 +216,16 @@ func boolToString(inputBool bool) string {
 
 func floatToString(inputNum float64) string {
 	return strconv.FormatFloat(inputNum, 'f', 6, 64)
+}
+
+// SampleConfig get config
+func (w *Warp10) SampleConfig() string {
+	return sampleConfig
+}
+
+// Description get description
+func (w *Warp10) Description() string {
+	return "Write metrics to Warp 10"
 }
 
 // Close close

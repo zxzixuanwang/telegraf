@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/influxdata/telegraf/config"
-	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/streadway/amqp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -114,8 +114,8 @@ func TestConnect(t *testing.T) {
 			name: "username password",
 			output: &AMQP{
 				URL:      "amqp://foo:bar@localhost",
-				Username: config.NewSecret([]byte("telegraf")),
-				Password: config.NewSecret([]byte("pa$$word")),
+				Username: "telegraf",
+				Password: "pa$$word",
 				connect: func(_ *ClientConfig) (Client, error) {
 					return NewMockClient(), nil
 				},

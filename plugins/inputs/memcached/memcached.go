@@ -1,33 +1,29 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package memcached
 
 import (
 	"bufio"
 	"bytes"
-	"crypto/tls"
-	_ "embed"
 	"fmt"
 	"net"
 	"strconv"
 	"time"
 
-	"golang.org/x/net/proxy"
-
 	"github.com/influxdata/telegraf"
-	tlsint "github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 // Memcached is a memcached plugin
 type Memcached struct {
-	Servers     []string `toml:"servers"`
-	UnixSockets []string `toml:"unix_sockets"`
-	EnableTLS   bool     `toml:"enable_tls"`
-	tlsint.ClientConfig
+	Servers     []string
+	UnixSockets []string
 }
+
+var sampleConfig = `
+  ## An array of address to gather stats about. Specify an ip on hostname
+  ## with optional port. ie localhost, 10.0.0.1:11211, etc.
+  servers = ["localhost:11211"]
+  # unix_sockets = ["/var/run/memcached.sock"]
+`
 
 var defaultTimeout = 5 * time.Second
 
@@ -54,12 +50,9 @@ var sendMetrics = []string{
 	"decr_misses",
 	"delete_hits",
 	"delete_misses",
-	"evicted_active",
 	"evicted_unfetched",
 	"evictions",
 	"expired_unfetched",
-	"get_expired",
-	"get_flushed",
 	"get_hits",
 	"get_misses",
 	"hash_bytes",
@@ -69,11 +62,7 @@ var sendMetrics = []string{
 	"incr_misses",
 	"limit_maxbytes",
 	"listen_disabled_num",
-	"max_connections",
 	"reclaimed",
-	"rejected_connections",
-	"store_no_memory",
-	"store_too_large",
 	"threads",
 	"total_connections",
 	"total_items",
@@ -82,8 +71,14 @@ var sendMetrics = []string{
 	"uptime",
 }
 
-func (*Memcached) SampleConfig() string {
+// SampleConfig returns sample configuration message
+func (m *Memcached) SampleConfig() string {
 	return sampleConfig
+}
+
+// Description returns description of Memcached plugin
+func (m *Memcached) Description() string {
+	return "Read metrics from one or many memcached servers"
 }
 
 // Gather reads stats from all configured servers accumulates stats
@@ -110,23 +105,8 @@ func (m *Memcached) gatherServer(
 ) error {
 	var conn net.Conn
 	var err error
-	var dialer proxy.Dialer
-
-	dialer = &net.Dialer{Timeout: defaultTimeout}
-	if m.EnableTLS {
-		tlsCfg, err := m.ClientConfig.TLSConfig()
-		if err != nil {
-			return err
-		}
-
-		dialer = &tls.Dialer{
-			NetDialer: dialer.(*net.Dialer),
-			Config:    tlsCfg,
-		}
-	}
-
 	if unix {
-		conn, err = dialer.Dial("unix", address)
+		conn, err = net.DialTimeout("unix", address, defaultTimeout)
 		if err != nil {
 			return err
 		}
@@ -137,7 +117,7 @@ func (m *Memcached) gatherServer(
 			address = address + ":11211"
 		}
 
-		conn, err = dialer.Dial("tcp", address)
+		conn, err = net.DialTimeout("tcp", address, defaultTimeout)
 		if err != nil {
 			return err
 		}

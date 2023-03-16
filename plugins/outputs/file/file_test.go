@@ -21,7 +21,8 @@ const (
 
 func TestFileExistingFile(t *testing.T) {
 	fh := createFile(t)
-	s := serializers.NewInfluxSerializer()
+	defer os.Remove(fh.Name())
+	s, _ := serializers.NewInfluxSerializer()
 	f := File{
 		Files:      []string{fh.Name()},
 		serializer: s,
@@ -40,8 +41,9 @@ func TestFileExistingFile(t *testing.T) {
 }
 
 func TestFileNewFile(t *testing.T) {
-	s := serializers.NewInfluxSerializer()
+	s, _ := serializers.NewInfluxSerializer()
 	fh := tmpFile(t)
+	defer os.Remove(fh)
 	f := File{
 		Files:      []string{fh},
 		serializer: s,
@@ -61,10 +63,13 @@ func TestFileNewFile(t *testing.T) {
 
 func TestFileExistingFiles(t *testing.T) {
 	fh1 := createFile(t)
+	defer os.Remove(fh1.Name())
 	fh2 := createFile(t)
+	defer os.Remove(fh2.Name())
 	fh3 := createFile(t)
+	defer os.Remove(fh3.Name())
 
-	s := serializers.NewInfluxSerializer()
+	s, _ := serializers.NewInfluxSerializer()
 	f := File{
 		Files:      []string{fh1.Name(), fh2.Name(), fh3.Name()},
 		serializer: s,
@@ -85,10 +90,13 @@ func TestFileExistingFiles(t *testing.T) {
 }
 
 func TestFileNewFiles(t *testing.T) {
-	s := serializers.NewInfluxSerializer()
+	s, _ := serializers.NewInfluxSerializer()
 	fh1 := tmpFile(t)
+	defer os.Remove(fh1)
 	fh2 := tmpFile(t)
+	defer os.Remove(fh2)
 	fh3 := tmpFile(t)
+	defer os.Remove(fh3)
 	f := File{
 		Files:      []string{fh1, fh2, fh3},
 		serializer: s,
@@ -110,9 +118,11 @@ func TestFileNewFiles(t *testing.T) {
 
 func TestFileBoth(t *testing.T) {
 	fh1 := createFile(t)
+	defer os.Remove(fh1.Name())
 	fh2 := tmpFile(t)
+	defer os.Remove(fh2)
 
-	s := serializers.NewInfluxSerializer()
+	s, _ := serializers.NewInfluxSerializer()
 	f := File{
 		Files:      []string{fh1.Name(), fh2},
 		serializer: s,
@@ -137,7 +147,7 @@ func TestFileStdout(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	s := serializers.NewInfluxSerializer()
+	s, _ := serializers.NewInfluxSerializer()
 	f := File{
 		Files:      []string{"stdout"},
 		serializer: s,
@@ -173,11 +183,8 @@ func TestFileStdout(t *testing.T) {
 }
 
 func createFile(t *testing.T) *os.File {
-	f, err := os.CreateTemp(t.TempDir(), "")
+	f, err := os.CreateTemp("", "")
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, f.Close())
-	})
 
 	_, err = f.WriteString("cpu,cpu=cpu0 value=100 1455312810012459582\n")
 	require.NoError(t, err)
@@ -185,9 +192,10 @@ func createFile(t *testing.T) *os.File {
 }
 
 func tmpFile(t *testing.T) string {
-	randomString, err := internal.RandomString(10)
+	d, err := os.MkdirTemp("", "")
 	require.NoError(t, err)
-	return t.TempDir() + randomString
+
+	return d + internal.RandomString(10)
 }
 
 func validateFile(t *testing.T, fileName, expS string) {

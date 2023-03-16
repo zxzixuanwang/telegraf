@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package tomcat
 
 import (
-	_ "embed"
 	"encoding/xml"
 	"fmt"
 	"net/http"
@@ -15,9 +13,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 type TomcatStatus struct {
 	TomcatJvm        TomcatJvm         `xml:"jvm"`
@@ -75,8 +70,31 @@ type Tomcat struct {
 	request *http.Request
 }
 
-func (*Tomcat) SampleConfig() string {
-	return sampleConfig
+var sampleconfig = `
+  ## URL of the Tomcat server status
+  # url = "http://127.0.0.1:8080/manager/status/all?XML=true"
+
+  ## HTTP Basic Auth Credentials
+  # username = "tomcat"
+  # password = "s3cret"
+
+  ## Request timeout
+  # timeout = "5s"
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+`
+
+func (s *Tomcat) Description() string {
+	return "Gather metrics from the Tomcat server status page."
+}
+
+func (s *Tomcat) SampleConfig() string {
+	return sampleconfig
 }
 
 func (s *Tomcat) Gather(acc telegraf.Accumulator) error {
@@ -117,24 +135,19 @@ func (s *Tomcat) Gather(acc telegraf.Accumulator) error {
 		return err
 	}
 
-	tags := map[string]string{
-		"source": s.URL,
-	}
-
 	// add tomcat_jvm_memory measurements
 	tcm := map[string]interface{}{
 		"free":  status.TomcatJvm.JvmMemory.Free,
 		"total": status.TomcatJvm.JvmMemory.Total,
 		"max":   status.TomcatJvm.JvmMemory.Max,
 	}
-	acc.AddFields("tomcat_jvm_memory", tcm, tags)
+	acc.AddFields("tomcat_jvm_memory", tcm, nil)
 
 	// add tomcat_jvm_memorypool measurements
 	for _, mp := range status.TomcatJvm.JvmMemoryPools {
 		tcmpTags := map[string]string{
-			"name":   mp.Name,
-			"type":   mp.Type,
-			"source": s.URL,
+			"name": mp.Name,
+			"type": mp.Type,
 		}
 
 		tcmpFields := map[string]interface{}{
@@ -155,8 +168,7 @@ func (s *Tomcat) Gather(acc telegraf.Accumulator) error {
 		}
 
 		tccTags := map[string]string{
-			"name":   name,
-			"source": s.URL,
+			"name": name,
 		}
 
 		tccFields := map[string]interface{}{

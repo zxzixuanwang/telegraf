@@ -1,11 +1,11 @@
-//go:generate ../../../tools/readme_config_includer/generator
 //go:build linux && amd64
+// +build linux,amd64
 
 package intel_pmu
 
 import (
-	_ "embed"
 	"fmt"
+	"io/ioutil"
 	"math"
 	"math/big"
 	"os"
@@ -13,14 +13,10 @@ import (
 	"strings"
 	"syscall"
 
-	ia "github.com/intel/iaevents"
-
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/inputs"
+	ia "github.com/intel/iaevents"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 // Linux availability: https://www.kernel.org/doc/Documentation/sysctl/fs.txt
 const fileMaxPath = "/proc/sys/fs/file-max"
@@ -34,7 +30,7 @@ type fileInfoProvider interface {
 type fileHelper struct{}
 
 func (fileHelper) readFile(path string) ([]byte, error) {
-	return os.ReadFile(path)
+	return ioutil.ReadFile(path)
 }
 
 func (fileHelper) lstat(path string) (os.FileInfo, error) {
@@ -115,20 +111,70 @@ type eventWithQuals struct {
 	custom ia.CustomizableEvent
 }
 
+func (i *IntelPMU) Description() string {
+	return "Intel Performance Monitoring Unit plugin exposes Intel PMU metrics available through Linux Perf subsystem"
+}
+
+func (i *IntelPMU) SampleConfig() string {
+	return `
+  ## List of filesystem locations of JSON files that contain PMU event definitions.
+  event_definitions = ["/var/cache/pmu/GenuineIntel-6-55-4-core.json", "/var/cache/pmu/GenuineIntel-6-55-4-uncore.json"]
+  
+  ## List of core events measurement entities. There can be more than one core_events sections.
+  [[inputs.intel_pmu.core_events]]
+    ## List of events to be counted. Event names shall match names from event_definitions files.
+    ## Single entry can contain name of the event (case insensitive) augmented with config options and perf modifiers.
+    ## If absent, all core events from provided event_definitions are counted skipping unresolvable ones.
+    events = ["INST_RETIRED.ANY", "CPU_CLK_UNHALTED.THREAD_ANY:config1=0x4043200000000k"]
+
+    ## Limits the counting of events to core numbers specified.
+    ## If absent, events are counted on all cores.
+    ## Single "0", multiple "0,1,2" and range "0-2" notation is supported for each array element.
+    ##   example: cores = ["0,2", "4", "12-16"]
+    cores = ["0"]
+
+    ## Indicator that plugin shall attempt to run core_events.events as a single perf group.
+    ## If absent or set to false, each event is counted individually. Defaults to false.
+    ## This limits the number of events that can be measured to a maximum of available hardware counters per core.
+    ## Could vary depending on type of event, use of fixed counters.
+    # perf_group = false
+
+    ## Optionally set a custom tag value that will be added to every measurement within this events group. 
+    ## Can be applied to any group of events, unrelated to perf_group setting.
+    # events_tag = ""
+
+  ## List of uncore event measurement entities. There can be more than one uncore_events sections.
+  [[inputs.intel_pmu.uncore_events]]
+    ## List of events to be counted. Event names shall match names from event_definitions files.
+    ## Single entry can contain name of the event (case insensitive) augmented with config options and perf modifiers.
+    ## If absent, all uncore events from provided event_definitions are counted skipping unresolvable ones.
+    events = ["UNC_CHA_CLOCKTICKS", "UNC_CHA_TOR_OCCUPANCY.IA_MISS"]
+
+    ## Limits the counting of events to specified sockets.
+    ## If absent, events are counted on all sockets.
+    ## Single "0", multiple "0,1" and range "0-1" notation is supported for each array element.
+    ##   example: sockets = ["0-2"]
+    sockets = ["0"]
+
+    ## Indicator that plugin shall provide an aggregated value for multiple units of same type distributed in an uncore.
+    ## If absent or set to false, events for each unit are exposed as separate metric. Defaults to false.
+    # aggregate_uncore_units = false
+
+    ## Optionally set a custom tag value that will be added to every measurement within this events group.
+    # events_tag = ""
+`
+}
+
 // Start is required for IntelPMU to implement the telegraf.ServiceInput interface.
 // Necessary initialization and config checking are done in Init.
 func (IntelPMU) Start(_ telegraf.Accumulator) error {
 	return nil
 }
 
-func (*IntelPMU) SampleConfig() string {
-	return sampleConfig
-}
-
 func (i *IntelPMU) Init() error {
 	err := checkFiles(i.EventListPaths, i.fileInfo)
 	if err != nil {
-		return fmt.Errorf("error during event definitions paths validation: %w", err)
+		return fmt.Errorf("error during event definitions paths validation: %v", err)
 	}
 
 	reader, err := newReader(i.EventListPaths)
@@ -152,22 +198,22 @@ func (i *IntelPMU) initialization(parser entitiesParser, resolver entitiesResolv
 
 	err := parser.parseEntities(i.CoreEntities, i.UncoreEntities)
 	if err != nil {
-		return fmt.Errorf("error during parsing configuration sections: %w", err)
+		return fmt.Errorf("error during parsing configuration sections: %v", err)
 	}
 
 	err = resolver.resolveEntities(i.CoreEntities, i.UncoreEntities)
 	if err != nil {
-		return fmt.Errorf("error during events resolving: %w", err)
+		return fmt.Errorf("error during events resolving: %v", err)
 	}
 
 	err = i.checkFileDescriptors()
 	if err != nil {
-		return fmt.Errorf("error during file descriptors checking: %w", err)
+		return fmt.Errorf("error during file descriptors checking: %v", err)
 	}
 
 	err = activator.activateEntities(i.CoreEntities, i.UncoreEntities)
 	if err != nil {
-		return fmt.Errorf("error during events activation: %w", err)
+		return fmt.Errorf("error during events activation: %v", err)
 	}
 	return nil
 }
@@ -175,11 +221,11 @@ func (i *IntelPMU) initialization(parser entitiesParser, resolver entitiesResolv
 func (i *IntelPMU) checkFileDescriptors() error {
 	coreFd, err := estimateCoresFd(i.CoreEntities)
 	if err != nil {
-		return fmt.Errorf("failed to estimate number of core events file descriptors: %w", err)
+		return fmt.Errorf("failed to estimate number of core events file descriptors: %v", err)
 	}
 	uncoreFd, err := estimateUncoreFd(i.UncoreEntities)
 	if err != nil {
-		return fmt.Errorf("failed to estimate nubmer of uncore events file descriptors: %w", err)
+		return fmt.Errorf("failed to estimate nubmer of uncore events file descriptors: %v", err)
 	}
 	if coreFd > math.MaxUint64-uncoreFd {
 		return fmt.Errorf("requested number of file descriptors exceeds uint64")
@@ -213,20 +259,20 @@ func (i *IntelPMU) Gather(acc telegraf.Accumulator) error {
 	}
 	coreMetrics, uncoreMetrics, err := i.entitiesReader.readEntities(i.CoreEntities, i.UncoreEntities)
 	if err != nil {
-		return fmt.Errorf("failed to read entities events values: %w", err)
+		return fmt.Errorf("failed to read entities events values: %v", err)
 	}
 
 	for id, m := range coreMetrics {
 		scaled := ia.EventScaledValue(m.values)
 		if !scaled.IsUint64() {
-			return fmt.Errorf("cannot process %q scaled value %q: exceeds uint64", m.name, scaled.String())
+			return fmt.Errorf("cannot process `%s` scaled value `%s`: exceeds uint64", m.name, scaled.String())
 		}
 		coreMetrics[id].scaled = scaled.Uint64()
 	}
 	for id, m := range uncoreMetrics {
 		scaled := ia.EventScaledValue(m.values)
 		if !scaled.IsUint64() {
-			return fmt.Errorf("cannot process %q scaled value %q: exceeds uint64", m.name, scaled.String())
+			return fmt.Errorf("cannot process `%s` scaled value `%s`: exceeds uint64", m.name, scaled.String())
 		}
 		uncoreMetrics[id].scaled = scaled.Uint64()
 	}
@@ -248,7 +294,7 @@ func (i *IntelPMU) Stop() {
 			}
 			err := event.Deactivate()
 			if err != nil {
-				i.Log.Warnf("failed to deactivate core event %q: %w", event, err)
+				i.Log.Warnf("failed to deactivate core event `%s`: %v", event, err)
 			}
 		}
 	}
@@ -263,7 +309,7 @@ func (i *IntelPMU) Stop() {
 				}
 				err := event.Deactivate()
 				if err != nil {
-					i.Log.Warnf("failed to deactivate uncore event %q: %w", event, err)
+					i.Log.Warnf("failed to deactivate uncore event `%s`: %v", event, err)
 				}
 			}
 		}
@@ -275,7 +321,7 @@ func newReader(files []string) (*ia.JSONFilesReader, error) {
 	for _, file := range files {
 		err := reader.AddFiles(file)
 		if err != nil {
-			return nil, fmt.Errorf("failed to add files to reader: %w", err)
+			return nil, fmt.Errorf("failed to add files to reader: %v", err)
 		}
 	}
 	return reader, nil
@@ -325,10 +371,10 @@ func multiplyAndAdd(factorA uint64, factorB uint64, sum uint64) (uint64, error) 
 	bigB := new(big.Int).SetUint64(factorB)
 	activeEvents := new(big.Int).Mul(bigA, bigB)
 	if !activeEvents.IsUint64() {
-		return 0, fmt.Errorf("value %q cannot be represented as uint64", activeEvents.String())
+		return 0, fmt.Errorf("value `%s` cannot be represented as uint64", activeEvents.String())
 	}
 	if sum > math.MaxUint64-activeEvents.Uint64() {
-		return 0, fmt.Errorf("value %q exceeds uint64", new(big.Int).Add(activeEvents, new(big.Int).SetUint64(sum)))
+		return 0, fmt.Errorf("value `%s` exceeds uint64", new(big.Int).Add(activeEvents, new(big.Int).SetUint64(sum)))
 	}
 	sum += activeEvents.Uint64()
 	return sum, nil
@@ -340,11 +386,11 @@ func readMaxFD(reader fileInfoProvider) (uint64, error) {
 	}
 	buf, err := reader.readFile(fileMaxPath)
 	if err != nil {
-		return 0, fmt.Errorf("cannot open file %q: %w", fileMaxPath, err)
+		return 0, fmt.Errorf("cannot open `%s` file: %v", fileMaxPath, err)
 	}
 	max, err := strconv.ParseUint(strings.Trim(string(buf), "\n "), 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("cannot parse file content of %q: %w", fileMaxPath, err)
+		return 0, fmt.Errorf("cannot parse file content of `%s`: %v", fileMaxPath, err)
 	}
 	return max, nil
 }
@@ -362,16 +408,16 @@ func checkFiles(paths []string, fileInfo fileInfoProvider) error {
 		lInfo, err := fileInfo.lstat(path)
 		if err != nil {
 			if os.IsNotExist(err) {
-				return fmt.Errorf("file %q doesn't exist", path)
+				return fmt.Errorf("file `%s` doesn't exist", path)
 			}
-			return fmt.Errorf("cannot obtain file info of %q: %w", path, err)
+			return fmt.Errorf("cannot obtain file info of `%s`: %v", path, err)
 		}
 		mode := lInfo.Mode()
 		if mode&os.ModeSymlink != 0 {
-			return fmt.Errorf("file %q is a symlink", path)
+			return fmt.Errorf("file %s is a symlink", path)
 		}
 		if !mode.IsRegular() {
-			return fmt.Errorf("file %q doesn't point to a reagular file", path)
+			return fmt.Errorf("file `%s` doesn't point to a reagular file", path)
 		}
 	}
 	return nil

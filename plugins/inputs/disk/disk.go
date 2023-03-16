@@ -1,34 +1,41 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package disk
 
 import (
-	_ "embed"
 	"fmt"
 	"strings"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/inputs"
 	"github.com/influxdata/telegraf/plugins/inputs/system"
-	"github.com/shirou/gopsutil/v3/disk"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 type DiskStats struct {
 	ps system.PS
 
-	LegacyMountPoints []string `toml:"mountpoints" deprecated:"0.10.2;2.0.0;use 'mount_points' instead"`
+	// Legacy support
+	LegacyMountPoints []string `toml:"mountpoints"`
 
-	MountPoints     []string `toml:"mount_points"`
-	IgnoreFS        []string `toml:"ignore_fs"`
-	IgnoreMountOpts []string `toml:"ignore_mount_opts"`
+	MountPoints []string `toml:"mount_points"`
+	IgnoreFS    []string `toml:"ignore_fs"`
 
 	Log telegraf.Logger `toml:"-"`
 }
 
-func (*DiskStats) SampleConfig() string {
-	return sampleConfig
+func (ds *DiskStats) Description() string {
+	return "Read metrics about disk usage by mount point"
+}
+
+var diskSampleConfig = `
+  ## By default stats will be gathered for all mount points.
+  ## Set mount_points will restrict the stats to only the specified mount points.
+  # mount_points = ["/"]
+
+  ## Ignore mount points by filesystem type.
+  ignore_fs = ["tmpfs", "devtmpfs", "devfs", "iso9660", "overlay", "aufs", "squashfs"]
+`
+
+func (ds *DiskStats) SampleConfig() string {
+	return diskSampleConfig
 }
 
 func (ds *DiskStats) Init() error {
@@ -45,30 +52,22 @@ func (ds *DiskStats) Init() error {
 }
 
 func (ds *DiskStats) Gather(acc telegraf.Accumulator) error {
-	disks, partitions, err := ds.ps.DiskUsage(ds.MountPoints, ds.IgnoreMountOpts, ds.IgnoreFS)
+	disks, partitions, err := ds.ps.DiskUsage(ds.MountPoints, ds.IgnoreFS)
 	if err != nil {
-		return fmt.Errorf("error getting disk usage info: %w", err)
+		return fmt.Errorf("error getting disk usage info: %s", err)
 	}
 	for i, du := range disks {
 		if du.Total == 0 {
 			// Skip dummy filesystem (procfs, cgroupfs, ...)
 			continue
 		}
-
-		device := partitions[i].Device
 		mountOpts := MountOptions(partitions[i].Opts)
 		tags := map[string]string{
 			"path":   du.Path,
-			"device": strings.ReplaceAll(device, "/dev/", ""),
+			"device": strings.Replace(partitions[i].Device, "/dev/", "", -1),
 			"fstype": du.Fstype,
 			"mode":   mountOpts.Mode(),
 		}
-
-		label, err := disk.Label(strings.TrimPrefix(device, "/dev/"))
-		if err == nil && label != "" {
-			tags["label"] = label
-		}
-
 		var usedPercent float64
 		if du.Used+du.Free > 0 {
 			usedPercent = float64(du.Used) /

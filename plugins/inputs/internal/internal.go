@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package internal
 
 import (
-	_ "embed"
 	"runtime"
 	"strings"
 
@@ -11,9 +9,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 	"github.com/influxdata/telegraf/selfstat"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 type Self struct {
 	CollectMemstats bool
@@ -25,7 +20,16 @@ func NewSelf() telegraf.Input {
 	}
 }
 
-func (*Self) SampleConfig() string {
+var sampleConfig = `
+  ## If true, collect telegraf memory stats.
+  # collect_memstats = true
+`
+
+func (s *Self) Description() string {
+	return "Collect statistics about itself"
+}
+
+func (s *Self) SampleConfig() string {
 	return sampleConfig
 }
 
@@ -52,7 +56,7 @@ func (s *Self) Gather(acc telegraf.Accumulator) error {
 		acc.AddFields("internal_memstats", fields, map[string]string{})
 	}
 
-	telegrafVersion := inter.Version
+	telegrafVersion := inter.Version()
 	goVersion := strings.TrimPrefix(runtime.Version(), "go")
 
 	for _, m := range selfstat.Metrics() {

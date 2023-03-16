@@ -5,12 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/models"
 	"github.com/influxdata/telegraf/plugins/processors"
 	"github.com/influxdata/telegraf/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 // MockProcessor is a Processor with an overridable Apply implementation.
@@ -57,8 +56,7 @@ func TestRunningProcessor_Init(t *testing.T) {
 	rp := &models.RunningProcessor{
 		Processor: processors.NewStreamingProcessorFromProcessor(&mock),
 	}
-	err := rp.Init()
-	require.NoError(t, err)
+	rp.Init()
 	require.True(t, mock.HasBeenInit)
 }
 
@@ -190,15 +188,13 @@ func TestRunningProcessor_Apply(t *testing.T) {
 				Processor: tt.args.Processor,
 				Config:    tt.args.Config,
 			}
-			err := rp.Config.Filter.Compile()
-			require.NoError(t, err)
+			rp.Config.Filter.Compile()
 
 			acc := testutil.Accumulator{}
-			err = rp.Start(&acc)
+			err := rp.Start(&acc)
 			require.NoError(t, err)
 			for _, m := range tt.input {
-				err = rp.Add(m, &acc)
-				require.NoError(t, err)
+				rp.Add(m, &acc)
 			}
 			rp.Stop()
 

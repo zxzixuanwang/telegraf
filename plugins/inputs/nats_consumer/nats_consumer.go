@@ -1,23 +1,17 @@
-//go:generate ../../../tools/readme_config_includer/generator
-package nats_consumer
+package natsconsumer
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
 	"strings"
 	"sync"
-
-	"github.com/nats-io/nats.go"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 	"github.com/influxdata/telegraf/plugins/parsers"
+	"github.com/nats-io/nats.go"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 var (
 	defaultMaxUndeliveredMessages = 1000
@@ -45,7 +39,6 @@ type natsConsumer struct {
 	Username    string   `toml:"username"`
 	Password    string   `toml:"password"`
 	Credentials string   `toml:"credentials"`
-	JsSubjects  []string `toml:"jetstream_subjects"`
 
 	tls.ClientConfig
 
@@ -56,12 +49,12 @@ type natsConsumer struct {
 	PendingBytesLimit   int `toml:"pending_bytes_limit"`
 
 	MaxUndeliveredMessages int `toml:"max_undelivered_messages"`
-	MetricBuffer           int `toml:"metric_buffer" deprecated:"0.10.3;2.0.0;option is ignored"`
 
-	conn   *nats.Conn
-	jsConn nats.JetStreamContext
-	subs   []*nats.Subscription
-	jsSubs []*nats.Subscription
+	// Legacy metric buffer support; deprecated in v0.10.3
+	MetricBuffer int
+
+	conn *nats.Conn
+	subs []*nats.Subscription
 
 	parser parsers.Parser
 	// channel for all incoming NATS messages
@@ -73,8 +66,61 @@ type natsConsumer struct {
 	cancel context.CancelFunc
 }
 
-func (*natsConsumer) SampleConfig() string {
+var sampleConfig = `
+  ## urls of NATS servers
+  servers = ["nats://localhost:4222"]
+
+  ## subject(s) to consume
+  subjects = ["telegraf"]
+
+  ## name a queue group
+  queue_group = "telegraf_consumers"
+
+  ## Optional credentials
+  # username = ""
+  # password = ""
+
+  ## Optional NATS 2.0 and NATS NGS compatible user credentials
+  # credentials = "/etc/telegraf/nats.creds"
+
+  ## Use Transport Layer Security
+  # secure = false
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+
+  ## Sets the limits for pending msgs and bytes for each subscription
+  ## These shouldn't need to be adjusted except in very high throughput scenarios
+  # pending_message_limit = 65536
+  # pending_bytes_limit = 67108864
+
+  ## Maximum messages to read from the broker that have not been written by an
+  ## output.  For best throughput set based on the number of metrics within
+  ## each message and the size of the output's metric_batch_size.
+  ##
+  ## For example, if each message from the queue contains 10 metrics and the
+  ## output metric_batch_size is 1000, setting this to 100 will ensure that a
+  ## full batch is collected and the write is triggered immediately without
+  ## waiting until the next flush_interval.
+  # max_undelivered_messages = 1000
+
+  ## Data format to consume.
+  ## Each data format has its own unique set of configuration options, read
+  ## more about them here:
+  ## https://github.com/influxdata/telegraf/blob/master/docs/DATA_FORMATS_INPUT.md
+  data_format = "influx"
+`
+
+func (n *natsConsumer) SampleConfig() string {
 	return sampleConfig
+}
+
+func (n *natsConsumer) Description() string {
+	return "Read metrics from NATS subject(s)"
 }
 
 func (n *natsConsumer) SetParser(parser parsers.Parser) {
@@ -144,33 +190,6 @@ func (n *natsConsumer) Start(acc telegraf.Accumulator) error {
 
 			n.subs = append(n.subs, sub)
 		}
-
-		if len(n.JsSubjects) > 0 {
-			var connErr error
-			n.jsConn, connErr = n.conn.JetStream(nats.PublishAsyncMaxPending(256))
-			if connErr != nil {
-				return connErr
-			}
-
-			if n.jsConn != nil {
-				for _, jsSub := range n.JsSubjects {
-					sub, err := n.jsConn.QueueSubscribe(jsSub, n.QueueGroup, func(m *nats.Msg) {
-						n.in <- m
-					})
-					if err != nil {
-						return err
-					}
-
-					// set the subscription pending limits
-					err = sub.SetPendingLimits(n.PendingMessageLimit, n.PendingBytesLimit)
-					if err != nil {
-						return err
-					}
-
-					n.jsSubs = append(n.jsSubs, sub)
-				}
-			}
-		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -183,8 +202,8 @@ func (n *natsConsumer) Start(acc telegraf.Accumulator) error {
 		go n.receiver(ctx)
 	}()
 
-	n.Log.Infof("Started the NATS consumer service, nats: %v, subjects: %v, jssubjects: %v, queue: %v",
-		n.conn.ConnectedUrl(), n.Subjects, n.JsSubjects, n.QueueGroup)
+	n.Log.Infof("Started the NATS consumer service, nats: %v, subjects: %v, queue: %v",
+		n.conn.ConnectedUrl(), n.Subjects, n.QueueGroup)
 
 	return nil
 }
@@ -230,14 +249,7 @@ func (n *natsConsumer) clean() {
 	for _, sub := range n.subs {
 		if err := sub.Unsubscribe(); err != nil {
 			n.Log.Errorf("Error unsubscribing from subject %s in queue %s: %s",
-				sub.Subject, sub.Queue, err)
-		}
-	}
-
-	for _, sub := range n.jsSubs {
-		if err := sub.Unsubscribe(); err != nil {
-			n.Log.Errorf("Error unsubscribing from subject %s in queue %s: %s",
-				sub.Subject, sub.Queue, err)
+				sub.Subject, sub.Queue, err.Error())
 		}
 	}
 

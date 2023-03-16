@@ -7,19 +7,9 @@ More information about the meaning of these metrics can be found in the
 
 - PgBouncer minimum tested version: 1.5
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
+## Configuration example
 
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
-## Configuration
-
-```toml @sample.conf
-# Read metrics from one or many pgbouncer servers
+```toml
 [[inputs.pgbouncer]]
   ## specify address via a url matching:
   ##   postgres://[pqgotest[:password]]@host:port[/dbname]\
@@ -36,21 +26,16 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
 
 Specify address via a postgresql connection string:
 
-```text
-host=/run/postgresql port=6432 user=telegraf database=pgbouncer
-```
+  `host=/run/postgresql port=6432 user=telegraf database=pgbouncer`
 
 Or via an url matching:
 
-```text
-postgres://[pqgotest[:password]]@host:port[/dbname]?sslmode=[disable|verify-ca|verify-full]
-```
+  `postgres://[pqgotest[:password]]@host:port[/dbname]?sslmode=[disable|verify-ca|verify-full]`
 
 All connection parameters are optional.
 
-Without the dbname parameter, the driver will default to a database with the
-same name as the user.  This dbname is just for instantiating a connection with
-the server and doesn't restrict the databases we are trying to grab metrics for.
+Without the dbname parameter, the driver will default to a database with the same name as the user.
+This dbname is just for instantiating a connection with the server and doesn't restrict the databases we are trying to grab metrics for.
 
 ## Metrics
 

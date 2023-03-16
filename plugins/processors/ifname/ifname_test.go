@@ -14,11 +14,7 @@ import (
 	"github.com/influxdata/telegraf/testutil"
 )
 
-func TestTableIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
+func TestTable(t *testing.T) {
 	t.Skip("Skipping test due to connect failures")
 
 	d := IfName{}
@@ -40,16 +36,12 @@ func TestTableIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	// Could use ifIndex but oid index is always the same
-	m, err := d.buildMap(gs, tab)
+	m, err := buildMap(gs, tab)
 	require.NoError(t, err)
 	require.NotEmpty(t, m)
 }
 
 func TestIfNameIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
 	t.Skip("Skipping test due to connect failures")
 
 	d := IfName{

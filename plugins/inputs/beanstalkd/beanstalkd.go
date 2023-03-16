@@ -1,28 +1,35 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package beanstalkd
 
 import (
-	_ "embed"
 	"fmt"
 	"io"
 	"net/textproto"
 	"sync"
 
-	"gopkg.in/yaml.v2"
-
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/inputs"
+	"gopkg.in/yaml.v2"
 )
 
-//go:embed sample.conf
-var sampleConfig string
+const sampleConfig = `
+  ## Server to collect data from
+  server = "localhost:11300"
+
+  ## List of tubes to gather stats about.
+  ## If no tubes specified then data gathered for each tube on server reported by list-tubes command
+  tubes = ["notifications"]
+`
 
 type Beanstalkd struct {
 	Server string   `toml:"server"`
 	Tubes  []string `toml:"tubes"`
 }
 
-func (*Beanstalkd) SampleConfig() string {
+func (b *Beanstalkd) Description() string {
+	return "Collects Beanstalkd server and tubes stats"
+}
+
+func (b *Beanstalkd) SampleConfig() string {
 	return sampleConfig
 }
 

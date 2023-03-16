@@ -34,25 +34,15 @@ KEY0 ... VAL0\n
 KEY1 ... VAL1\n
 ```
 
-## Metrics
+## Tags
 
 All measurements have the `path` tag.
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
+```toml
 # Read specific statistics per cgroup
-# This plugin ONLY supports Linux
-[[inputs.cgroup]]
+# [[inputs.cgroup]]
   ## Directories in which to look for files, globs are supported.
   ## Consider restricting paths to the set of cgroups you really
   ## want to monitor if you have a large number of cgroups, to avoid
@@ -67,7 +57,7 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   # files = ["memory.*usage*", "memory.limit_in_bytes"]
 ```
 
-## Example Configurations
+## Example
 
 ```toml
 # [[inputs.cgroup]]
@@ -84,5 +74,3 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   # ]
   # files = ["*"]
 ```
-
-## Example Output

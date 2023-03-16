@@ -1,22 +1,17 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package kafka_consumer_legacy
 
 import (
-	_ "embed"
 	"fmt"
 	"strings"
 	"sync"
 
-	"github.com/Shopify/sarama"
-	"github.com/wvanbergen/kafka/consumergroup"
-
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/inputs"
 	"github.com/influxdata/telegraf/plugins/parsers"
-)
 
-//go:embed sample.conf
-var sampleConfig string
+	"github.com/Shopify/sarama"
+	"github.com/wvanbergen/kafka/consumergroup"
+)
 
 type Kafka struct {
 	ConsumerGroup   string
@@ -52,8 +47,39 @@ type Kafka struct {
 	doNotCommitMsgs bool
 }
 
-func (*Kafka) SampleConfig() string {
+var sampleConfig = `
+  ## topic(s) to consume
+  topics = ["telegraf"]
+
+  ## an array of Zookeeper connection strings
+  zookeeper_peers = ["localhost:2181"]
+
+  ## Zookeeper Chroot
+  zookeeper_chroot = ""
+
+  ## the name of the consumer group
+  consumer_group = "telegraf_metrics_consumers"
+
+  ## Offset (must be either "oldest" or "newest")
+  offset = "oldest"
+
+  ## Data format to consume.
+  ## Each data format has its own unique set of configuration options, read
+  ## more about them here:
+  ## https://github.com/influxdata/telegraf/blob/master/docs/DATA_FORMATS_INPUT.md
+  data_format = "influx"
+
+  ## Maximum length of a message to consume, in bytes (default 0/unlimited);
+  ## larger messages are dropped
+  max_message_len = 65536
+`
+
+func (k *Kafka) SampleConfig() string {
 	return sampleConfig
+}
+
+func (k *Kafka) Description() string {
+	return "Read metrics from Kafka topic(s)"
 }
 
 func (k *Kafka) SetParser(parser parsers.Parser) {
@@ -75,7 +101,7 @@ func (k *Kafka) Start(acc telegraf.Accumulator) error {
 	case "newest":
 		config.Offsets.Initial = sarama.OffsetNewest
 	default:
-		k.Log.Infof("WARNING: Kafka consumer invalid offset %q, using 'oldest'\n",
+		k.Log.Infof("WARNING: Kafka consumer invalid offset '%s', using 'oldest'\n",
 			k.Offset)
 		config.Offsets.Initial = sarama.OffsetOldest
 	}
@@ -114,7 +140,7 @@ func (k *Kafka) receiver() {
 			return
 		case err := <-k.errs:
 			if err != nil {
-				k.acc.AddError(fmt.Errorf("consumer error: %w", err))
+				k.acc.AddError(fmt.Errorf("consumer Error: %s", err))
 			}
 		case msg := <-k.in:
 			if k.MaxMessageLen != 0 && len(msg.Value) > k.MaxMessageLen {
@@ -123,7 +149,8 @@ func (k *Kafka) receiver() {
 			} else {
 				metrics, err := k.parser.Parse(msg.Value)
 				if err != nil {
-					k.acc.AddError(fmt.Errorf("error during parsing message %q: %w", string(msg.Value), err))
+					k.acc.AddError(fmt.Errorf("Message Parse Error\nmessage: %s\nerror: %s",
+						string(msg.Value), err.Error()))
 				}
 				for _, metric := range metrics {
 					k.acc.AddFields(metric.Name(), metric.Fields(), metric.Tags(), metric.Time())
@@ -137,7 +164,7 @@ func (k *Kafka) receiver() {
 				err := k.Consumer.CommitUpto(msg)
 				k.Unlock()
 				if err != nil {
-					k.acc.AddError(fmt.Errorf("committing to consumer failed: %w", err))
+					k.acc.AddError(fmt.Errorf("committing to consumer failed: %v", err))
 				}
 			}
 		}
@@ -149,7 +176,7 @@ func (k *Kafka) Stop() {
 	defer k.Unlock()
 	close(k.done)
 	if err := k.Consumer.Close(); err != nil {
-		k.acc.AddError(fmt.Errorf("error closing consumer: %w", err))
+		k.acc.AddError(fmt.Errorf("error closing consumer: %s", err.Error()))
 	}
 }
 

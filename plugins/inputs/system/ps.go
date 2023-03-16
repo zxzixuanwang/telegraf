@@ -1,31 +1,29 @@
 package system
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/internal"
 
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/mem"
 	"github.com/shirou/gopsutil/v3/net"
-
-	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/internal"
 )
 
 type PS interface {
 	CPUTimes(perCPU, totalCPU bool) ([]cpu.TimesStat, error)
-	DiskUsage(mountPointFilter []string, mountOptsExclude []string, fstypeExclude []string) ([]*disk.UsageStat, []*disk.PartitionStat, error)
+	DiskUsage(mountPointFilter []string, fstypeExclude []string) ([]*disk.UsageStat, []*disk.PartitionStat, error)
 	NetIO() ([]net.IOCountersStat, error)
 	NetProto() ([]net.ProtoCountersStat, error)
 	DiskIO(names []string) (map[string]disk.IOCountersStat, error)
 	VMStat() (*mem.VirtualMemoryStat, error)
 	SwapStat() (*mem.SwapMemoryStat, error)
 	NetConnections() ([]net.ConnectionStat, error)
-	NetConntrack(perCPU bool) ([]net.ConntrackStat, error)
 	Temperature() ([]host.TemperatureStat, error)
 }
 
@@ -66,34 +64,8 @@ func (s *SystemPS) CPUTimes(perCPU, totalCPU bool) ([]cpu.TimesStat, error) {
 	return cpuTimes, nil
 }
 
-type set struct {
-	m map[string]struct{}
-}
-
-func (s *set) empty() bool {
-	return len(s.m) == 0
-}
-
-func (s *set) add(key string) {
-	s.m[key] = struct{}{}
-}
-
-func (s *set) has(key string) bool {
-	var ok bool
-	_, ok = s.m[key]
-	return ok
-}
-
-func newSet() *set {
-	s := &set{
-		m: make(map[string]struct{}),
-	}
-	return s
-}
-
 func (s *SystemPS) DiskUsage(
 	mountPointFilter []string,
-	mountOptsExclude []string,
 	fstypeExclude []string,
 ) ([]*disk.UsageStat, []*disk.PartitionStat, error) {
 	parts, err := s.Partitions(true)
@@ -101,50 +73,53 @@ func (s *SystemPS) DiskUsage(
 		return nil, nil, err
 	}
 
-	mountPointFilterSet := newSet()
+	// Make a "set" out of the filter slice
+	mountPointFilterSet := make(map[string]bool)
 	for _, filter := range mountPointFilter {
-		mountPointFilterSet.add(filter)
+		mountPointFilterSet[filter] = true
 	}
-	mountOptFilterSet := newSet()
-	for _, filter := range mountOptsExclude {
-		mountOptFilterSet.add(filter)
-	}
-	fstypeExcludeSet := newSet()
+	fstypeExcludeSet := make(map[string]bool)
 	for _, filter := range fstypeExclude {
-		fstypeExcludeSet.add(filter)
+		fstypeExcludeSet[filter] = true
 	}
-	paths := newSet()
+	paths := make(map[string]bool)
 	for _, part := range parts {
-		paths.add(part.Mountpoint)
+		paths[part.Mountpoint] = true
 	}
 
 	// Autofs mounts indicate a potential mount, the partition will also be
 	// listed with the actual filesystem when mounted.  Ignore the autofs
 	// partition to avoid triggering a mount.
-	fstypeExcludeSet.add("autofs")
+	fstypeExcludeSet["autofs"] = true
 
 	var usage []*disk.UsageStat
 	var partitions []*disk.PartitionStat
 	hostMountPrefix := s.OSGetenv("HOST_MOUNT_PREFIX")
 
-partitionRange:
 	for i := range parts {
 		p := parts[i]
 
-		for _, o := range p.Opts {
-			if !mountOptFilterSet.empty() && mountOptFilterSet.has(o) {
-				continue partitionRange
-			}
+		if s.Log != nil {
+			s.Log.Debugf("[SystemPS] partition %d: %v", i, p)
 		}
-		// If there is a filter set and if the mount point is not a
-		// member of the filter set, don't gather info on it.
-		if !mountPointFilterSet.empty() && !mountPointFilterSet.has(p.Mountpoint) {
-			continue
+
+		if len(mountPointFilter) > 0 {
+			// If the mount point is not a member of the filter set,
+			// don't gather info on it.
+			if _, ok := mountPointFilterSet[p.Mountpoint]; !ok {
+				if s.Log != nil {
+					s.Log.Debug("[SystemPS] => dropped by mount-point filter")
+				}
+				continue
+			}
 		}
 
 		// If the mount point is a member of the exclude set,
 		// don't gather info on it.
-		if fstypeExcludeSet.has(p.Fstype) {
+		if _, ok := fstypeExcludeSet[p.Fstype]; ok {
+			if s.Log != nil {
+				s.Log.Debug("[SystemPS] => dropped by filesystem-type filter")
+			}
 			continue
 		}
 
@@ -156,20 +131,27 @@ partitionRange:
 		if hostMountPrefix != "" && !strings.HasPrefix(p.Mountpoint, hostMountPrefix) {
 			mountpoint = filepath.Join(hostMountPrefix, p.Mountpoint)
 			// Exclude conflicting paths
-			if paths.has(mountpoint) {
+			if paths[mountpoint] {
 				if s.Log != nil {
-					s.Log.Debugf("[SystemPS] => dropped by mount prefix (%q): %q", mountpoint, hostMountPrefix)
+					s.Log.Debug("[SystemPS] => dropped by mount prefix")
 				}
 				continue
 			}
+		}
+		if s.Log != nil {
+			s.Log.Debugf("[SystemPS] -> using mountpoint %q...", mountpoint)
 		}
 
 		du, err := s.PSDiskUsage(mountpoint)
 		if err != nil {
 			if s.Log != nil {
-				s.Log.Debugf("[SystemPS] => unable to get disk usage (%q): %v", mountpoint, err)
+				s.Log.Debugf("[SystemPS] => dropped by disk usage (%q): %v", mountpoint, err)
 			}
 			continue
+		}
+
+		if s.Log != nil {
+			s.Log.Debug("[SystemPS] => kept...")
 		}
 
 		du.Path = filepath.Join("/", strings.TrimPrefix(p.Mountpoint, hostMountPrefix))
@@ -193,13 +175,9 @@ func (s *SystemPS) NetConnections() ([]net.ConnectionStat, error) {
 	return net.Connections("all")
 }
 
-func (s *SystemPS) NetConntrack(perCPU bool) ([]net.ConntrackStat, error) {
-	return net.ConntrackStats(perCPU)
-}
-
 func (s *SystemPS) DiskIO(names []string) (map[string]disk.IOCountersStat, error) {
 	m, err := disk.IOCounters(names...)
-	if errors.Is(err, internal.ErrNotImplemented) {
+	if err == internal.ErrorNotImplemented {
 		return nil, nil
 	}
 
@@ -215,7 +193,14 @@ func (s *SystemPS) SwapStat() (*mem.SwapMemoryStat, error) {
 }
 
 func (s *SystemPS) Temperature() ([]host.TemperatureStat, error) {
-	return host.SensorsTemperatures()
+	temp, err := host.SensorsTemperatures()
+	if err != nil {
+		_, ok := err.(*host.Warnings)
+		if !ok {
+			return temp, err
+		}
+	}
+	return temp, nil
 }
 
 func (s *SystemPSDisk) Partitions(all bool) ([]disk.PartitionStat, error) {

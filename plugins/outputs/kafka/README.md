@@ -1,37 +1,13 @@
 # Kafka Output Plugin
 
-This plugin writes to a [Kafka
-Broker](http://kafka.apache.org/07/quickstart.html) acting a Kafka Producer.
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
-## Secret-store support
-
-This plugin supports secrets from secret-stores for the `sasl_username`,
-`sasl_password` and `sasl_access_token` option.
-See the [secret-store documentation][SECRETSTORE] for more details on how
-to use them.
-
-[SECRETSTORE]: ../../../docs/CONFIGURATION.md#secret-store-secrets
+This plugin writes to a [Kafka Broker](http://kafka.apache.org/07/quickstart.html) acting a Kafka Producer.
 
 ## Configuration
 
-```toml @sample.conf
-# Configuration for the Kafka server to send metrics to
+```toml
 [[outputs.kafka]]
   ## URLs of kafka brokers
-  ## The brokers listed here are used to connect to collect metadata about a
-  ## cluster. However, once the initial metadata collect is completed, telegraf
-  ## will communicate solely with the kafka leader and not all defined brokers.
   brokers = ["localhost:9092"]
-
   ## Kafka topic for producer messages
   topic = "telegraf"
 
@@ -104,7 +80,7 @@ to use them.
   ##  2 : Snappy
   ##  3 : LZ4
   ##  4 : ZSTD
-  # compression_codec = 0
+   # compression_codec = 0
 
   ## Idempotent Writes
   ## If enabled, exactly one copy of each message is written.
@@ -130,27 +106,12 @@ to use them.
   ## until the next flush.
   # max_retry = 3
 
-  ## The maximum permitted size of a message. Should be set equal to or
-  ## smaller than the broker's 'message.max.bytes'.
-  # max_message_bytes = 1000000
-
   ## Optional TLS Config
-  # enable_tls = false
   # tls_ca = "/etc/telegraf/ca.pem"
   # tls_cert = "/etc/telegraf/cert.pem"
   # tls_key = "/etc/telegraf/key.pem"
   ## Use TLS but skip chain & host verification
   # insecure_skip_verify = false
-
-  ## Period between keep alive probes.
-  ## Defaults to the OS configuration if not specified or zero.
-  # keep_alive_period = "15s"
-
-  ## Optional SOCKS5 proxy to use when connecting to brokers
-  # socks5_enabled = true
-  # socks5_address = "127.0.0.1:1080"
-  # socks5_username = "alice"
-  # socks5_password = "pass123"
 
   ## Optional SASL Config
   # sasl_username = "kafka"
@@ -191,8 +152,8 @@ to use them.
 This option controls the number of retries before a failure notification is
 displayed for each message when no acknowledgement is received from the
 broker. When the setting is greater than `0`, message latency can be reduced,
-duplicate messages can occur in cases of transient errors, and broker loads can
-increase during downtime.
+duplicate messages can occur in cases of transient errors, and broker loads
+can increase during downtime.
 
 The option is similar to the
 [retries](https://kafka.apache.org/documentation/#producerconfigs) Producer

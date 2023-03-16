@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package cpu
 
 import (
-	_ "embed"
 	"fmt"
 	"time"
 
@@ -13,23 +11,14 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs/system"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 type CPUStats struct {
-	ps         system.PS
-	lastStats  map[string]cpuUtil.TimesStat
-	cpuInfo    map[string]cpuUtil.InfoStat
-	coreID     bool
-	physicalID bool
+	ps        system.PS
+	lastStats map[string]cpuUtil.TimesStat
 
 	PerCPU         bool `toml:"percpu"`
 	TotalCPU       bool `toml:"totalcpu"`
 	CollectCPUTime bool `toml:"collect_cpu_time"`
 	ReportActive   bool `toml:"report_active"`
-	CoreTags       bool `toml:"core_tags"`
-
-	Log telegraf.Logger `toml:"-"`
 }
 
 func NewCPUStats(ps system.PS) *CPUStats {
@@ -40,26 +29,35 @@ func NewCPUStats(ps system.PS) *CPUStats {
 	}
 }
 
-func (*CPUStats) SampleConfig() string {
+func (c *CPUStats) Description() string {
+	return "Read metrics about cpu usage"
+}
+
+var sampleConfig = `
+  ## Whether to report per-cpu stats or not
+  percpu = true
+  ## Whether to report total system cpu stats or not
+  totalcpu = true
+  ## If true, collect raw CPU time metrics
+  collect_cpu_time = false
+  ## If true, compute and report the sum of all non-idle CPU states
+  report_active = false
+`
+
+func (c *CPUStats) SampleConfig() string {
 	return sampleConfig
 }
 
 func (c *CPUStats) Gather(acc telegraf.Accumulator) error {
 	times, err := c.ps.CPUTimes(c.PerCPU, c.TotalCPU)
 	if err != nil {
-		return fmt.Errorf("error getting CPU info: %w", err)
+		return fmt.Errorf("error getting CPU info: %s", err)
 	}
 	now := time.Now()
 
 	for _, cts := range times {
 		tags := map[string]string{
 			"cpu": cts.CPU,
-		}
-		if c.coreID {
-			tags["core_id"] = c.cpuInfo[cts.CPU].CoreID
-		}
-		if c.physicalID {
-			tags["physical_id"] = c.cpuInfo[cts.CPU].PhysicalID
 		}
 
 		total := totalCPUTime(cts)
@@ -132,25 +130,6 @@ func (c *CPUStats) Gather(acc telegraf.Accumulator) error {
 	}
 
 	return err
-}
-
-func (c *CPUStats) Init() error {
-	if c.CoreTags {
-		cpuInfo, err := cpuUtil.Info()
-		if err == nil {
-			c.coreID = cpuInfo[0].CoreID != ""
-			c.physicalID = cpuInfo[0].PhysicalID != ""
-
-			c.cpuInfo = make(map[string]cpuUtil.InfoStat)
-			for _, ci := range cpuInfo {
-				c.cpuInfo[fmt.Sprintf("cpu%d", ci.CPU)] = ci
-			}
-		} else {
-			c.Log.Warnf("Failed to gather info about CPUs: %s", err)
-		}
-	}
-
-	return nil
 }
 
 func totalCPUTime(t cpuUtil.TimesStat) float64 {

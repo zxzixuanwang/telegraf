@@ -9,7 +9,9 @@ import (
 )
 
 func TestSysctlFSGather(t *testing.T) {
-	td := t.TempDir()
+	td, err := os.MkdirTemp("", "")
+	require.NoError(t, err)
+	defer os.RemoveAll(td)
 
 	require.NoError(t, os.WriteFile(td+"/aio-nr", []byte("100\n"), 0644))
 	require.NoError(t, os.WriteFile(td+"/aio-max-nr", []byte("101\n"), 0644))

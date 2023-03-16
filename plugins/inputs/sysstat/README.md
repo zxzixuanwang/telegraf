@@ -1,32 +1,20 @@
 # sysstat Input Plugin
 
-Collect [sysstat](https://github.com/sysstat/sysstat) metrics - requires the
-sysstat package installed.
+Collect [sysstat](https://github.com/sysstat/sysstat) metrics - requires the sysstat
+package installed.
 
-This plugin collects system metrics with the sysstat collector utility `sadc`
-and parses the created binary data file with the `sadf` utility.
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+This plugin collects system metrics with the sysstat collector utility `sadc` and parses
+the created binary data file with the `sadf` utility.
 
 ## Configuration
 
-```toml @sample.conf
+```toml
 # Sysstat metrics collector
-# This plugin ONLY supports Linux
 [[inputs.sysstat]]
   ## Path to the sadc command.
   #
-  ## Common Defaults:
-  ##   Debian/Ubuntu: /usr/lib/sysstat/sadc
-  ##   Arch:          /usr/lib/sa/sadc
-  ##   RHEL/CentOS:   /usr/lib64/sa/sadc
+  ## On Debian and Arch Linux the default path is /usr/lib/sa/sadc whereas
+  ## on RHEL and CentOS the default path is /usr/lib64/sa/sadc
   sadc_path = "/usr/lib/sa/sadc" # required
 
   ## Path to the sadf command, if it is not in PATH
@@ -50,20 +38,20 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   ##
   ## Run 'sar -h' or 'man sar' to find out the supported options for your sysstat version.
   [inputs.sysstat.options]
-    -C = "cpu"
-    -B = "paging"
-    -b = "io"
-    -d = "disk"             # requires DISK activity
-    "-n ALL" = "network"
-    "-P ALL" = "per_cpu"
-    -q = "queue"
-    -R = "mem"
-    -r = "mem_util"
-    -S = "swap_util"
-    -u = "cpu_util"
-    -v = "inode"
-    -W = "swap"
-    -w = "task"
+ -C = "cpu"
+ -B = "paging"
+ -b = "io"
+ -d = "disk"             # requires DISK activity
+ "-n ALL" = "network"
+ "-P ALL" = "per_cpu"
+ -q = "queue"
+ -R = "mem"
+ -r = "mem_util"
+ -S = "swap_util"
+ -u = "cpu_util"
+ -v = "inode"
+ -W = "swap"
+ -w = "task"
   # -H = "hugepages"        # only available for newer linux distributions
   # "-I ALL" = "interrupts" # requires INT activity
 
@@ -73,7 +61,7 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   #  vg = "rootvg"
 ```
 
-## Metrics
+## Measurements & Fields
 
 ### If group=true
 
@@ -127,7 +115,7 @@ And much more, depending on the options you configure.
 
 And much more, depending on the options you configure.
 
-### Tags
+## Tags
 
 - All measurements have the following tags:
   - device

@@ -112,15 +112,15 @@ func (r *response) WriteHeader(code int) {
 	}
 
 	fmt.Fprintf(r.w, "Status: %d %s\r\n", code, http.StatusText(code))
-	_ = r.header.Write(r.w)
-	_, _ = r.w.WriteString("\r\n")
+	r.header.Write(r.w)
+	r.w.WriteString("\r\n")
 }
 
 func (r *response) Flush() {
 	if !r.wroteHeader {
 		r.WriteHeader(http.StatusOK)
 	}
-	_ = r.w.Flush()
+	r.w.Flush()
 }
 
 func (r *response) Close() error {
@@ -276,7 +276,9 @@ func (c *child) serveRequest(req *request, body io.ReadCloser) {
 		httpReq.Body = body
 		c.handler.ServeHTTP(r, httpReq)
 	}
-	r.Close() //nolint:revive // ignore the returned error as we cannot do anything about it anyway
+	// Ignore the returned error as we cannot do anything about it anyway
+	//nolint:errcheck,revive
+	r.Close()
 	c.mu.Lock()
 	delete(c.requests, req.reqID)
 	c.mu.Unlock()
@@ -291,11 +293,15 @@ func (c *child) serveRequest(req *request, body io.ReadCloser) {
 	// some sort of abort request to the host, so the host
 	// can properly cut off the client sending all the data.
 	// For now just bound it a little and
-	io.CopyN(io.Discard, body, 100<<20) //nolint:errcheck,revive // ignore the returned error as we cannot do anything about it anyway
-	body.Close()                        //nolint:revive // ignore the returned error as we cannot do anything about it anyway
+	//nolint:errcheck,revive
+	io.CopyN(io.Discard, body, 100<<20)
+	//nolint:errcheck,revive
+	body.Close()
 
 	if !req.keepConn {
-		c.conn.Close() //nolint:revive // ignore the returned error as we cannot do anything about it anyway
+		// Ignore the returned error as we cannot do anything about it anyway
+		//nolint:errcheck,revive
+		c.conn.Close()
 	}
 }
 
@@ -306,7 +312,9 @@ func (c *child) cleanUp() {
 		if req.pw != nil {
 			// race with call to Close in c.serveRequest doesn't matter because
 			// Pipe(Reader|Writer).Close are idempotent
-			req.pw.CloseWithError(ErrConnClosed) //nolint:revive // Ignore the returned error as we continue in the loop anyway
+			// Ignore the returned error as we continue in the loop anyway
+			//nolint:errcheck,revive
+			req.pw.CloseWithError(ErrConnClosed)
 		}
 	}
 }

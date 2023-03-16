@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/metric"
 )
 
@@ -22,7 +21,7 @@ func TestWrite(t *testing.T) {
 
 	i := Instrumental{
 		Host:     "127.0.0.1",
-		APIToken: config.NewSecret([]byte("abc123token")),
+		APIToken: "abc123token",
 		Prefix:   "my.prefix",
 	}
 
@@ -80,9 +79,7 @@ func TestWrite(t *testing.T) {
 }
 
 func TCPServer(t *testing.T, wg *sync.WaitGroup) {
-	tcpServer, err := net.Listen("tcp", "127.0.0.1:8000")
-	require.NoError(t, err)
-
+	tcpServer, _ := net.Listen("tcp", "127.0.0.1:8000")
 	go func() {
 		defer wg.Done()
 		conn, _ := tcpServer.Accept()

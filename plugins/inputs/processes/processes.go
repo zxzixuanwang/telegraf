@@ -1,11 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package processes
 
-import _ "embed"
-
-//go:embed sample.conf
-var sampleConfig string
-
-func (*Processes) SampleConfig() string {
-	return sampleConfig
+func (p *Processes) Description() string {
+	return "Get the number of processes and group them by status"
 }
+
+func (p *Processes) SampleConfig() string { return "" }

@@ -1,22 +1,15 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package pgbouncer
 
 import (
 	"bytes"
-	_ "embed"
 	"strconv"
-
-	// Required for SQL framework driver
-	_ "github.com/jackc/pgx/v4/stdlib"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/plugins/inputs"
 	"github.com/influxdata/telegraf/plugins/inputs/postgresql"
+	_ "github.com/jackc/pgx/v4/stdlib" // register driver
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 type PgBouncer struct {
 	postgresql.Service
@@ -26,8 +19,24 @@ var ignoredColumns = map[string]bool{"user": true, "database": true, "pool_mode"
 	"avg_req": true, "avg_recv": true, "avg_sent": true, "avg_query": true,
 }
 
-func (*PgBouncer) SampleConfig() string {
+var sampleConfig = `
+  ## specify address via a url matching:
+  ##   postgres://[pqgotest[:password]]@localhost[/dbname]\
+  ##       ?sslmode=[disable|verify-ca|verify-full]
+  ## or a simple string:
+  ##   host=localhost user=pqgotest password=... sslmode=... dbname=app_production
+  ##
+  ## All connection parameters are optional.
+  ##
+  address = "host=localhost user=pgbouncer sslmode=disable"
+`
+
+func (p *PgBouncer) SampleConfig() string {
 	return sampleConfig
+}
+
+func (p *PgBouncer) Description() string {
+	return "Read metrics from one or many pgbouncer servers"
 }
 
 func (p *PgBouncer) Gather(acc telegraf.Accumulator) error {
@@ -138,6 +147,7 @@ type scanner interface {
 
 func (p *PgBouncer) accRow(row scanner, columns []string) (map[string]string,
 	map[string]*interface{}, error) {
+	var columnVars []interface{}
 	var dbname bytes.Buffer
 
 	// this is where we'll store the column name with its *interface{}
@@ -147,7 +157,6 @@ func (p *PgBouncer) accRow(row scanner, columns []string) (map[string]string,
 		columnMap[column] = new(interface{})
 	}
 
-	columnVars := make([]interface{}, 0, len(columnMap))
 	// populate the array of interface{} with the pointers in the right order
 	for i := 0; i < len(columnMap); i++ {
 		columnVars = append(columnVars, columnMap[columns[i]])

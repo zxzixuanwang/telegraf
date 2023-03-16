@@ -1,13 +1,8 @@
 # PF Input Plugin
 
-The pf plugin gathers information from the FreeBSD/OpenBSD pf
-firewall. Currently it can retrieve information about the state table: the
-number of current entries in the table, and counters for the number of searches,
-inserts, and removals to the table.
+The pf plugin gathers information from the FreeBSD/OpenBSD pf firewall. Currently it can retrieve information about the state table: the number of current entries in the table, and counters for the number of searches, inserts, and removals to the table.
 
-The pf plugin retrieves this information by invoking the `pfstat` command. The
-`pfstat` command requires read access to the device file `/dev/pf`. You have
-several options to permit telegraf to run `pfctl`:
+The pf plugin retrieves this information by invoking the `pfstat` command. The `pfstat` command requires read access to the device file `/dev/pf`. You have several options to permit telegraf to run `pfctl`:
 
 * Run telegraf as root. This is strongly discouraged.
 * Change the ownership and permissions for /dev/pf such that the user telegraf runs at can read the /dev/pf device file. This is probably not that good of an idea either.
@@ -22,28 +17,14 @@ You may edit your sudo configuration with the following:
 telegraf ALL=(root) NOPASSWD: /sbin/pfctl -s info
 ```
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
-# Gather counters from PF
-[[inputs.pf]]
-  ## PF require root access on most systems.
-  ## Setting 'use_sudo' to true will make use of sudo to run pfctl.
-  ## Users must configure sudo to allow telegraf user to run pfctl with no password.
-  ## pfctl can be restricted to only list command "pfctl -s info".
+```toml
+  # use sudo to run pfctl
   use_sudo = false
 ```
 
-## Metrics
+## Measurements & Fields
 
 * pf
   * entries (integer, count)
@@ -73,7 +54,7 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
 Status: Enabled for 0 days 00:26:05           Debug: Urgent
 
 State Table                          Total             Rate
-  current entries                        2
+  current entries                        2               
   searches                           11325            7.2/s
   inserts                                5            0.0/s
   removals                               3            0.0/s

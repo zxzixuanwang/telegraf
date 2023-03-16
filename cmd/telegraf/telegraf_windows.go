@@ -1,88 +1,52 @@
 //go:build windows
-
-//go:generate ../../scripts/windows-gen-syso.sh $GOARCH
+// +build windows
 
 package main
 
 import (
-	"fmt"
+	"log"
 	"os"
-
-	"github.com/kardianos/service"
-	"github.com/urfave/cli/v2"
+	"runtime"
 
 	"github.com/influxdata/telegraf/logger"
+	"github.com/kardianos/service"
 )
 
-func cliFlags() []cli.Flag {
-	return []cli.Flag{
-		&cli.StringFlag{
-			Name:  "service",
-			Usage: "operate on the service (windows only)",
-		},
-		&cli.StringFlag{
-			Name:  "service-name",
-			Value: "telegraf",
-			Usage: "service name (windows only)",
-		},
-		&cli.StringFlag{
-			Name:  "service-display-name",
-			Value: "Telegraf Data Collector Service",
-			Usage: "service display name (windows only)",
-		},
-		&cli.StringFlag{
-			Name:  "service-restart-delay",
-			Value: "5m",
-		},
-		&cli.BoolFlag{
-			Name:  "service-auto-restart",
-			Usage: "auto restart service on failure (windows only)",
-		},
-		&cli.BoolFlag{
-			Name:  "console",
-			Usage: "run as console application (windows only)",
-		},
-	}
-}
-
-func (t *Telegraf) Run() error {
+func run(inputFilters, outputFilters []string) {
 	// Register the eventlog logging target for windows.
-	err := logger.RegisterEventLogger(t.serviceName)
-	if err != nil {
-		return err
-	}
+	logger.RegisterEventLogger(*fServiceName)
 
-	if !t.windowsRunAsService() {
+	if runtime.GOOS == "windows" && windowsRunAsService() {
+		runAsWindowsService(
+			inputFilters,
+			outputFilters,
+		)
+	} else {
 		stop = make(chan struct{})
-		return t.reloadLoop()
+		reloadLoop(
+			inputFilters,
+			outputFilters,
+		)
 	}
-
-	return t.runAsWindowsService()
 }
 
 type program struct {
-	*Telegraf
+	inputFilters  []string
+	outputFilters []string
 }
 
 func (p *program) Start(s service.Service) error {
-	go func() {
-		stop = make(chan struct{})
-		err := p.reloadLoop()
-		if err != nil {
-			fmt.Printf("E! %v\n", err)
-		}
-		close(stop)
-	}()
+	go p.run()
 	return nil
 }
-
-func (p *program) run(errChan chan error) {
+func (p *program) run() {
 	stop = make(chan struct{})
-	err := p.reloadLoop()
-	errChan <- err
+	reloadLoop(
+		p.inputFilters,
+		p.outputFilters,
+	)
 	close(stop)
 }
-
 func (p *program) Stop(s service.Service) error {
 	var empty struct{}
 	stop <- empty // signal reloadLoop to finish (context cancel)
@@ -90,72 +54,66 @@ func (p *program) Stop(s service.Service) error {
 	return nil
 }
 
-func (t *Telegraf) runAsWindowsService() error {
+func runAsWindowsService(inputFilters, outputFilters []string) {
 	programFiles := os.Getenv("ProgramFiles")
 	if programFiles == "" { // Should never happen
 		programFiles = "C:\\Program Files"
 	}
 	svcConfig := &service.Config{
-		Name:        t.serviceName,
-		DisplayName: t.serviceDisplayName,
+		Name:        *fServiceName,
+		DisplayName: *fServiceDisplayName,
 		Description: "Collects data using a series of plugins and publishes it to " +
 			"another series of plugins.",
 		Arguments: []string{"--config", programFiles + "\\Telegraf\\telegraf.conf"},
 	}
 
 	prg := &program{
-		Telegraf: t,
+		inputFilters:  inputFilters,
+		outputFilters: outputFilters,
 	}
 	s, err := service.New(prg, svcConfig)
 	if err != nil {
-		return err
+		log.Fatal("E! " + err.Error())
 	}
 	// Handle the --service flag here to prevent any issues with tooling that
 	// may not have an interactive session, e.g. installing from Ansible.
-	if t.service != "" {
-		if len(t.config) > 0 {
+	if *fService != "" {
+		if len(fConfigs) > 0 {
 			svcConfig.Arguments = []string{}
 		}
-		for _, fConfig := range t.config {
+		for _, fConfig := range fConfigs {
 			svcConfig.Arguments = append(svcConfig.Arguments, "--config", fConfig)
 		}
 
-		for _, fConfigDirectory := range t.configDir {
+		for _, fConfigDirectory := range fConfigDirs {
 			svcConfig.Arguments = append(svcConfig.Arguments, "--config-directory", fConfigDirectory)
 		}
 
 		//set servicename to service cmd line, to have a custom name after relaunch as a service
-		svcConfig.Arguments = append(svcConfig.Arguments, "--service-name", t.serviceName)
+		svcConfig.Arguments = append(svcConfig.Arguments, "--service-name", *fServiceName)
 
-		if t.serviceAutoRestart {
-			svcConfig.Option = service.KeyValue{"OnFailure": "restart", "OnFailureDelayDuration": t.serviceRestartDelay}
-		}
-
-		err := service.Control(s, t.service)
+		err := service.Control(s, *fService)
 		if err != nil {
-			return err
+			log.Fatal("E! " + err.Error())
 		}
+		os.Exit(0)
 	} else {
-		err = logger.SetupLogging(logger.LogConfig{LogTarget: logger.LogTargetEventlog})
-		if err != nil {
-			return err
-		}
-
+		logger.SetupLogging(logger.LogConfig{LogTarget: logger.LogTargetEventlog})
 		err = s.Run()
+
 		if err != nil {
-			return err
+			log.Println("E! " + err.Error())
 		}
 	}
-	return nil
 }
 
 // Return true if Telegraf should create a Windows service.
-func (t *Telegraf) windowsRunAsService() bool {
-	if t.service != "" {
+func windowsRunAsService() bool {
+	if *fService != "" {
 		return true
 	}
 
-	if t.console {
+	if *fRunAsConsole {
 		return false
 	}
 

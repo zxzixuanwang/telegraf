@@ -1,29 +1,10 @@
 # InfluxDB v1.x Output Plugin
 
-The InfluxDB output plugin writes metrics to the [InfluxDB v1.x] HTTP or UDP
-service.
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
-## Secret-store support
-
-This plugin supports secrets from secret-stores for the `username` and
-`password` option.
-See the [secret-store documentation][SECRETSTORE] for more details on how
-to use them.
-
-[SECRETSTORE]: ../../../docs/CONFIGURATION.md#secret-store-secrets
+The InfluxDB output plugin writes metrics to the [InfluxDB v1.x] HTTP or UDP service.
 
 ## Configuration
 
-```toml @sample.conf
+```toml
 # Configuration for sending metrics to InfluxDB
 [[outputs.influxdb]]
   ## The full HTTP or UDP URL for your InfluxDB instance.
@@ -108,5 +89,4 @@ to use them.
 Reference the [influx serializer][] for details about metric production.
 
 [InfluxDB v1.x]: https://github.com/influxdata/influxdb
-
 [influx serializer]: /plugins/serializers/influx/README.md#Metrics

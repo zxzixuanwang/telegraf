@@ -2,8 +2,6 @@ package tls
 
 import (
 	"fmt"
-	"sort"
-	"strings"
 )
 
 // ParseCiphers returns a `[]uint16` by received `[]string` key that represents ciphers from crypto/tls.
@@ -28,11 +26,5 @@ func ParseTLSVersion(version string) (uint16, error) {
 	if v, ok := tlsVersionMap[version]; ok {
 		return v, nil
 	}
-
-	available := make([]string, 0, len(tlsVersionMap))
-	for n := range tlsVersionMap {
-		available = append(available, n)
-	}
-	sort.Strings(available)
-	return 0, fmt.Errorf("unsupported version %q (available: %s)", version, strings.Join(available, ","))
+	return 0, fmt.Errorf("unsupported version %q", version)
 }

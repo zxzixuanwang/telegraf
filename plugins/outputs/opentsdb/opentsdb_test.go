@@ -126,11 +126,11 @@ func TestSanitize(t *testing.T) {
 }
 
 func BenchmarkHttpSend(b *testing.B) {
-	const batchSize = 50
-	const metricsCount = 4 * batchSize
-	metrics := make([]telegraf.Metric, 0, metricsCount)
-	for i := 0; i < metricsCount; i++ {
-		metrics = append(metrics, testutil.TestMetric(1.0))
+	const BatchSize = 50
+	const MetricsCount = 4 * BatchSize
+	metrics := make([]telegraf.Metric, MetricsCount)
+	for i := 0; i < MetricsCount; i++ {
+		metrics[i] = testutil.TestMetric(1.0)
 	}
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -155,20 +155,16 @@ func BenchmarkHttpSend(b *testing.B) {
 		Host:          ts.URL,
 		Port:          port,
 		Prefix:        "",
-		HTTPBatchSize: batchSize,
+		HTTPBatchSize: BatchSize,
 		HTTPPath:      "/api/put",
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = o.Write(metrics)
+		o.Write(metrics)
 	}
 }
 func TestWriteIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
 	t.Skip("Skip as OpenTSDB not running")
 
 	o := &OpenTSDB{

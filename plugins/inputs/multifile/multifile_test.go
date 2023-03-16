@@ -29,8 +29,9 @@ func TestFileTypes(t *testing.T) {
 
 	var acc testutil.Accumulator
 
-	require.NoError(t, m.Init())
-	require.NoError(t, m.Gather(&acc))
+	err := m.Gather(&acc)
+
+	require.NoError(t, err)
 	require.Equal(t, map[string]string{"exampletag": "test"}, acc.Metrics[0].Tags)
 	require.Equal(t, map[string]interface{}{
 		"examplebool":   true,
@@ -56,7 +57,6 @@ func FailEarly(failEarly bool, t *testing.T) error {
 
 	var acc testutil.Accumulator
 
-	require.NoError(t, m.Init())
 	err := m.Gather(&acc)
 
 	if err == nil {

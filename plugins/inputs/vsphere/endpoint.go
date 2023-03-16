@@ -14,12 +14,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/influxdata/telegraf"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/performance"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 
-	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/filter"
 )
 
@@ -100,7 +100,6 @@ type objectRef struct {
 	parentRef    *types.ManagedObjectReference //Pointer because it must be nillable
 	guest        string
 	dcname       string
-	rpname       string
 	customValues map[string]string
 	lookup       map[string]string
 }
@@ -165,24 +164,6 @@ func NewEndpoint(ctx context.Context, parent *VSphere, address *url.URL, log tel
 			collectInstances: parent.ClusterInstances,
 			getObjects:       getClusters,
 			parent:           "datacenter",
-		},
-		"resourcepool": {
-			name:             "resourcepool",
-			vcName:           "ResourcePool",
-			pKey:             "rpname",
-			parentTag:        "clustername",
-			enabled:          anythingEnabled(parent.ResourcePoolMetricExclude),
-			realTime:         false,
-			sampling:         int32(time.Duration(parent.HistoricalInterval).Seconds()),
-			objects:          make(objectMap),
-			filters:          newFilterOrPanic(parent.ResourcePoolMetricInclude, parent.ResourcePoolMetricExclude),
-			paths:            parent.ResourcePoolInclude,
-			excludePaths:     parent.ResourcePoolExclude,
-			simple:           isSimple(parent.ResourcePoolMetricInclude, parent.ResourcePoolMetricExclude),
-			include:          parent.ResourcePoolMetricInclude,
-			collectInstances: parent.ResourcePoolInstances,
-			getObjects:       getResourcePools,
-			parent:           "cluster",
 		},
 		"host": {
 			name:             "host",
@@ -257,7 +238,7 @@ func anythingEnabled(ex []string) bool {
 func newFilterOrPanic(include []string, exclude []string) filter.Filter {
 	f, err := filter.NewIncludeExcludeFilter(include, exclude)
 	if err != nil {
-		panic(fmt.Sprintf("Include/exclude filters are invalid: %v", err))
+		panic(fmt.Sprintf("Include/exclude filters are invalid: %s", err))
 	}
 	return f
 }
@@ -281,7 +262,7 @@ func (e *Endpoint) startDiscovery(ctx context.Context) {
 			select {
 			case <-e.discoveryTicker.C:
 				err := e.discover(ctx)
-				if err != nil && !errors.Is(err, context.Canceled) {
+				if err != nil && err != context.Canceled {
 					e.log.Errorf("Discovery for %s: %s", e.URL.Host, err.Error())
 				}
 			case <-ctx.Done():
@@ -295,7 +276,7 @@ func (e *Endpoint) startDiscovery(ctx context.Context) {
 
 func (e *Endpoint) initalDiscovery(ctx context.Context) {
 	err := e.discover(ctx)
-	if err != nil && !errors.Is(err, context.Canceled) {
+	if err != nil && err != context.Canceled {
 		e.log.Errorf("Discovery for %s: %s", e.URL.Host, err.Error())
 	}
 	e.startDiscovery(ctx)
@@ -304,17 +285,7 @@ func (e *Endpoint) initalDiscovery(ctx context.Context) {
 func (e *Endpoint) init(ctx context.Context) error {
 	client, err := e.clientFactory.GetClient(ctx)
 	if err != nil {
-		switch e.Parent.DisconnectedServersBehavior {
-		case "error":
-			return err
-		case "ignore":
-			// Ignore the error and postpone the init until next collection cycle
-			e.log.Warnf("Error connecting to vCenter on init: %s", err)
-			return nil
-		default:
-			return fmt.Errorf("%q is not a valid value for disconnected_servers_behavior",
-				e.Parent.DisconnectedServersBehavior)
-		}
+		return err
 	}
 
 	// Initial load of custom field metadata
@@ -379,13 +350,7 @@ func (e *Endpoint) getDatacenterName(ctx context.Context, client *Client, cache 
 	return e.getAncestorName(ctx, client, "Datacenter", cache, r)
 }
 
-func (e *Endpoint) getAncestorName(
-	ctx context.Context,
-	client *Client,
-	resourceType string,
-	cache map[string]string,
-	r types.ManagedObjectReference,
-) (string, bool) {
+func (e *Endpoint) getAncestorName(ctx context.Context, client *Client, resourceType string, cache map[string]string, r types.ManagedObjectReference) (string, bool) {
 	path := make([]string, 0)
 	returnVal := ""
 	here := r
@@ -561,9 +526,11 @@ func (e *Endpoint) simpleMetadataSelect(ctx context.Context, client *Client, res
 func (e *Endpoint) complexMetadataSelect(ctx context.Context, res *resourceKind, objects objectMap) {
 	// We're only going to get metadata from maxMetadataSamples resources. If we have
 	// more resources than that, we pick maxMetadataSamples samples at random.
-	sampledObjects := make([]*objectRef, 0, len(objects))
+	sampledObjects := make([]*objectRef, len(objects))
+	i := 0
 	for _, obj := range objects {
-		sampledObjects = append(sampledObjects, obj)
+		sampledObjects[i] = obj
+		i++
 	}
 	n := len(sampledObjects)
 	if n > maxMetadataSamples {
@@ -686,36 +653,7 @@ func getClusters(ctx context.Context, e *Endpoint, resourceFilter *ResourceFilte
 	return m, nil
 }
 
-// noinspection GoUnusedParameter
-func getResourcePools(ctx context.Context, e *Endpoint, resourceFilter *ResourceFilter) (objectMap, error) {
-	var resources []mo.ResourcePool
-	err := resourceFilter.FindAll(ctx, &resources)
-	if err != nil {
-		return nil, err
-	}
-	m := make(objectMap)
-	for _, r := range resources {
-		m[r.ExtensibleManagedObject.Reference().Value] = &objectRef{
-			name:         r.Name,
-			ref:          r.ExtensibleManagedObject.Reference(),
-			parentRef:    r.Parent,
-			customValues: e.loadCustomAttributes(&r.ManagedEntity),
-		}
-	}
-	return m, nil
-}
-
-func getResourcePoolName(rp types.ManagedObjectReference, rps objectMap) string {
-	//Loop through the Resource Pools objectmap to find the corresponding one
-	for _, r := range rps {
-		if r.ref == rp {
-			return r.name
-		}
-	}
-	return "Resources" //Default value
-}
-
-// noinspection GoUnusedParameter
+//noinspection GoUnusedParameter
 func getHosts(ctx context.Context, e *Endpoint, resourceFilter *ResourceFilter) (objectMap, error) {
 	var resources []mo.HostSystem
 	err := resourceFilter.FindAll(ctx, &resources)
@@ -743,20 +681,6 @@ func getVMs(ctx context.Context, e *Endpoint, resourceFilter *ResourceFilter) (o
 		return nil, err
 	}
 	m := make(objectMap)
-	client, err := e.clientFactory.GetClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	//Create a ResourcePool Filter and get the list of Resource Pools
-	rprf := ResourceFilter{
-		finder:       &Finder{client},
-		resType:      "ResourcePool",
-		paths:        []string{"/*/host/**"},
-		excludePaths: nil}
-	resourcePools, err := getResourcePools(ctx, e, &rprf)
-	if err != nil {
-		return nil, err
-	}
 	for _, r := range resources {
 		if r.Runtime.PowerState != "poweredOn" {
 			continue
@@ -764,8 +688,6 @@ func getVMs(ctx context.Context, e *Endpoint, resourceFilter *ResourceFilter) (o
 		guest := "unknown"
 		uuid := ""
 		lookup := make(map[string]string)
-		// Get the name of the VM resource pool
-		rpname := getResourcePoolName(*r.ResourcePool, resourcePools)
 
 		// Extract host name
 		if r.Guest != nil && r.Guest.HostName != "" {
@@ -833,7 +755,6 @@ func getVMs(ctx context.Context, e *Endpoint, resourceFilter *ResourceFilter) (o
 			parentRef:    r.Runtime.Host,
 			guest:        guest,
 			altID:        uuid,
-			rpname:       rpname,
 			customValues: e.loadCustomAttributes(&r.ManagedEntity),
 			lookup:       lookup,
 		}
@@ -899,15 +820,6 @@ func (e *Endpoint) Close() {
 
 // Collect runs a round of data collections as specified in the configuration.
 func (e *Endpoint) Collect(ctx context.Context, acc telegraf.Accumulator) error {
-	// Connection could have failed on init, so we need to check for a deferred
-	// init request.
-	if !e.initialized {
-		e.log.Debug("Performing deferred init")
-		err := e.init(ctx)
-		if err != nil {
-			return err
-		}
-	}
 	// If we never managed to do a discovery, collection will be a no-op. Therefore,
 	// we need to check that a connection is available, or the collection will
 	// silently fail.
@@ -979,17 +891,14 @@ func (e *Endpoint) chunkify(ctx context.Context, res *resourceKind, now time.Tim
 			// Determine time of last successful collection
 			metricName := e.getMetricNameForID(metric.CounterId)
 			if metricName == "" {
-				e.log.Debugf("Unable to find metric name for id %d. Skipping!", metric.CounterId)
+				e.log.Infof("Unable to find metric name for id %d. Skipping!", metric.CounterId)
 				continue
 			}
 			start, ok := e.hwMarks.Get(obj.ref.Value, metricName)
 			if !ok {
 				start = latest.Add(time.Duration(-res.sampling) * time.Second * (time.Duration(e.Parent.MetricLookback) - 1))
 			}
-
-			if !start.Truncate(time.Second).Before(now.Truncate(time.Second)) {
-				e.log.Debugf("Start >= end (rounded to seconds): %s > %s", start, now)
-			}
+			start = start.Truncate(20 * time.Second) // Truncate to maximum resolution
 
 			// Create bucket if we don't already have it
 			bucket, ok := timeBuckets[start.Unix()]
@@ -1016,7 +925,7 @@ func (e *Endpoint) chunkify(ctx context.Context, res *resourceKind, now time.Tim
 					len(bucket.MetricId), len(res.metrics)-metricIdx, res.name, e.URL.Host, len(res.objects))
 
 				// Don't send work items if the context has been cancelled.
-				if errors.Is(ctx.Err(), context.Canceled) {
+				if ctx.Err() == context.Canceled {
 					return
 				}
 
@@ -1165,13 +1074,7 @@ func (e *Endpoint) alignSamples(info []types.PerfSampleInfo, values []int64, int
 	return rInfo, rValues
 }
 
-func (e *Endpoint) collectChunk(
-	ctx context.Context,
-	pqs queryChunk,
-	res *resourceKind,
-	acc telegraf.Accumulator,
-	interval time.Duration,
-) (int, time.Time, error) {
+func (e *Endpoint) collectChunk(ctx context.Context, pqs queryChunk, res *resourceKind, acc telegraf.Accumulator, interval time.Duration) (int, time.Time, error) {
 	e.log.Debugf("Query for %s has %d QuerySpecs", res.name, len(pqs))
 	latestSample := time.Time{}
 	count := 0
@@ -1263,8 +1166,7 @@ func (e *Endpoint) collectChunk(
 				count++
 
 				// Update hiwater marks
-				adjTs := ts.Add(interval).Truncate(interval).Add(-time.Second)
-				e.hwMarks.Put(moid, name, adjTs)
+				e.hwMarks.Put(moid, name, ts)
 			}
 			if nValues == 0 {
 				e.log.Debugf("Missing value for: %s, %s", name, objectRef.name)
@@ -1288,9 +1190,6 @@ func (e *Endpoint) populateTags(objectRef *objectRef, resourceType string, resou
 
 	if resourceType == "vm" && objectRef.altID != "" {
 		t["uuid"] = objectRef.altID
-	}
-	if resourceType == "vm" && objectRef.rpname != "" {
-		t["rpname"] = objectRef.rpname
 	}
 
 	// Map parent reference

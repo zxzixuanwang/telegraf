@@ -1,7 +1,6 @@
 package shim
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -25,7 +24,7 @@ func (s *Shim) AddStreamingProcessor(processor telegraf.StreamingProcessor) erro
 	if p, ok := processor.(telegraf.Initializer); ok {
 		err := p.Init()
 		if err != nil {
-			return fmt.Errorf("failed to init input: %w", err)
+			return fmt.Errorf("failed to init input: %s", err)
 		}
 	}
 
@@ -45,10 +44,7 @@ func (s *Shim) RunProcessor() error {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
-		err := s.writeProcessedMetrics()
-		if err != nil {
-			s.log.Warn(err.Error())
-		}
+		s.writeProcessedMetrics()
 		wg.Done()
 	}()
 
@@ -56,11 +52,10 @@ func (s *Shim) RunProcessor() error {
 	for {
 		m, err := parser.Next()
 		if err != nil {
-			if errors.Is(err, influx.EOF) {
+			if err == influx.EOF {
 				break // stream ended
 			}
-			var parseErr *influx.ParseError
-			if errors.As(err, &parseErr) {
+			if parseErr, isParseError := err.(*influx.ParseError); isParseError {
 				fmt.Fprintf(s.stderr, "Failed to parse metric: %s\b", parseErr)
 				continue
 			}
@@ -68,9 +63,7 @@ func (s *Shim) RunProcessor() error {
 			continue
 		}
 
-		if err = s.Processor.Add(m, acc); err != nil {
-			fmt.Fprintf(s.stderr, "Failure during processing metric by processor: %v\b", err)
-		}
+		s.Processor.Add(m, acc)
 	}
 
 	close(s.metricCh)

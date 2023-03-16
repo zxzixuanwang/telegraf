@@ -3,25 +3,14 @@
 The syslog output plugin sends syslog messages transmitted over
 [UDP](https://tools.ietf.org/html/rfc5426) or
 [TCP](https://tools.ietf.org/html/rfc6587) or
-[TLS](https://tools.ietf.org/html/rfc5425), with or without the octet counting
-framing.
+[TLS](https://tools.ietf.org/html/rfc5425), with or without the octet counting framing.
 
-Syslog messages are formatted according to [RFC
-5424](https://tools.ietf.org/html/rfc5424).
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+Syslog messages are formatted according to
+[RFC 5424](https://tools.ietf.org/html/rfc5424).
 
 ## Configuration
 
-```toml @sample.conf
-# Configuration for Syslog server to send metrics to
+```toml
 [[outputs.syslog]]
   ## URL to connect to
   ## ex: address = "tcp://127.0.0.1:8094"
@@ -104,8 +93,7 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
 The output plugin expects syslog metrics tags and fields to match up with the
 ones created in the [syslog input][].
 
-The following table shows the metric tags, field and defaults used to format
-syslog messages.
+The following table shows the metric tags, field and defaults used to format syslog messages.
 
 | Syslog field | Metric Tag | Metric Field | Default value |
 | --- | --- | --- | --- |

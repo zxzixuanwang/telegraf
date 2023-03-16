@@ -1,10 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package haproxy
 
 import (
-	_ "embed"
 	"encoding/csv"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -21,9 +18,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 //CSV format: https://cbonte.github.io/haproxy-dconv/1.5/configuration.html#9.1
 
 type haproxy struct {
@@ -36,8 +30,43 @@ type haproxy struct {
 	client *http.Client
 }
 
-func (*haproxy) SampleConfig() string {
+var sampleConfig = `
+  ## An array of address to gather stats about. Specify an ip on hostname
+  ## with optional port. ie localhost, 10.10.3.33:1936, etc.
+  ## Make sure you specify the complete path to the stats endpoint
+  ## including the protocol, ie http://10.10.3.33:1936/haproxy?stats
+
+  ## If no servers are specified, then default to 127.0.0.1:1936/haproxy?stats
+  servers = ["http://myhaproxy.com:1936/haproxy?stats"]
+
+  ## Credentials for basic HTTP authentication
+  # username = "admin"
+  # password = "admin"
+
+  ## You can also use local socket with standard wildcard globbing.
+  ## Server address not starting with 'http' will be treated as a possible
+  ## socket, so both examples below are valid.
+  # servers = ["socket:/run/haproxy/admin.sock", "/run/haproxy/*.sock"]
+
+  ## By default, some of the fields are renamed from what haproxy calls them.
+  ## Setting this option to true results in the plugin keeping the original
+  ## field names.
+  # keep_field_names = false
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+`
+
+func (h *haproxy) SampleConfig() string {
 	return sampleConfig
+}
+
+func (h *haproxy) Description() string {
+	return "Read metrics of haproxy, via socket or csv stats page"
 }
 
 // Reads stats from all configured servers accumulates stats.
@@ -50,7 +79,7 @@ func (h *haproxy) Gather(acc telegraf.Accumulator) error {
 	endpoints := make([]string, 0, len(h.Servers))
 
 	for _, endpoint := range h.Servers {
-		if strings.HasPrefix(endpoint, "http://") || strings.HasPrefix(endpoint, "https://") || strings.HasPrefix(endpoint, "tcp://") {
+		if strings.HasPrefix(endpoint, "http") {
 			endpoints = append(endpoints, endpoint)
 			continue
 		}
@@ -86,26 +115,21 @@ func (h *haproxy) Gather(acc telegraf.Accumulator) error {
 }
 
 func (h *haproxy) gatherServerSocket(addr string, acc telegraf.Accumulator) error {
-	var network, address string
-	if strings.HasPrefix(addr, "tcp://") {
-		network = "tcp"
-		address = strings.TrimPrefix(addr, "tcp://")
-	} else {
-		network = "unix"
-		address = getSocketAddr(addr)
-	}
+	socketPath := getSocketAddr(addr)
 
-	c, err := net.Dial(network, address)
+	c, err := net.Dial("unix", socketPath)
+
 	if err != nil {
-		return fmt.Errorf("could not connect to '%s://%s': %w", network, address, err)
+		return fmt.Errorf("could not connect to socket '%s': %s", addr, err)
 	}
 
 	_, errw := c.Write([]byte("show stat\n"))
+
 	if errw != nil {
-		return fmt.Errorf("could not write to socket '%s://%s': %w", network, address, errw)
+		return fmt.Errorf("could not write to socket '%s': %s", addr, errw)
 	}
 
-	return h.importCsvResult(c, acc, address)
+	return h.importCsvResult(c, acc, socketPath)
 }
 
 func (h *haproxy) gatherServer(addr string, acc telegraf.Accumulator) error {
@@ -135,12 +159,12 @@ func (h *haproxy) gatherServer(addr string, acc telegraf.Accumulator) error {
 
 	u, err := url.Parse(addr)
 	if err != nil {
-		return fmt.Errorf("unable parse server address %q: %w", addr, err)
+		return fmt.Errorf("unable parse server address '%s': %s", addr, err)
 	}
 
 	req, err := http.NewRequest("GET", addr, nil)
 	if err != nil {
-		return fmt.Errorf("unable to create new request %q: %w", addr, err)
+		return fmt.Errorf("unable to create new request '%s': %s", addr, err)
 	}
 	if u.User != nil {
 		p, _ := u.User.Password()
@@ -155,16 +179,16 @@ func (h *haproxy) gatherServer(addr string, acc telegraf.Accumulator) error {
 
 	res, err := h.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("unable to connect to haproxy server %q: %w", addr, err)
+		return fmt.Errorf("unable to connect to haproxy server '%s': %s", addr, err)
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != 200 {
-		return fmt.Errorf("unable to get valid stat result from %q, http response code : %d", addr, res.StatusCode)
+		return fmt.Errorf("unable to get valid stat result from '%s', http response code : %d", addr, res.StatusCode)
 	}
 
 	if err := h.importCsvResult(res.Body, acc, u.Host); err != nil {
-		return fmt.Errorf("unable to parse stat result from %q: %w", addr, err)
+		return fmt.Errorf("unable to parse stat result from '%s': %s", addr, err)
 	}
 
 	return nil
@@ -210,7 +234,7 @@ func (h *haproxy) importCsvResult(r io.Reader, acc telegraf.Accumulator, host st
 
 	for {
 		row, err := csvr.Read()
-		if errors.Is(err, io.EOF) {
+		if err == io.EOF {
 			break
 		}
 		if err != nil {
@@ -244,7 +268,7 @@ func (h *haproxy) importCsvResult(r io.Reader, acc telegraf.Accumulator, host st
 			case "type":
 				vi, err := strconv.ParseInt(v, 10, 64)
 				if err != nil {
-					return fmt.Errorf("unable to parse type value %q", v)
+					return fmt.Errorf("unable to parse type value '%s'", v)
 				}
 				if vi >= int64(len(typeNames)) {
 					return fmt.Errorf("received unknown type value: %d", vi)

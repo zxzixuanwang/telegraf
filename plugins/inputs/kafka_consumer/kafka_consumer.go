@@ -1,9 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package kafka_consumer
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
 	"strings"
 	"sync"
@@ -19,8 +17,106 @@ import (
 	"github.com/influxdata/telegraf/plugins/parsers"
 )
 
-//go:embed sample.conf
-var sampleConfig string
+const sampleConfig = `
+  ## Kafka brokers.
+  brokers = ["localhost:9092"]
+
+  ## Topics to consume.
+  topics = ["telegraf"]
+
+  ## When set this tag will be added to all metrics with the topic as the value.
+  # topic_tag = ""
+
+  ## Optional Client id
+  # client_id = "Telegraf"
+
+  ## Set the minimal supported Kafka version.  Setting this enables the use of new
+  ## Kafka features and APIs.  Must be 0.10.2.0 or greater.
+  ##   ex: version = "1.1.0"
+  # version = ""
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+
+  ## SASL authentication credentials.  These settings should typically be used
+  ## with TLS encryption enabled
+  # sasl_username = "kafka"
+  # sasl_password = "secret"
+
+  ## Optional SASL:
+  ## one of: OAUTHBEARER, PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, GSSAPI
+  ## (defaults to PLAIN)
+  # sasl_mechanism = ""
+
+  ## used if sasl_mechanism is GSSAPI (experimental)
+  # sasl_gssapi_service_name = ""
+  # ## One of: KRB5_USER_AUTH and KRB5_KEYTAB_AUTH
+  # sasl_gssapi_auth_type = "KRB5_USER_AUTH"
+  # sasl_gssapi_kerberos_config_path = "/"
+  # sasl_gssapi_realm = "realm"
+  # sasl_gssapi_key_tab_path = ""
+  # sasl_gssapi_disable_pafxfast = false
+
+  ## used if sasl_mechanism is OAUTHBEARER (experimental)
+  # sasl_access_token = ""
+
+  ## SASL protocol version.  When connecting to Azure EventHub set to 0.
+  # sasl_version = 1
+
+  # Disable Kafka metadata full fetch
+  # metadata_full = false
+
+  ## Name of the consumer group.
+  # consumer_group = "telegraf_metrics_consumers"
+
+  ## Compression codec represents the various compression codecs recognized by
+  ## Kafka in messages.
+  ##  0 : None
+  ##  1 : Gzip
+  ##  2 : Snappy
+  ##  3 : LZ4
+  ##  4 : ZSTD
+   # compression_codec = 0
+
+  ## Initial offset position; one of "oldest" or "newest".
+  # offset = "oldest"
+
+  ## Consumer group partition assignment strategy; one of "range", "roundrobin" or "sticky".
+  # balance_strategy = "range"
+
+  ## Maximum length of a message to consume, in bytes (default 0/unlimited);
+  ## larger messages are dropped
+  max_message_len = 1000000
+
+  ## Maximum messages to read from the broker that have not been written by an
+  ## output.  For best throughput set based on the number of metrics within
+  ## each message and the size of the output's metric_batch_size.
+  ##
+  ## For example, if each message from the queue contains 10 metrics and the
+  ## output metric_batch_size is 1000, setting this to 100 will ensure that a
+  ## full batch is collected and the write is triggered immediately without
+  ## waiting until the next flush_interval.
+  # max_undelivered_messages = 1000
+
+  ## Maximum amount of time the consumer should take to process messages. If
+  ## the debug log prints messages from sarama about 'abandoning subscription
+  ## to [topic] because consuming was taking too long', increase this value to
+  ## longer than the time taken by the output plugin(s).
+  ##
+  ## Note that the effective timeout could be between 'max_processing_time' and
+  ## '2 * max_processing_time'.
+  # max_processing_time = "100ms"
+
+  ## Data format to consume.
+  ## Each data format has its own unique set of configuration options, read
+  ## more about them here:
+  ## https://github.com/influxdata/telegraf/blob/master/docs/DATA_FORMATS_INPUT.md
+  data_format = "influx"
+`
 
 const (
 	defaultMaxUndeliveredMessages = 1000
@@ -42,12 +138,8 @@ type KafkaConsumer struct {
 	BalanceStrategy        string          `toml:"balance_strategy"`
 	Topics                 []string        `toml:"topics"`
 	TopicTag               string          `toml:"topic_tag"`
-	ConsumerFetchDefault   config.Size     `toml:"consumer_fetch_default"`
-	ConnectionStrategy     string          `toml:"connection_strategy"`
 
 	kafka.ReadConfig
-
-	kafka.Logger
 
 	Log telegraf.Logger `toml:"-"`
 
@@ -76,8 +168,12 @@ func (*SaramaCreator) Create(brokers []string, group string, cfg *sarama.Config)
 	return sarama.NewConsumerGroup(brokers, group, cfg)
 }
 
-func (*KafkaConsumer) SampleConfig() string {
+func (k *KafkaConsumer) SampleConfig() string {
 	return sampleConfig
+}
+
+func (k *KafkaConsumer) Description() string {
+	return "Read metrics from Kafka topics"
 }
 
 func (k *KafkaConsumer) SetParser(parser parsers.Parser) {
@@ -85,8 +181,6 @@ func (k *KafkaConsumer) SetParser(parser parsers.Parser) {
 }
 
 func (k *KafkaConsumer) Init() error {
-	k.SetLogger()
-
 	if k.MaxUndeliveredMessages == 0 {
 		k.MaxUndeliveredMessages = defaultMaxUndeliveredMessages
 	}
@@ -102,8 +196,8 @@ func (k *KafkaConsumer) Init() error {
 	// Kafka version 0.10.2.0 is required for consumer groups.
 	cfg.Version = sarama.V0_10_2_0
 
-	if err := k.SetConfig(cfg, k.Log); err != nil {
-		return fmt.Errorf("SetConfig: %w", err)
+	if err := k.SetConfig(cfg); err != nil {
+		return err
 	}
 
 	switch strings.ToLower(k.Offset) {
@@ -117,11 +211,11 @@ func (k *KafkaConsumer) Init() error {
 
 	switch strings.ToLower(k.BalanceStrategy) {
 	case "range", "":
-		cfg.Consumer.Group.Rebalance.GroupStrategies = []sarama.BalanceStrategy{sarama.BalanceStrategyRange}
+		cfg.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRange
 	case "roundrobin":
-		cfg.Consumer.Group.Rebalance.GroupStrategies = []sarama.BalanceStrategy{sarama.BalanceStrategyRoundRobin}
+		cfg.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRoundRobin
 	case "sticky":
-		cfg.Consumer.Group.Rebalance.GroupStrategies = []sarama.BalanceStrategy{sarama.BalanceStrategySticky}
+		cfg.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategySticky
 	default:
 		return fmt.Errorf("invalid balance strategy %q", k.BalanceStrategy)
 	}
@@ -132,84 +226,51 @@ func (k *KafkaConsumer) Init() error {
 
 	cfg.Consumer.MaxProcessingTime = time.Duration(k.MaxProcessingTime)
 
-	if k.ConsumerFetchDefault != 0 {
-		cfg.Consumer.Fetch.Default = int32(k.ConsumerFetchDefault)
-	}
-
-	switch strings.ToLower(k.ConnectionStrategy) {
-	default:
-		return fmt.Errorf("invalid connection strategy %q", k.ConnectionStrategy)
-	case "defer", "startup", "":
-	}
-
 	k.config = cfg
 	return nil
 }
 
-func (k *KafkaConsumer) create() error {
+func (k *KafkaConsumer) Start(acc telegraf.Accumulator) error {
 	var err error
 	k.consumer, err = k.ConsumerCreator.Create(
 		k.Brokers,
 		k.ConsumerGroup,
 		k.config,
 	)
-
-	return err
-}
-
-func (k *KafkaConsumer) startErrorAdder(acc telegraf.Accumulator) {
-	k.wg.Add(1)
-	go func() {
-		defer k.wg.Done()
-		for err := range k.consumer.Errors() {
-			acc.AddError(fmt.Errorf("channel: %w", err))
-		}
-	}()
-}
-
-func (k *KafkaConsumer) Start(acc telegraf.Accumulator) error {
-	var err error
+	if err != nil {
+		return err
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	k.cancel = cancel
 
-	if k.ConnectionStrategy != "defer" {
-		err = k.create()
-		if err != nil {
-			return fmt.Errorf("create consumer: %w", err)
-		}
-		k.startErrorAdder(acc)
-	}
-
 	// Start consumer goroutine
 	k.wg.Add(1)
 	go func() {
-		var err error
 		defer k.wg.Done()
-
-		if k.consumer == nil {
-			err = k.create()
-			if err != nil {
-				acc.AddError(fmt.Errorf("create consumer async: %w", err))
-				return
-			}
-		}
-
-		k.startErrorAdder(acc)
-
 		for ctx.Err() == nil {
 			handler := NewConsumerGroupHandler(acc, k.MaxUndeliveredMessages, k.parser, k.Log)
 			handler.MaxMessageLen = k.MaxMessageLen
 			handler.TopicTag = k.TopicTag
 			err := k.consumer.Consume(ctx, k.Topics, handler)
 			if err != nil {
-				acc.AddError(fmt.Errorf("consume: %w", err))
-				internal.SleepContext(ctx, reconnectDelay) //nolint:errcheck // ignore returned error as we cannot do anything about it anyway
+				acc.AddError(err)
+				// Ignore returned error as we cannot do anything about it anyway
+				//nolint:errcheck,revive
+				internal.SleepContext(ctx, reconnectDelay)
 			}
 		}
 		err = k.consumer.Close()
 		if err != nil {
-			acc.AddError(fmt.Errorf("close: %w", err))
+			acc.AddError(err)
+		}
+	}()
+
+	k.wg.Add(1)
+	go func() {
+		defer k.wg.Done()
+		for err := range k.consumer.Errors() {
+			acc.AddError(err)
 		}
 	}()
 

@@ -5,20 +5,9 @@ metrics about ipvs virtual and real servers.
 
 **Supported Platforms:** Linux
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
-# Collect virtual and real server stats from Linux IPVS
-# This plugin ONLY supports Linux
+```toml
 [[inputs.ipvs]]
   # no configuration
 ```
@@ -87,8 +76,7 @@ ipvs_real_server,address=172.18.64.220,address_family=inet,port=9000,virtual_add
 ipvs_real_server,address=172.18.64.219,address_family=inet,port=9000,virtual_address=172.18.64.234,virtual_port=9000,virtual_protocol=tcp active_connections=0i,inactive_connections=0i,pps_in=0i,pps_out=0i,connections=0i,pkts_in=0i,pkts_out=0i,bytes_in=0i,bytes_out=0i,cps=0i 1541019340000000000
 ```
 
-Virtual server is configured using `proto+addr+port` and backed by 2 real
-servers:
+Virtual server is configured using `proto+addr+port` and backed by 2 real servers:
 
 ```shell
 ipvs_virtual_server,address_family=inet,fwmark=47,netmask=32,sched=rr cps=0i,connections=0i,pkts_in=0i,pkts_out=0i,bytes_in=0i,bytes_out=0i,pps_in=0i,pps_out=0i 1541019340000000000

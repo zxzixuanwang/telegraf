@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/internal"
 	"github.com/influxdata/telegraf/plugins/serializers/influx"
 )
@@ -42,7 +41,7 @@ const (
 
 type HTTPConfig struct {
 	URL              *url.URL
-	Token            config.Secret
+	Token            string
 	Organization     string
 	Bucket           string
 	BucketTag        string
@@ -75,66 +74,59 @@ type httpClient struct {
 	log        telegraf.Logger
 }
 
-func NewHTTPClient(cfg *HTTPConfig) (*httpClient, error) {
-	if cfg.URL == nil {
+func NewHTTPClient(config *HTTPConfig) (*httpClient, error) {
+	if config.URL == nil {
 		return nil, ErrMissingURL
 	}
 
-	timeout := cfg.Timeout
+	timeout := config.Timeout
 	if timeout == 0 {
 		timeout = defaultRequestTimeout
 	}
 
-	userAgent := cfg.UserAgent
+	userAgent := config.UserAgent
 	if userAgent == "" {
 		userAgent = internal.ProductToken()
 	}
 
-	var headers = make(map[string]string, len(cfg.Headers)+2)
+	var headers = make(map[string]string, len(config.Headers)+2)
 	headers["User-Agent"] = userAgent
-
-	token, err := cfg.Token.Get()
-	if err != nil {
-		return nil, fmt.Errorf("getting token failed: %w", err)
-	}
-	headers["Authorization"] = "Token " + string(token)
-	config.ReleaseSecret(token)
-
-	for k, v := range cfg.Headers {
+	headers["Authorization"] = "Token " + config.Token
+	for k, v := range config.Headers {
 		headers[k] = v
 	}
 
 	var proxy func(*http.Request) (*url.URL, error)
-	if cfg.Proxy != nil {
-		proxy = http.ProxyURL(cfg.Proxy)
+	if config.Proxy != nil {
+		proxy = http.ProxyURL(config.Proxy)
 	} else {
 		proxy = http.ProxyFromEnvironment
 	}
 
-	serializer := cfg.Serializer
+	serializer := config.Serializer
 	if serializer == nil {
 		serializer = influx.NewSerializer()
 	}
 
 	var transport *http.Transport
-	switch cfg.URL.Scheme {
+	switch config.URL.Scheme {
 	case "http", "https":
 		transport = &http.Transport{
 			Proxy:           proxy,
-			TLSClientConfig: cfg.TLSConfig,
+			TLSClientConfig: config.TLSConfig,
 		}
 	case "unix":
 		transport = &http.Transport{
 			Dial: func(_, _ string) (net.Conn, error) {
 				return net.DialTimeout(
-					cfg.URL.Scheme,
-					cfg.URL.Path,
+					config.URL.Scheme,
+					config.URL.Path,
 					timeout,
 				)
 			},
 		}
 	default:
-		return nil, fmt.Errorf("unsupported scheme %q", cfg.URL.Scheme)
+		return nil, fmt.Errorf("unsupported scheme %q", config.URL.Scheme)
 	}
 
 	client := &httpClient{
@@ -143,15 +135,15 @@ func NewHTTPClient(cfg *HTTPConfig) (*httpClient, error) {
 			Timeout:   timeout,
 			Transport: transport,
 		},
-		url:              cfg.URL,
-		ContentEncoding:  cfg.ContentEncoding,
+		url:              config.URL,
+		ContentEncoding:  config.ContentEncoding,
 		Timeout:          timeout,
 		Headers:          headers,
-		Organization:     cfg.Organization,
-		Bucket:           cfg.Bucket,
-		BucketTag:        cfg.BucketTag,
-		ExcludeBucketTag: cfg.ExcludeBucketTag,
-		log:              cfg.Log,
+		Organization:     config.Organization,
+		Bucket:           config.Bucket,
+		BucketTag:        config.BucketTag,
+		ExcludeBucketTag: config.ExcludeBucketTag,
+		log:              config.Log,
 	}
 	return client, nil
 }
@@ -187,9 +179,8 @@ func (c *httpClient) Write(ctx context.Context, metrics []telegraf.Metric) error
 	if c.BucketTag == "" {
 		err := c.writeBatch(ctx, c.Bucket, metrics)
 		if err != nil {
-			var apiErr *APIError
-			if errors.As(err, &apiErr) {
-				if apiErr.StatusCode == http.StatusRequestEntityTooLarge {
+			if err, ok := err.(*APIError); ok {
+				if err.StatusCode == http.StatusRequestEntityTooLarge {
 					return c.splitAndWriteBatch(ctx, c.Bucket, metrics)
 				}
 			}
@@ -220,9 +211,8 @@ func (c *httpClient) Write(ctx context.Context, metrics []telegraf.Metric) error
 		for bucket, batch := range batches {
 			err := c.writeBatch(ctx, bucket, batch)
 			if err != nil {
-				var apiErr *APIError
-				if errors.As(err, &apiErr) {
-					if apiErr.StatusCode == http.StatusRequestEntityTooLarge {
+				if err, ok := err.(*APIError); ok {
+					if err.StatusCode == http.StatusRequestEntityTooLarge {
 						return c.splitAndWriteBatch(ctx, c.Bucket, metrics)
 					}
 				}
@@ -251,7 +241,10 @@ func (c *httpClient) writeBatch(ctx context.Context, bucket string, metrics []te
 		return err
 	}
 
-	reader := c.requestBodyReader(metrics)
+	reader, err := c.requestBodyReader(metrics)
+	if err != nil {
+		return err
+	}
 	defer reader.Close()
 
 	req, err := c.makeWriteRequest(loc, reader)
@@ -291,7 +284,7 @@ func (c *httpClient) writeBatch(ctx context.Context, bucket string, metrics []te
 	switch resp.StatusCode {
 	// request was too large, send back to try again
 	case http.StatusRequestEntityTooLarge:
-		c.log.Errorf("Failed to write metric to %s, request was too large (413)", bucket)
+		c.log.Errorf("Failed to write metric, request was too large (413)")
 		return &APIError{
 			StatusCode:  resp.StatusCode,
 			Title:       resp.Status,
@@ -305,10 +298,10 @@ func (c *httpClient) writeBatch(ctx context.Context, bucket string, metrics []te
 		// Clients should *not* repeat the request and the metrics should be dropped.
 		http.StatusUnprocessableEntity,
 		http.StatusNotAcceptable:
-		c.log.Errorf("Failed to write metric to %s (will be dropped: %s): %s\n", bucket, resp.Status, desc)
+		c.log.Errorf("Failed to write metric (will be dropped: %s): %s\n", resp.Status, desc)
 		return nil
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return fmt.Errorf("failed to write metric to %s (%s): %s", bucket, resp.Status, desc)
+		return fmt.Errorf("failed to write metric (%s): %s", resp.Status, desc)
 	case http.StatusTooManyRequests,
 		http.StatusServiceUnavailable,
 		http.StatusBadGateway,
@@ -317,14 +310,14 @@ func (c *httpClient) writeBatch(ctx context.Context, bucket string, metrics []te
 		c.retryCount++
 		retryDuration := c.getRetryDuration(resp.Header)
 		c.retryTime = time.Now().Add(retryDuration)
-		c.log.Warnf("Failed to write to %s; will retry in %s. (%s)\n", bucket, retryDuration, resp.Status)
-		return fmt.Errorf("waiting %s for server (%s) before sending metric again", retryDuration, bucket)
+		c.log.Warnf("Failed to write; will retry in %s. (%s)\n", retryDuration, resp.Status)
+		return fmt.Errorf("waiting %s for server before sending metric again", retryDuration)
 	}
 
 	// if it's any other 4xx code, the client should not retry as it's the client's mistake.
 	// retrying will not make the request magically work.
 	if len(resp.Status) > 0 && resp.Status[0] == '4' {
-		c.log.Errorf("Failed to write metric to %s (will be dropped: %s): %s\n", bucket, resp.Status, desc)
+		c.log.Errorf("Failed to write metric (will be dropped: %s): %s\n", resp.Status, desc)
 		return nil
 	}
 
@@ -386,14 +379,19 @@ func (c *httpClient) makeWriteRequest(address string, body io.Reader) (*http.Req
 
 // requestBodyReader warp io.Reader from influx.NewReader to io.ReadCloser, which is usefully to fast close the write
 // side of the connection in case of error
-func (c *httpClient) requestBodyReader(metrics []telegraf.Metric) io.ReadCloser {
+func (c *httpClient) requestBodyReader(metrics []telegraf.Metric) (io.ReadCloser, error) {
 	reader := influx.NewReader(metrics, c.serializer)
 
 	if c.ContentEncoding == "gzip" {
-		return internal.CompressWithGzip(reader)
+		rc, err := internal.CompressWithGzip(reader)
+		if err != nil {
+			return nil, err
+		}
+
+		return rc, nil
 	}
 
-	return io.NopCloser(reader)
+	return io.NopCloser(reader), nil
 }
 
 func (c *httpClient) addHeaders(req *http.Request) {

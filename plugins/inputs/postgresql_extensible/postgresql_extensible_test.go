@@ -6,49 +6,25 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go/wait"
 
-	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/plugins/inputs/postgresql"
 	"github.com/influxdata/telegraf/testutil"
 )
 
 func queryRunner(t *testing.T, q query) *testutil.Accumulator {
-	servicePort := "5432"
-	container := testutil.Container{
-		Image:        "postgres:alpine",
-		ExposedPorts: []string{servicePort},
-		Env: map[string]string{
-			"POSTGRES_HOST_AUTH_METHOD": "trust",
-		},
-		WaitingFor: wait.ForAll(
-			wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
-			wait.ForListeningPort(nat.Port(servicePort)),
-		),
-	}
-
-	err := container.Start()
-	require.NoError(t, err, "failed to start container")
-	defer container.Terminate()
-
-	addr := fmt.Sprintf(
-		"host=%s port=%s user=postgres sslmode=disable",
-		container.Address,
-		container.Ports[servicePort],
-	)
-
 	p := &Postgresql{
 		Log: testutil.Logger{},
 		Service: postgresql.Service{
-			Address:     config.NewSecret([]byte(addr)),
+			Address: fmt.Sprintf(
+				"host=%s user=postgres sslmode=disable",
+				testutil.GetLocalHost(),
+			),
 			IsPgBouncer: false,
 		},
 		Databases: []string{"postgres"},
 		Query:     q,
 	}
-
 	var acc testutil.Accumulator
 	require.NoError(t, p.Init())
 	require.NoError(t, p.Start(&acc))
@@ -242,16 +218,13 @@ func TestPostgresqlSqlScript(t *testing.T) {
 		Withdbname: false,
 		Tagvalue:   "",
 	}}
-
-	addr := fmt.Sprintf(
-		"host=%s user=postgres sslmode=disable",
-		testutil.GetLocalHost(),
-	)
-
 	p := &Postgresql{
 		Log: testutil.Logger{},
 		Service: postgresql.Service{
-			Address:     config.NewSecret([]byte(addr)),
+			Address: fmt.Sprintf(
+				"host=%s user=postgres sslmode=disable",
+				testutil.GetLocalHost(),
+			),
 			IsPgBouncer: false,
 		},
 		Databases: []string{"postgres"},
@@ -269,15 +242,13 @@ func TestPostgresqlIgnoresUnwantedColumnsIntegration(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	addr := fmt.Sprintf(
-		"host=%s user=postgres sslmode=disable",
-		testutil.GetLocalHost(),
-	)
-
 	p := &Postgresql{
 		Log: testutil.Logger{},
 		Service: postgresql.Service{
-			Address: config.NewSecret([]byte(addr)),
+			Address: fmt.Sprintf(
+				"host=%s user=postgres sslmode=disable",
+				testutil.GetLocalHost(),
+			),
 		},
 	}
 

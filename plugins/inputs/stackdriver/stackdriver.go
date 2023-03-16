@@ -1,10 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package stackdriver
 
 import (
 	"context"
-	_ "embed"
-	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -13,10 +10,10 @@ import (
 	"time"
 
 	monitoring "cloud.google.com/go/monitoring/apiv3/v2"
-	"cloud.google.com/go/monitoring/apiv3/v2/monitoringpb"
 	"google.golang.org/api/iterator"
 	distributionpb "google.golang.org/genproto/googleapis/api/distribution"
 	metricpb "google.golang.org/genproto/googleapis/api/metric"
+	monitoringpb "google.golang.org/genproto/googleapis/monitoring/v3"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -28,11 +25,87 @@ import (
 	"github.com/influxdata/telegraf/selfstat"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 const (
 	defaultRateLimit = 14
+	description      = "Gather timeseries from Google Cloud Platform v3 monitoring API"
+	sampleConfig     = `
+  ## GCP Project
+  project = "erudite-bloom-151019"
+
+  ## Include timeseries that start with the given metric type.
+  metric_type_prefix_include = [
+    "compute.googleapis.com/",
+  ]
+
+  ## Exclude timeseries that start with the given metric type.
+  # metric_type_prefix_exclude = []
+
+  ## Many metrics are updated once per minute; it is recommended to override
+  ## the agent level interval with a value of 1m or greater.
+  interval = "1m"
+
+  ## Maximum number of API calls to make per second.  The quota for accounts
+  ## varies, it can be viewed on the API dashboard:
+  ##   https://cloud.google.com/monitoring/quotas#quotas_and_limits
+  # rate_limit = 14
+
+  ## The delay and window options control the number of points selected on
+  ## each gather.  When set, metrics are gathered between:
+  ##   start: now() - delay - window
+  ##   end:   now() - delay
+  #
+  ## Collection delay; if set too low metrics may not yet be available.
+  # delay = "5m"
+  #
+  ## If unset, the window will start at 1m and be updated dynamically to span
+  ## the time between calls (approximately the length of the plugin interval).
+  # window = "1m"
+
+  ## TTL for cached list of metric types.  This is the maximum amount of time
+  ## it may take to discover new metrics.
+  # cache_ttl = "1h"
+
+  ## If true, raw bucket counts are collected for distribution value types.
+  ## For a more lightweight collection, you may wish to disable and use
+  ## distribution_aggregation_aligners instead.
+  # gather_raw_distribution_buckets = true
+
+  ## Aggregate functions to be used for metrics whose value type is
+  ## distribution.  These aggregate values are recorded in in addition to raw
+  ## bucket counts; if they are enabled.
+  ##
+  ## For a list of aligner strings see:
+  ##   https://cloud.google.com/monitoring/api/ref_v3/rpc/google.monitoring.v3#aligner
+  # distribution_aggregation_aligners = [
+  # 	"ALIGN_PERCENTILE_99",
+  # 	"ALIGN_PERCENTILE_95",
+  # 	"ALIGN_PERCENTILE_50",
+  # ]
+
+  ## Filters can be added to reduce the number of time series matched.  All
+  ## functions are supported: starts_with, ends_with, has_substring, and
+  ## one_of.  Only the '=' operator is supported.
+  ##
+  ## The logical operators when combining filters are defined statically using
+  ## the following values:
+  ##   filter ::= <resource_labels> {AND <metric_labels>}
+  ##   resource_labels ::= <resource_labels> {OR <resource_label>}
+  ##   metric_labels ::= <metric_labels> {OR <metric_label>}
+  ##
+  ## For more details, see https://cloud.google.com/monitoring/api/v3/filters
+  #
+  ## Resource labels refine the time series selection with the following expression:
+  ##   resource.labels.<key> = <value>
+  # [[inputs.stackdriver.filter.resource_labels]]
+  #   key = "instance_name"
+  #   value = 'starts_with("localhost")'
+  #
+  ## Metric labels refine the time series selection with the following expression:
+  ##   metric.labels.<key> = <value>
+  #  [[inputs.stackdriver.filter.metric_labels]]
+  #  	 key = "device_name"
+  #  	 value = 'one_of("sda", "sdb")'
+`
 )
 
 var (
@@ -66,8 +139,6 @@ type (
 	ListTimeSeriesFilter struct {
 		ResourceLabels []*Label `json:"resource_labels"`
 		MetricLabels   []*Label `json:"metric_labels"`
-		UserLabels     []*Label `json:"user_labels"`
-		SystemLabels   []*Label `json:"system_labels"`
 	}
 
 	// Label contains key and value
@@ -124,10 +195,10 @@ func (g *lockedSeriesGrouper) Add(
 	tm time.Time,
 	field string,
 	fieldValue interface{},
-) {
+) error {
 	g.Lock()
 	defer g.Unlock()
-	g.SeriesGrouper.Add(measurement, tags, tm, field, fieldValue)
+	return g.SeriesGrouper.Add(measurement, tags, tm, field, fieldValue)
 }
 
 // ListMetricDescriptors implements metricClient interface
@@ -147,7 +218,7 @@ func (smc *stackdriverMetricClient) ListMetricDescriptors(
 		for {
 			mdDesc, mdErr := mdResp.Next()
 			if mdErr != nil {
-				if !errors.Is(mdErr, iterator.Done) {
+				if mdErr != iterator.Done {
 					smc.log.Errorf("Failed iterating metric descriptor responses: %q: %v", req.String(), mdErr)
 				}
 				break
@@ -176,7 +247,7 @@ func (smc *stackdriverMetricClient) ListTimeSeries(
 		for {
 			tsDesc, tsErr := tsResp.Next()
 			if tsErr != nil {
-				if !errors.Is(tsErr, iterator.Done) {
+				if tsErr != iterator.Done {
 					smc.log.Errorf("Failed iterating time series responses: %q: %v", req.String(), tsErr)
 				}
 				break
@@ -193,7 +264,13 @@ func (smc *stackdriverMetricClient) Close() error {
 	return smc.conn.Close()
 }
 
-func (*Stackdriver) SampleConfig() string {
+// Description implements telegraf.Input interface
+func (s *Stackdriver) Description() string {
+	return description
+}
+
+// SampleConfig implements telegraf.Input interface
+func (s *Stackdriver) SampleConfig() string {
 	return sampleConfig
 }
 
@@ -272,15 +349,15 @@ func (s *Stackdriver) newListTimeSeriesFilter(metricType string) string {
 
 	var valueFmt string
 	if len(s.Filter.ResourceLabels) > 0 {
-		resourceLabelsFilter := make([]string, 0, len(s.Filter.ResourceLabels))
-		for _, resourceLabel := range s.Filter.ResourceLabels {
+		resourceLabelsFilter := make([]string, len(s.Filter.ResourceLabels))
+		for i, resourceLabel := range s.Filter.ResourceLabels {
 			// check if resource label value contains function
 			if includeExcludeHelper(resourceLabel.Value, functions, nil) {
 				valueFmt = `resource.labels.%s = %s`
 			} else {
 				valueFmt = `resource.labels.%s = "%s"`
 			}
-			resourceLabelsFilter = append(resourceLabelsFilter, fmt.Sprintf(valueFmt, resourceLabel.Key, resourceLabel.Value))
+			resourceLabelsFilter[i] = fmt.Sprintf(valueFmt, resourceLabel.Key, resourceLabel.Value)
 		}
 		if len(resourceLabelsFilter) == 1 {
 			filterString += fmt.Sprintf(" AND %s", resourceLabelsFilter[0])
@@ -290,56 +367,20 @@ func (s *Stackdriver) newListTimeSeriesFilter(metricType string) string {
 	}
 
 	if len(s.Filter.MetricLabels) > 0 {
-		metricLabelsFilter := make([]string, 0, len(s.Filter.MetricLabels))
-		for _, metricLabel := range s.Filter.MetricLabels {
+		metricLabelsFilter := make([]string, len(s.Filter.MetricLabels))
+		for i, metricLabel := range s.Filter.MetricLabels {
 			// check if metric label value contains function
 			if includeExcludeHelper(metricLabel.Value, functions, nil) {
 				valueFmt = `metric.labels.%s = %s`
 			} else {
 				valueFmt = `metric.labels.%s = "%s"`
 			}
-			metricLabelsFilter = append(metricLabelsFilter, fmt.Sprintf(valueFmt, metricLabel.Key, metricLabel.Value))
+			metricLabelsFilter[i] = fmt.Sprintf(valueFmt, metricLabel.Key, metricLabel.Value)
 		}
 		if len(metricLabelsFilter) == 1 {
 			filterString += fmt.Sprintf(" AND %s", metricLabelsFilter[0])
 		} else {
 			filterString += fmt.Sprintf(" AND (%s)", strings.Join(metricLabelsFilter, " OR "))
-		}
-	}
-
-	if len(s.Filter.UserLabels) > 0 {
-		userLabelsFilter := make([]string, 0, len(s.Filter.UserLabels))
-		for _, metricLabel := range s.Filter.UserLabels {
-			// check if metric label value contains function
-			if includeExcludeHelper(metricLabel.Value, functions, nil) {
-				valueFmt = `metadata.user_labels."%s" = %s`
-			} else {
-				valueFmt = `metadata.user_labels."%s" = "%s"`
-			}
-			userLabelsFilter = append(userLabelsFilter, fmt.Sprintf(valueFmt, metricLabel.Key, metricLabel.Value))
-		}
-		if len(userLabelsFilter) == 1 {
-			filterString += fmt.Sprintf(" AND %s", userLabelsFilter[0])
-		} else {
-			filterString += fmt.Sprintf(" AND (%s)", strings.Join(userLabelsFilter, " OR "))
-		}
-	}
-
-	if len(s.Filter.SystemLabels) > 0 {
-		systemLabelsFilter := make([]string, 0, len(s.Filter.SystemLabels))
-		for _, metricLabel := range s.Filter.SystemLabels {
-			// check if metric label value contains function
-			if includeExcludeHelper(metricLabel.Value, functions, nil) {
-				valueFmt = `metadata.system_labels."%s" = %s`
-			} else {
-				valueFmt = `metadata.system_labels."%s" = "%s"`
-			}
-			systemLabelsFilter = append(systemLabelsFilter, fmt.Sprintf(valueFmt, metricLabel.Key, metricLabel.Value))
-		}
-		if len(systemLabelsFilter) == 1 {
-			filterString += fmt.Sprintf(" AND %s", systemLabelsFilter[0])
-		} else {
-			filterString += fmt.Sprintf(" AND (%s)", strings.Join(systemLabelsFilter, " OR "))
 		}
 	}
 
@@ -408,7 +449,7 @@ func (s *Stackdriver) initializeStackdriverClient(ctx context.Context) error {
 	if s.client == nil {
 		client, err := monitoring.NewMetricClient(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to create stackdriver monitoring client: %w", err)
+			return fmt.Errorf("failed to create stackdriver monitoring client: %v", err)
 		}
 
 		tags := map[string]string{
@@ -467,9 +508,9 @@ func (s *Stackdriver) newListMetricDescriptorsFilters() []string {
 		return nil
 	}
 
-	metricTypeFilters := make([]string, 0, len(s.MetricTypePrefixInclude))
-	for _, metricTypePrefix := range s.MetricTypePrefixInclude {
-		metricTypeFilters = append(metricTypeFilters, fmt.Sprintf(`metric.type = starts_with(%q)`, metricTypePrefix))
+	metricTypeFilters := make([]string, len(s.MetricTypePrefixInclude))
+	for i, metricTypePrefix := range s.MetricTypePrefixInclude {
+		metricTypeFilters[i] = fmt.Sprintf(`metric.type = starts_with(%q)`, metricTypePrefix)
 	}
 	return metricTypeFilters
 }
@@ -592,79 +633,14 @@ func (s *Stackdriver) gatherTimeSeries(
 					value = p.Value.GetStringValue()
 				}
 
-				grouper.Add(tsConf.measurement, tags, ts, tsConf.fieldKey, value)
+				if err := grouper.Add(tsConf.measurement, tags, ts, tsConf.fieldKey, value); err != nil {
+					return err
+				}
 			}
 		}
 	}
 
 	return nil
-}
-
-type Buckets interface {
-	Amount() int32
-	UpperBound(i int32) float64
-}
-
-type LinearBuckets struct {
-	*distributionpb.Distribution_BucketOptions_Linear
-}
-
-func (l *LinearBuckets) Amount() int32 {
-	return l.NumFiniteBuckets + 2
-}
-
-func (l *LinearBuckets) UpperBound(i int32) float64 {
-	return l.Offset + (l.Width * float64(i))
-}
-
-type ExponentialBuckets struct {
-	*distributionpb.Distribution_BucketOptions_Exponential
-}
-
-func (e *ExponentialBuckets) Amount() int32 {
-	return e.NumFiniteBuckets + 2
-}
-
-func (e *ExponentialBuckets) UpperBound(i int32) float64 {
-	width := math.Pow(e.GrowthFactor, float64(i))
-	return e.Scale * width
-}
-
-type ExplicitBuckets struct {
-	*distributionpb.Distribution_BucketOptions_Explicit
-}
-
-func (e *ExplicitBuckets) Amount() int32 {
-	return int32(len(e.Bounds)) + 1
-}
-
-func (e *ExplicitBuckets) UpperBound(i int32) float64 {
-	return e.Bounds[i]
-}
-
-func NewBucket(dist *distributionpb.Distribution) (Buckets, error) {
-	linearBuckets := dist.BucketOptions.GetLinearBuckets()
-	if linearBuckets != nil {
-		var l LinearBuckets
-		l.Distribution_BucketOptions_Linear = linearBuckets
-		return &l, nil
-	}
-
-	exponentialBuckets := dist.BucketOptions.GetExponentialBuckets()
-	if exponentialBuckets != nil {
-		var e ExponentialBuckets
-		e.Distribution_BucketOptions_Exponential = exponentialBuckets
-		return &e, nil
-	}
-
-	explicitBuckets := dist.BucketOptions.GetExplicitBuckets()
-	if explicitBuckets != nil {
-		var e ExplicitBuckets
-		e.Distribution_BucketOptions_Explicit = explicitBuckets
-		return &e, nil
-	}
-
-	return nil, errors.New("no buckets available")
 }
 
 // AddDistribution adds metrics from a distribution value type.
@@ -674,20 +650,37 @@ func (s *Stackdriver) addDistribution(dist *distributionpb.Distribution, tags ma
 	field := tsConf.fieldKey
 	name := tsConf.measurement
 
-	grouper.Add(name, tags, ts, field+"_count", dist.Count)
-	grouper.Add(name, tags, ts, field+"_mean", dist.Mean)
-	grouper.Add(name, tags, ts, field+"_sum_of_squared_deviation", dist.SumOfSquaredDeviation)
-
-	if dist.Range != nil {
-		grouper.Add(name, tags, ts, field+"_range_min", dist.Range.Min)
-		grouper.Add(name, tags, ts, field+"_range_max", dist.Range.Max)
-	}
-
-	bucket, err := NewBucket(dist)
-	if err != nil {
+	if err := grouper.Add(name, tags, ts, field+"_count", dist.Count); err != nil {
 		return err
 	}
-	numBuckets := bucket.Amount()
+	if err := grouper.Add(name, tags, ts, field+"_mean", dist.Mean); err != nil {
+		return err
+	}
+	if err := grouper.Add(name, tags, ts, field+"_sum_of_squared_deviation", dist.SumOfSquaredDeviation); err != nil {
+		return err
+	}
+
+	if dist.Range != nil {
+		if err := grouper.Add(name, tags, ts, field+"_range_min", dist.Range.Min); err != nil {
+			return err
+		}
+		if err := grouper.Add(name, tags, ts, field+"_range_max", dist.Range.Max); err != nil {
+			return err
+		}
+	}
+
+	linearBuckets := dist.BucketOptions.GetLinearBuckets()
+	exponentialBuckets := dist.BucketOptions.GetExponentialBuckets()
+	explicitBuckets := dist.BucketOptions.GetExplicitBuckets()
+
+	var numBuckets int32
+	if linearBuckets != nil {
+		numBuckets = linearBuckets.NumFiniteBuckets + 2
+	} else if exponentialBuckets != nil {
+		numBuckets = exponentialBuckets.NumFiniteBuckets + 2
+	} else {
+		numBuckets = int32(len(explicitBuckets.Bounds)) + 1
+	}
 
 	var i int32
 	var count int64
@@ -697,7 +690,15 @@ func (s *Stackdriver) addDistribution(dist *distributionpb.Distribution, tags ma
 		if i == numBuckets-1 {
 			tags["lt"] = "+Inf"
 		} else {
-			upperBound := bucket.UpperBound(i)
+			var upperBound float64
+			if linearBuckets != nil {
+				upperBound = linearBuckets.Offset + (linearBuckets.Width * float64(i))
+			} else if exponentialBuckets != nil {
+				width := math.Pow(exponentialBuckets.GrowthFactor, float64(i))
+				upperBound = exponentialBuckets.Scale * width
+			} else if explicitBuckets != nil {
+				upperBound = explicitBuckets.Bounds[i]
+			}
 			tags["lt"] = strconv.FormatFloat(upperBound, 'f', -1, 64)
 		}
 
@@ -706,14 +707,16 @@ func (s *Stackdriver) addDistribution(dist *distributionpb.Distribution, tags ma
 		if i < int32(len(dist.BucketCounts)) {
 			count += dist.BucketCounts[i]
 		}
-		grouper.Add(name, tags, ts, field+"_bucket", count)
+		if err := grouper.Add(name, tags, ts, field+"_bucket", count); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
 func init() {
-	inputs.Add("stackdriver", func() telegraf.Input {
+	f := func() telegraf.Input {
 		return &Stackdriver{
 			CacheTTL:                        defaultCacheTTL,
 			RateLimit:                       defaultRateLimit,
@@ -721,5 +724,7 @@ func init() {
 			GatherRawDistributionBuckets:    true,
 			DistributionAggregationAligners: []string{},
 		}
-	})
+	}
+
+	inputs.Add("stackdriver", f)
 }

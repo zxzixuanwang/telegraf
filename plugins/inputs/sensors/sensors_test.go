@@ -1,4 +1,5 @@
 //go:build linux
+// +build linux
 
 package sensors
 
@@ -24,7 +25,6 @@ func TestGatherDefault(t *testing.T) {
 	defer func() { execCommand = exec.Command }()
 	var acc testutil.Accumulator
 
-	require.NoError(t, s.Init())
 	require.NoError(t, s.Gather(&acc))
 
 	var tests = []struct {
@@ -163,7 +163,6 @@ func TestGatherNotRemoveNumbers(t *testing.T) {
 	defer func() { execCommand = exec.Command }()
 	var acc testutil.Accumulator
 
-	require.NoError(t, s.Init())
 	require.NoError(t, s.Gather(&acc))
 
 	var tests = []struct {
@@ -371,8 +370,10 @@ Vcore Voltage:
 	cmd, _ := args[3], args[4:]
 
 	if cmd == "sensors" {
+		//nolint:errcheck,revive
 		fmt.Fprint(os.Stdout, mockData)
 	} else {
+		//nolint:errcheck,revive
 		fmt.Fprint(os.Stdout, "command not found")
 		//nolint:revive // error code is important for this "test"
 		os.Exit(1)

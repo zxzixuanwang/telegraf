@@ -15,6 +15,7 @@ import (
 
 func TestApcupsdDocs(_ *testing.T) {
 	apc := &ApcUpsd{}
+	apc.Description()
 	apc.SampleConfig()
 }
 
@@ -127,24 +128,21 @@ func TestApcupsdGather(t *testing.T) {
 					"model":    "Model 12345",
 				},
 				fields: map[string]interface{}{
-					"status_flags":                  uint64(8),
-					"input_voltage":                 float64(0),
-					"load_percent":                  float64(13),
-					"battery_charge_percent":        float64(0),
-					"time_left_ns":                  int64(2790000000000),
-					"output_voltage":                float64(0),
-					"internal_temp":                 float64(0),
-					"battery_voltage":               float64(0),
-					"input_frequency":               float64(0),
-					"time_on_battery_ns":            int64(0),
-					"cumulative_time_on_battery_ns": int64(85000000000),
-					"nominal_input_voltage":         float64(230),
-					"nominal_battery_voltage":       float64(12),
-					"nominal_power":                 865,
-					"firmware":                      "857.L3 .I USB FW:L3",
-					"battery_date":                  "2016-09-06",
-					"last_transfer":                 "Low line voltage",
-					"number_transfers":              1,
+					"status_flags":            uint64(8),
+					"battery_charge_percent":  float64(0),
+					"battery_voltage":         float64(0),
+					"input_frequency":         float64(0),
+					"input_voltage":           float64(0),
+					"internal_temp":           float64(0),
+					"load_percent":            float64(13),
+					"output_voltage":          float64(0),
+					"time_left_ns":            int64(2790000000000),
+					"time_on_battery_ns":      int64(0),
+					"nominal_input_voltage":   float64(230),
+					"nominal_battery_voltage": float64(12),
+					"nominal_power":           865,
+					"firmware":                "857.L3 .I USB FW:L3",
+					"battery_date":            "2016-09-06",
 				},
 				out: genOutput,
 			},
@@ -200,13 +198,11 @@ func genOutput() [][]byte {
 		"MODEL    : Model 12345",
 		"DATE     : 2016-09-06 22:13:28 -0400",
 		"HOSTNAME : example",
-		"LOADPCT  : 13.0 Percent Load Capacity",
+		"LOADPCT  :  13.0 Percent Load Capacity",
 		"BATTDATE : 2016-09-06",
-		"TIMELEFT : 46.5 Minutes",
+		"TIMELEFT :  46.5 Minutes",
 		"TONBATT  : 0 seconds",
-		"CUMONBATT: 85 seconds",
-		"LASTXFER : Low line voltage",
-		"NUMXFERS : 1",
+		"NUMXFERS : 0",
 		"SELFTEST : NO",
 		"NOMINV   : 230 Volts",
 		"NOMBATTV : 12.0 Volts",
@@ -215,7 +211,7 @@ func genOutput() [][]byte {
 		"ALARMDEL : Low Battery",
 	}
 
-	out := make([][]byte, 0, 2*len(kvs))
+	var out [][]byte
 	for _, kv := range kvs {
 		lenb, kvb := kvBytes(kv)
 		out = append(out, lenb)
@@ -230,7 +226,7 @@ func genBadOutput() [][]byte {
 		"STATFLAG : 0x08Status Flag",
 	}
 
-	out := make([][]byte, 0, 2*len(kvs))
+	var out [][]byte
 	for _, kv := range kvs {
 		lenb, kvb := kvBytes(kv)
 		out = append(out, lenb)

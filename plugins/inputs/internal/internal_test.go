@@ -21,14 +21,13 @@ func TestSelfPlugin(t *testing.T) {
 	stat.Incr(1)
 	stat.Incr(2)
 	require.NoError(t, s.Gather(acc))
-
 	acc.AssertContainsTaggedFields(t, "internal_mytest",
 		map[string]interface{}{
 			"test": int64(3),
 		},
 		map[string]string{
 			"test":    "foo",
-			"version": "unknown",
+			"version": "",
 		},
 	)
 	acc.ClearMetrics()
@@ -42,7 +41,7 @@ func TestSelfPlugin(t *testing.T) {
 		},
 		map[string]string{
 			"test":    "foo",
-			"version": "unknown",
+			"version": "",
 		},
 	)
 	acc.ClearMetrics()
@@ -60,7 +59,7 @@ func TestSelfPlugin(t *testing.T) {
 		},
 		map[string]string{
 			"test":    "foo",
-			"version": "unknown",
+			"version": "",
 		},
 	)
 }

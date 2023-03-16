@@ -5,25 +5,15 @@ according to the [InfluxDB HTTP API][influxdb_http_api].  The intent of the
 plugin is to allow Telegraf to serve as a proxy/router for the `/api/v2/write`
 endpoint of the InfluxDB HTTP API.
 
-The `/api/v2/write` endpoint supports the `precision` query parameter and can be
-set to one of `ns`, `us`, `ms`, `s`.  All other parameters are ignored and defer
-to the output plugins configuration.
+The `/api/v2/write` endpoint supports the `precision` query parameter and can be set
+to one of `ns`, `us`, `ms`, `s`.  All other parameters are ignored and
+defer to the output plugins configuration.
 
 Telegraf minimum version: Telegraf 1.16.0
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
-# Accept metrics over InfluxDB 2.x HTTP API
+```toml
 [[inputs.influxdb_v2_listener]]
   ## Address and port to host InfluxDB listener on
   ## (Double check the port. Could be 9999 if using OSS Beta)
@@ -50,11 +40,6 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   ## Optional token to accept for HTTP authentication.
   ## You probably want to make sure you have TLS configured above for this.
   # token = "some-long-shared-secret-token"
-
-  ## Influx line protocol parser
-  ## 'internal' is the default. 'upstream' is a newer parser that is faster
-  ## and more memory efficient.
-  # parser_type = "internal"
 ```
 
 ## Metrics
@@ -70,5 +55,3 @@ curl -i -XPOST 'http://localhost:8186/api/v2/write' --data-binary 'cpu_load_shor
 ```
 
 [influxdb_http_api]: https://docs.influxdata.com/influxdb/latest/api/
-
-## Example Output

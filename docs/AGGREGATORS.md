@@ -7,15 +7,12 @@ This section is for developers who want to create a new aggregator plugin.
 * A aggregator must conform to the [telegraf.Aggregator][] interface.
 * Aggregators should call `aggregators.Add` in their `init` function to
   register themselves.  See below for a quick example.
-* To be available within Telegraf itself, plugins must register themselves
-  using a file in `github.com/influxdata/telegraf/plugins/aggregators/all`
-  named according to the plugin name. Make sure your also add build-tags to
-  conditionally build the plugin.
-* Each plugin requires a file called `sample.conf` containing the sample configuration
-  for the plugin in TOML format.
-  Please consult the [Sample Config][] page for the latest style guidelines.
-* Each plugin `README.md` file should include the `sample.conf` file in a section
-  describing the configuration by specifying a `toml` section in the form `toml @sample.conf`. The specified file(s) are then injected automatically into the Readme.
+* To be available within Telegraf itself, plugins must add themselves to the
+  `github.com/influxdata/telegraf/plugins/aggregators/all/all.go` file.
+* The `SampleConfig` function should return valid toml that describes how the
+  plugin can be configured. This is included in `telegraf config`.  Please
+  consult the [Sample Config][] page for the latest style guidelines.
+* The `Description` function should say in one line what this aggregator does.
 * The Aggregator plugin will need to keep caches of metrics that have passed
   through it. This should be done using the builtin `HashID()` function of
   each metric.
@@ -24,23 +21,15 @@ This section is for developers who want to create a new aggregator plugin.
 
 ### Aggregator Plugin Example
 
-Content of your plugin file e.g. `min.go`
-
 ```go
-//go:generate ../../../tools/readme_config_includer/generator
 package min
 
 // min.go
 
 import (
-    _ "embed"
-
     "github.com/influxdata/telegraf"
     "github.com/influxdata/telegraf/plugins/aggregators"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 type Min struct {
     // caches for metric fields, names, and tags
@@ -55,12 +44,24 @@ func NewMin() telegraf.Aggregator {
     return m
 }
 
-func (*Min) SampleConfig() string {
-    return sampleConfig
-}
+var sampleConfig = `
+  ## period is the flush & clear interval of the aggregator.
+  period = "30s"
+  ## If true drop_original will drop the original metrics and
+  ## only send aggregates.
+  drop_original = false
+`
 
 func (m *Min) Init() error {
     return nil
+}
+
+func (m *Min) SampleConfig() string {
+    return sampleConfig
+}
+
+func (m *Min) Description() string {
+    return "Keep the aggregate min of each metric passing through."
 }
 
 func (m *Min) Add(in telegraf.Metric) {
@@ -126,20 +127,6 @@ func init() {
 }
 ```
 
-Registration of the plugin on `plugins/aggregators/all/min.go`:
-
-```go
-//go:build !custom || aggregators || aggregators.min
-
-package all
-
-import _ "github.com/influxdata/telegraf/plugins/aggregators/min" // register plugin
-
-```
-
-The _build-tags_ in the first line allow to selectively include/exclude your
-plugin when customizing Telegraf.
-
+[telegraf.Aggregator]: https://godoc.org/github.com/influxdata/telegraf#Aggregator
 [Sample Config]: https://github.com/influxdata/telegraf/blob/master/docs/developers/SAMPLE_CONFIG.md
 [Code Style]: https://github.com/influxdata/telegraf/blob/master/docs/developers/CODE_STYLE.md
-[telegraf.Aggregator]: https://godoc.org/github.com/influxdata/telegraf#Aggregator

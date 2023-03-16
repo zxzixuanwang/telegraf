@@ -16,8 +16,7 @@ import (
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/metric"
 	"github.com/influxdata/telegraf/models"
-	"github.com/influxdata/telegraf/plugins/parsers/influx"
-	"github.com/influxdata/telegraf/plugins/parsers/prometheus"
+	"github.com/influxdata/telegraf/plugins/parsers"
 	"github.com/influxdata/telegraf/plugins/serializers"
 	"github.com/influxdata/telegraf/testutil"
 )
@@ -26,7 +25,6 @@ func TestSettingConfigWorks(t *testing.T) {
 	cfg := `
 	[[inputs.execd]]
 		command = ["a", "b", "c"]
-		environment = ["d=e", "f=1"]
 		restart_delay = "1m"
 		signal = "SIGHUP"
 	`
@@ -37,26 +35,24 @@ func TestSettingConfigWorks(t *testing.T) {
 	inp, ok := conf.Inputs[0].Input.(*Execd)
 	require.True(t, ok)
 	require.EqualValues(t, []string{"a", "b", "c"}, inp.Command)
-	require.EqualValues(t, []string{"d=e", "f=1"}, inp.Environment)
 	require.EqualValues(t, 1*time.Minute, inp.RestartDelay)
 	require.EqualValues(t, "SIGHUP", inp.Signal)
 }
 
 func TestExternalInputWorks(t *testing.T) {
-	influxParser := models.NewRunningParser(&influx.Parser{}, &models.ParserConfig{})
-	require.NoError(t, influxParser.Init())
+	influxParser, err := parsers.NewInfluxParser()
+	require.NoError(t, err)
 
 	exe, err := os.Executable()
 	require.NoError(t, err)
 
 	e := &Execd{
 		Command:      []string{exe, "-counter"},
-		Environment:  []string{"PLUGINS_INPUTS_EXECD_MODE=application", "METRIC_NAME=counter"},
 		RestartDelay: config.Duration(5 * time.Second),
+		parser:       influxParser,
 		Signal:       "STDIN",
 		Log:          testutil.Logger{},
 	}
-	e.SetParser(influxParser)
 
 	metrics := make(chan telegraf.Metric, 10)
 	defer close(metrics)
@@ -77,8 +73,8 @@ func TestExternalInputWorks(t *testing.T) {
 }
 
 func TestParsesLinesContainingNewline(t *testing.T) {
-	parser := models.NewRunningParser(&influx.Parser{}, &models.ParserConfig{})
-	require.NoError(t, parser.Init())
+	parser, err := parsers.NewInfluxParser()
+	require.NoError(t, err)
 
 	metrics := make(chan telegraf.Metric, 10)
 	defer close(metrics)
@@ -86,11 +82,11 @@ func TestParsesLinesContainingNewline(t *testing.T) {
 
 	e := &Execd{
 		RestartDelay: config.Duration(5 * time.Second),
+		parser:       parser,
 		Signal:       "STDIN",
 		acc:          acc,
 		Log:          testutil.Logger{},
 	}
-	e.SetParser(parser)
 
 	cases := []struct {
 		Name  string
@@ -109,7 +105,7 @@ func TestParsesLinesContainingNewline(t *testing.T) {
 		t.Run(test.Name, func(t *testing.T) {
 			line := fmt.Sprintf("event message=\"%v\" 1587128639239000000", test.Value)
 
-			e.outputReader(strings.NewReader(line))
+			e.cmdReadOut(strings.NewReader(line))
 
 			m := readChanWithTimeout(t, metrics, 1*time.Second)
 
@@ -119,43 +115,6 @@ func TestParsesLinesContainingNewline(t *testing.T) {
 			require.Equal(t, test.Value, val)
 		})
 	}
-}
-
-func TestParsesPrometheus(t *testing.T) {
-	parser := models.NewRunningParser(&prometheus.Parser{}, &models.ParserConfig{})
-	require.NoError(t, parser.Init())
-
-	metrics := make(chan telegraf.Metric, 10)
-	defer close(metrics)
-
-	var acc testutil.Accumulator
-
-	e := &Execd{
-		RestartDelay: config.Duration(5 * time.Second),
-		Signal:       "STDIN",
-		acc:          &acc,
-		Log:          testutil.Logger{},
-	}
-	e.SetParser(parser)
-
-	lines := `# HELP This is just a test metric.
-# TYPE test summary
-test{handler="execd",quantile="0.5"} 42.0
-`
-	expected := []telegraf.Metric{
-		testutil.MustMetric(
-			"prometheus",
-			map[string]string{"handler": "execd", "quantile": "0.5"},
-			map[string]interface{}{"test": float64(42.0)},
-			time.Unix(0, 0),
-		),
-	}
-
-	e.outputReader(strings.NewReader(lines))
-	check := func() bool { return acc.NMetrics() == uint64(len(expected)) }
-	require.Eventually(t, check, 1*time.Second, 100*time.Millisecond)
-	actual := acc.GetTelegrafMetrics()
-	testutil.RequireMetricsEqual(t, expected, actual, testutil.IgnoreTime())
 }
 
 func readChanWithTimeout(t *testing.T, metrics chan telegraf.Metric, timeout time.Duration) telegraf.Metric {
@@ -193,8 +152,7 @@ var counter = flag.Bool("counter", false,
 
 func TestMain(m *testing.M) {
 	flag.Parse()
-	runMode := os.Getenv("PLUGINS_INPUTS_EXECD_MODE")
-	if *counter && runMode == "application" {
+	if *counter {
 		if err := runCounterProgram(); err != nil {
 			os.Exit(1)
 		}
@@ -205,13 +163,17 @@ func TestMain(m *testing.M) {
 }
 
 func runCounterProgram() error {
-	envMetricName := os.Getenv("METRIC_NAME")
 	i := 0
-	serializer := serializers.NewInfluxSerializer()
+	serializer, err := serializers.NewInfluxSerializer()
+	if err != nil {
+		//nolint:errcheck,revive // Test will fail anyway
+		fmt.Fprintln(os.Stderr, "ERR InfluxSerializer failed to load")
+		return err
+	}
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
-		m := metric.New(envMetricName,
+		m := metric.New("counter",
 			map[string]string{},
 			map[string]interface{}{
 				"count": i,
@@ -222,6 +184,7 @@ func runCounterProgram() error {
 
 		b, err := serializer.Serialize(m)
 		if err != nil {
+			//nolint:errcheck,revive // Test will fail anyway
 			fmt.Fprintf(os.Stderr, "ERR %v\n", err)
 			return err
 		}

@@ -1,15 +1,12 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package rename
 
 import (
-	_ "embed"
-
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/processors"
 )
 
-//go:embed sample.conf
-var sampleConfig string
+const sampleConfig = `
+`
 
 type Replace struct {
 	Measurement string `toml:"measurement"`
@@ -22,8 +19,12 @@ type Rename struct {
 	Replaces []Replace `toml:"replace"`
 }
 
-func (*Rename) SampleConfig() string {
+func (r *Rename) SampleConfig() string {
 	return sampleConfig
+}
+
+func (r *Rename) Description() string {
+	return "Rename measurements, tags, and fields that pass through this filter."
 }
 
 func (r *Rename) Apply(in ...telegraf.Metric) []telegraf.Metric {

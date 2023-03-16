@@ -68,7 +68,6 @@ func NewRunningAggregator(aggregator telegraf.Aggregator, config *AggregatorConf
 type AggregatorConfig struct {
 	Name         string
 	Alias        string
-	ID           string
 	DropOriginal bool
 	Period       time.Duration
 	Delay        time.Duration
@@ -95,13 +94,6 @@ func (r *RunningAggregator) Init() error {
 	return nil
 }
 
-func (r *RunningAggregator) ID() string {
-	if p, ok := r.Aggregator.(telegraf.PluginWithID); ok {
-		return p.ID()
-	}
-	return r.Config.ID
-}
-
 func (r *RunningAggregator) Period() time.Duration {
 	return r.Config.Period
 }
@@ -116,9 +108,9 @@ func (r *RunningAggregator) UpdateWindow(start, until time.Time) {
 	r.log.Debugf("Updated aggregation range [%s, %s]", start, until)
 }
 
-func (r *RunningAggregator) MakeMetric(telegrafMetric telegraf.Metric) telegraf.Metric {
+func (r *RunningAggregator) MakeMetric(metric telegraf.Metric) telegraf.Metric {
 	m := makemetric(
-		telegrafMetric,
+		metric,
 		r.Config.NameOverride,
 		r.Config.MeasurementPrefix,
 		r.Config.MeasurementSuffix,
@@ -171,11 +163,15 @@ func (r *RunningAggregator) Push(acc telegraf.Accumulator) {
 	until := r.periodEnd.Add(r.Config.Period)
 	r.UpdateWindow(since, until)
 
+	r.push(acc)
+	r.Aggregator.Reset()
+}
+
+func (r *RunningAggregator) push(acc telegraf.Accumulator) {
 	start := time.Now()
 	r.Aggregator.Push(acc)
 	elapsed := time.Since(start)
 	r.PushTime.Incr(elapsed.Nanoseconds())
-	r.Aggregator.Reset()
 }
 
 func (r *RunningAggregator) Log() telegraf.Logger {

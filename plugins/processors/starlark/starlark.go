@@ -1,32 +1,47 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package starlark
 
 import (
-	_ "embed"
 	"fmt"
-
-	"go.starlark.net/starlark"
 
 	"github.com/influxdata/telegraf"
 	common "github.com/influxdata/telegraf/plugins/common/starlark"
 	"github.com/influxdata/telegraf/plugins/processors"
+	"go.starlark.net/starlark"
 )
 
-//go:embed sample.conf
-var sampleConfig string
+const (
+	description  = "Process metrics using a Starlark script"
+	sampleConfig = `
+  ## The Starlark source can be set as a string in this configuration file, or
+  ## by referencing a file containing the script.  Only one source or script
+  ## should be set at once.
+  ##
+  ## Source of the Starlark script.
+  source = '''
+def apply(metric):
+	return metric
+'''
+
+  ## File containing a Starlark script.
+  # script = "/usr/local/bin/myscript.star"
+
+  ## The constants of the Starlark script.
+  # [processors.starlark.constants]
+  #   max_size = 10
+  #   threshold = 0.75
+  #   default_name = "Julia"
+  #   debug_mode = true
+`
+)
 
 type Starlark struct {
-	common.Common
+	common.StarlarkCommon
 
 	results []telegraf.Metric
 }
 
-func (*Starlark) SampleConfig() string {
-	return sampleConfig
-}
-
 func (s *Starlark) Init() error {
-	err := s.Common.Init()
+	err := s.StarlarkCommon.Init()
 	if err != nil {
 		return err
 	}
@@ -43,6 +58,14 @@ func (s *Starlark) Init() error {
 	return nil
 }
 
+func (s *Starlark) SampleConfig() string {
+	return sampleConfig
+}
+
+func (s *Starlark) Description() string {
+	return description
+}
+
 func (s *Starlark) Start(_ telegraf.Accumulator) error {
 	return nil
 }
@@ -50,7 +73,7 @@ func (s *Starlark) Start(_ telegraf.Accumulator) error {
 func (s *Starlark) Add(metric telegraf.Metric, acc telegraf.Accumulator) error {
 	parameters, found := s.GetParameters("apply")
 	if !found {
-		return fmt.Errorf("the parameters of the apply function could not be found")
+		return fmt.Errorf("The parameters of the apply function could not be found")
 	}
 	parameters[0].(*common.Metric).Wrap(metric)
 
@@ -104,12 +127,13 @@ func (s *Starlark) Add(metric telegraf.Metric, acc telegraf.Accumulator) error {
 	case starlark.NoneType:
 		metric.Drop()
 	default:
-		return fmt.Errorf("invalid type returned: %T", rv)
+		return fmt.Errorf("Invalid type returned: %T", rv)
 	}
 	return nil
 }
 
-func (s *Starlark) Stop() {
+func (s *Starlark) Stop() error {
+	return nil
 }
 
 func containsMetric(metrics []telegraf.Metric, metric telegraf.Metric) bool {
@@ -124,7 +148,7 @@ func containsMetric(metrics []telegraf.Metric, metric telegraf.Metric) bool {
 func init() {
 	processors.AddStreaming("starlark", func() telegraf.StreamingProcessor {
 		return &Starlark{
-			Common: common.Common{
+			StarlarkCommon: common.StarlarkCommon{
 				StarlarkLoadFunc: common.LoadFunc,
 			},
 		}

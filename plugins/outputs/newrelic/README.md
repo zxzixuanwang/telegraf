@@ -1,4 +1,4 @@
-# New Relic Output Plugin
+# New Relic output plugin
 
 This plugins writes to New Relic Insights using the [Metrics API][].
 
@@ -6,28 +6,14 @@ To use this plugin you must first obtain an [Insights API Key][].
 
 Telegraf minimum version: Telegraf 1.15.0
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
-# Send metrics to New Relic metrics endpoint
+```toml
 [[outputs.newrelic]]
-  ## The 'insights_key' parameter requires a NR license key.
-  ## New Relic recommends you create one
-  ## with a convenient name such as TELEGRAF_INSERT_KEY.
-  ## reference: https://docs.newrelic.com/docs/apis/intro-apis/new-relic-api-keys/#ingest-license-key
-  # insights_key = "New Relic License Key Here"
+  ## New Relic Insights API key
+  insights_key = "insights api key"
 
   ## Prefix to add to add to metric name for easy identification.
-  ## This is very useful if your metric names are ambiguous.
   # metric_prefix = ""
 
   ## Timeout for writes to the New Relic API.
@@ -43,5 +29,4 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
 ```
 
 [Metrics API]: https://docs.newrelic.com/docs/data-ingest-apis/get-data-new-relic/metric-api/introduction-metric-api
-
 [Insights API Key]: https://docs.newrelic.com/docs/apis/get-started/intro-apis/types-new-relic-api-keys#user-api-key

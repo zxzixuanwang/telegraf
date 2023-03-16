@@ -1,33 +1,24 @@
 # AMQP Consumer Input Plugin
 
-This plugin provides a consumer for use with AMQP 0-9-1, a prominent
-implementation of this protocol being [RabbitMQ](https://www.rabbitmq.com/).
+This plugin provides a consumer for use with AMQP 0-9-1, a prominent implementation of this protocol being [RabbitMQ](https://www.rabbitmq.com/).
 
-Metrics are read from a topic exchange using the configured queue and
-binding_key.
+Metrics are read from a topic exchange using the configured queue and binding_key.
 
-Message payload should be formatted in one of the [Telegraf Data
-Formats](../../../docs/DATA_FORMATS_INPUT.md).
+Message payload should be formatted in one of the [Telegraf Data Formats](https://github.com/influxdata/telegraf/blob/master/docs/DATA_FORMATS_INPUT.md).
 
 For an introduction to AMQP see:
 
 - [amqp - concepts](https://www.rabbitmq.com/tutorials/amqp-concepts.html)
 - [rabbitmq: getting started](https://www.rabbitmq.com/getstarted.html)
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
+The following defaults are known to work with RabbitMQ:
 
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
-## Configuration
-
-```toml @sample.conf
-# AMQP consumer plugin
+```toml
 [[inputs.amqp_consumer]]
+  ## Broker to consume from.
+  ##   deprecated in 1.7; use the brokers option
+  # url = "amqp://localhost:5672/influxdb"
+
   ## Brokers to consume from.  If multiple brokers are specified a random broker
   ## will be selected anytime a connection is established.  This can be
   ## helpful for load balancing when not using a dedicated load balancer.
@@ -69,16 +60,14 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   ## Maximum number of messages server should give to the worker.
   # prefetch_count = 50
 
-  ## Max undelivered messages
-  ## This plugin uses tracking metrics, which ensure messages are read to
-  ## outputs before acknowledging them to the original broker to ensure data
-  ## is not lost. This option sets the maximum messages to read from the
-  ## broker that have not been written by an output.
+  ## Maximum messages to read from the broker that have not been written by an
+  ## output.  For best throughput set based on the number of metrics within
+  ## each message and the size of the output's metric_batch_size.
   ##
-  ## This value needs to be picked with awareness of the agent's
-  ## metric_batch_size value as well. Setting max undelivered messages too high
-  ## can result in a constant stream of data batches to the output. While
-  ## setting it too low may never flush the broker's messages.
+  ## For example, if each message from the queue contains 10 metrics and the
+  ## output metric_batch_size is 1000, setting this to 100 will ensure that a
+  ## full batch is collected and the write is triggered immediately without
+  ## waiting until the next flush_interval.
   # max_undelivered_messages = 1000
 
   ## Auth method. PLAIN and EXTERNAL are supported
@@ -93,11 +82,8 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   ## Use TLS but skip chain & host verification
   # insecure_skip_verify = false
 
-  ## Content encoding for message payloads, can be set to
-  ## "gzip", "identity" or "auto"
-  ## - Use "gzip" to decode gzip
-  ## - Use "identity" to apply no encoding
-  ## - Use "auto" determine the encoding using the ContentEncoding header
+  ## Content encoding for message payloads, can be set to "gzip" to or
+  ## "identity" to apply no encoding.
   # content_encoding = "identity"
 
   ## Data format to consume.
@@ -106,11 +92,3 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   ## https://github.com/influxdata/telegraf/blob/master/docs/DATA_FORMATS_INPUT.md
   data_format = "influx"
 ```
-
-## Metrics
-
-TODO
-
-## Example Output
-
-TODO

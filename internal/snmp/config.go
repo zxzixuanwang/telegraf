@@ -9,12 +9,9 @@ type ClientConfig struct {
 	Timeout config.Duration `toml:"timeout"`
 	Retries int             `toml:"retries"`
 	// Values: 1, 2, 3
-	Version              uint8 `toml:"version"`
-	UnconnectedUDPSocket bool  `toml:"unconnected_udp_socket"`
+	Version uint8 `toml:"version"`
 	// Path to mib files
 	Path []string `toml:"path"`
-	// Translator implementation
-	Translator string `toml:"-"`
 
 	// Parameters for Version 1 & 2
 	Community string `toml:"community"`

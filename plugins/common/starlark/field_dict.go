@@ -38,10 +38,6 @@ func (d FieldDict) Type() string {
 }
 
 func (d FieldDict) Freeze() {
-	// Disable linter check as the frozen variable is modified despite
-	// passing a value instead of a pointer, because `FieldDict` holds
-	// a pointer to the underlying metric containing the `frozen` field.
-	//revive:disable:modifies-value-receiver
 	d.frozen = true
 }
 
@@ -145,28 +141,27 @@ func (d FieldDict) Clear() error {
 	return nil
 }
 
-func (d FieldDict) PopItem() (starlark.Value, error) {
+func (d FieldDict) PopItem() (v starlark.Value, err error) {
 	if d.fieldIterCount > 0 {
 		return nil, fmt.Errorf("cannot delete during iteration")
 	}
 
-	if len(d.metric.FieldList()) == 0 {
-		return nil, errors.New("popitem(): field dictionary is empty")
+	for _, field := range d.metric.FieldList() {
+		k := field.Key
+		v := field.Value
+
+		d.metric.RemoveField(k)
+
+		sk := starlark.String(k)
+		sv, err := asStarlarkValue(v)
+		if err != nil {
+			return nil, fmt.Errorf("could not convert to starlark value")
+		}
+
+		return starlark.Tuple{sk, sv}, nil
 	}
 
-	field := d.metric.FieldList()[0]
-	k := field.Key
-	v := field.Value
-
-	d.metric.RemoveField(k)
-
-	sk := starlark.String(k)
-	sv, err := asStarlarkValue(v)
-	if err != nil {
-		return nil, fmt.Errorf("could not convert to starlark value")
-	}
-
-	return starlark.Tuple{sk, sv}, nil
+	return nil, errors.New("popitem(): field dictionary is empty")
 }
 
 func (d FieldDict) Delete(k starlark.Value) (v starlark.Value, found bool, err error) {
@@ -222,13 +217,13 @@ func asStarlarkValue(value interface{}) (starlark.Value, error) {
 	switch v.Kind() {
 	case reflect.Slice:
 		length := v.Len()
-		array := make([]starlark.Value, 0, length)
+		array := make([]starlark.Value, length)
 		for i := 0; i < length; i++ {
 			sVal, err := asStarlarkValue(v.Index(i).Interface())
 			if err != nil {
 				return starlark.None, err
 			}
-			array = append(array, sVal)
+			array[i] = sVal
 		}
 		return starlark.NewList(array), nil
 	case reflect.Map:
@@ -243,9 +238,7 @@ func asStarlarkValue(value interface{}) (starlark.Value, error) {
 			if err != nil {
 				return starlark.None, err
 			}
-			if err = dict.SetKey(sKey, sValue); err != nil {
-				return starlark.None, err
-			}
+			dict.SetKey(sKey, sValue)
 		}
 		return dict, nil
 	case reflect.Float32, reflect.Float64:

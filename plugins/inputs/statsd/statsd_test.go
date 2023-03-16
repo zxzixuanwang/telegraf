@@ -20,10 +20,7 @@ const (
 )
 
 func NewTestStatsd() *Statsd {
-	s := Statsd{
-		Log:                 testutil.Logger{},
-		NumberWorkerThreads: 5,
-	}
+	s := Statsd{Log: testutil.Logger{}}
 
 	// Make data structures
 	s.done = make(chan struct{})
@@ -47,7 +44,6 @@ func TestConcurrentConns(t *testing.T) {
 		ServiceAddress:         "localhost:8125",
 		AllowedPendingMessages: 10000,
 		MaxTCPConnections:      2,
-		NumberWorkerThreads:    5,
 	}
 
 	acc := &testutil.Accumulator{}
@@ -79,7 +75,6 @@ func TestConcurrentConns1(t *testing.T) {
 		ServiceAddress:         "localhost:8125",
 		AllowedPendingMessages: 10000,
 		MaxTCPConnections:      1,
-		NumberWorkerThreads:    5,
 	}
 
 	acc := &testutil.Accumulator{}
@@ -109,7 +104,6 @@ func TestCloseConcurrentConns(t *testing.T) {
 		ServiceAddress:         "localhost:8125",
 		AllowedPendingMessages: 10000,
 		MaxTCPConnections:      2,
-		NumberWorkerThreads:    5,
 	}
 
 	acc := &testutil.Accumulator{}
@@ -124,27 +118,6 @@ func TestCloseConcurrentConns(t *testing.T) {
 	listener.Stop()
 }
 
-// benchmark how long it takes to parse metrics:
-func BenchmarkParser(b *testing.B) {
-	plugin := Statsd{
-		Log:                    testutil.Logger{},
-		Protocol:               "udp",
-		ServiceAddress:         "localhost:8125",
-		AllowedPendingMessages: 250000,
-		NumberWorkerThreads:    5,
-	}
-	acc := &testutil.Accumulator{Discard: true}
-
-	require.NoError(b, plugin.Start(acc))
-
-	// send multiple messages to socket
-	for n := 0; n < b.N; n++ {
-		require.NoError(b, plugin.parseStatsdLine(testMsg))
-	}
-
-	plugin.Stop()
-}
-
 // benchmark how long it takes to accept & process 100,000 metrics:
 func BenchmarkUDP(b *testing.B) {
 	listener := Statsd{
@@ -152,7 +125,6 @@ func BenchmarkUDP(b *testing.B) {
 		Protocol:               "udp",
 		ServiceAddress:         "localhost:8125",
 		AllowedPendingMessages: 250000,
-		NumberWorkerThreads:    5,
 	}
 	acc := &testutil.Accumulator{Discard: true}
 
@@ -179,120 +151,10 @@ func BenchmarkUDP(b *testing.B) {
 	}
 }
 
-func BenchmarkUDPThreads4(b *testing.B) {
-	listener := Statsd{
-		Log:                    testutil.Logger{},
-		Protocol:               "udp",
-		ServiceAddress:         "localhost:8125",
-		AllowedPendingMessages: 250000,
-		NumberWorkerThreads:    4,
-	}
-
-	acc := &testutil.Accumulator{Discard: true}
-	require.NoError(b, listener.Start(acc))
-
-	time.Sleep(time.Millisecond * 250)
-	conn, err := net.Dial("udp", "127.0.0.1:8125")
-	require.NoError(b, err)
-	defer conn.Close()
-
-	var wg sync.WaitGroup
-	for i := 0; i < b.N; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 1000; i++ {
-				_, err := conn.Write([]byte(testMsg))
-				require.NoError(b, err)
-			}
-		}()
-	}
-	wg.Wait()
-
-	// wait for 250,000 metrics to get added to accumulator
-	for len(listener.in) > 0 {
-		time.Sleep(time.Millisecond)
-	}
-	listener.Stop()
-}
-
-func BenchmarkUDPThreads8(b *testing.B) {
-	listener := Statsd{
-		Log:                    testutil.Logger{},
-		Protocol:               "udp",
-		ServiceAddress:         "localhost:8125",
-		AllowedPendingMessages: 250000,
-		NumberWorkerThreads:    8,
-	}
-
-	acc := &testutil.Accumulator{Discard: true}
-	require.NoError(b, listener.Start(acc))
-
-	time.Sleep(time.Millisecond * 250)
-	conn, err := net.Dial("udp", "127.0.0.1:8125")
-	require.NoError(b, err)
-	defer conn.Close()
-
-	var wg sync.WaitGroup
-	for i := 0; i < b.N; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 1000; i++ {
-				_, err := conn.Write([]byte(testMsg))
-				require.NoError(b, err)
-			}
-		}()
-	}
-	wg.Wait()
-
-	// wait for 250,000 metrics to get added to accumulator
-	for len(listener.in) > 0 {
-		time.Sleep(time.Millisecond)
-	}
-	listener.Stop()
-}
-
-func BenchmarkUDPThreads16(b *testing.B) {
-	listener := Statsd{
-		Log:                    testutil.Logger{},
-		Protocol:               "udp",
-		ServiceAddress:         "localhost:8125",
-		AllowedPendingMessages: 250000,
-		NumberWorkerThreads:    16,
-	}
-
-	acc := &testutil.Accumulator{Discard: true}
-	require.NoError(b, listener.Start(acc))
-
-	time.Sleep(time.Millisecond * 250)
-	conn, err := net.Dial("udp", "127.0.0.1:8125")
-	require.NoError(b, err)
-	defer conn.Close()
-
-	var wg sync.WaitGroup
-	for i := 0; i < b.N; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 1000; i++ {
-				_, err := conn.Write([]byte(testMsg))
-				require.NoError(b, err)
-			}
-		}()
-	}
-	wg.Wait()
-
-	// wait for 250,000 metrics to get added to accumulator
-	for len(listener.in) > 0 {
-		time.Sleep(time.Millisecond)
-	}
-	listener.Stop()
-}
-
 func sendRequests(conn net.Conn, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for i := 0; i < 25000; i++ {
+		//nolint:errcheck,revive
 		fmt.Fprint(conn, testMsg)
 	}
 }
@@ -305,7 +167,6 @@ func BenchmarkTCP(b *testing.B) {
 		ServiceAddress:         "localhost:8125",
 		AllowedPendingMessages: 250000,
 		MaxTCPConnections:      250,
-		NumberWorkerThreads:    5,
 	}
 	acc := &testutil.Accumulator{Discard: true}
 
@@ -558,7 +419,6 @@ func TestParse_Timings(t *testing.T) {
 		"count":         int64(5),
 		"lower":         float64(1),
 		"mean":          float64(3),
-		"median":        float64(1),
 		"stddev":        float64(4),
 		"sum":           float64(15),
 		"upper":         float64(11),
@@ -1053,7 +913,6 @@ func TestParse_DataDogTags(t *testing.T) {
 						"count":  10,
 						"lower":  float64(3),
 						"mean":   float64(3),
-						"median": float64(3),
 						"stddev": float64(0),
 						"sum":    float64(30),
 						"upper":  float64(3),
@@ -1172,7 +1031,7 @@ func TestParse_MeasurementsWithSameName(t *testing.T) {
 // Test that the metric caches expire (clear) an entry after the entry hasn't been updated for the configurable MaxTTL duration.
 func TestCachesExpireAfterMaxTTL(t *testing.T) {
 	s := NewTestStatsd()
-	s.MaxTTL = config.Duration(10 * time.Millisecond)
+	s.MaxTTL = config.Duration(100 * time.Microsecond)
 
 	acc := &testutil.Accumulator{}
 	require.NoError(t, s.parseStatsdLine("valid:45|c"))
@@ -1180,7 +1039,7 @@ func TestCachesExpireAfterMaxTTL(t *testing.T) {
 	require.NoError(t, s.Gather(acc))
 
 	// Max TTL goes by, our 'valid' entry is cleared.
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Microsecond)
 	require.NoError(t, s.Gather(acc))
 
 	// Now when we gather, we should have a counter that is reset to zero.
@@ -1352,7 +1211,6 @@ func TestParse_TimingsMultipleFieldsWithTemplate(t *testing.T) {
 		"success_count":         int64(5),
 		"success_lower":         float64(1),
 		"success_mean":          float64(3),
-		"success_median":        float64(1),
 		"success_stddev":        float64(4),
 		"success_sum":           float64(15),
 		"success_upper":         float64(11),
@@ -1361,7 +1219,6 @@ func TestParse_TimingsMultipleFieldsWithTemplate(t *testing.T) {
 		"error_count":         int64(5),
 		"error_lower":         float64(2),
 		"error_mean":          float64(6),
-		"error_median":        float64(2),
 		"error_stddev":        float64(8),
 		"error_sum":           float64(30),
 		"error_upper":         float64(22),
@@ -1402,7 +1259,6 @@ func TestParse_TimingsMultipleFieldsWithoutTemplate(t *testing.T) {
 		"count":         int64(5),
 		"lower":         float64(1),
 		"mean":          float64(3),
-		"median":        float64(1),
 		"stddev":        float64(4),
 		"sum":           float64(15),
 		"upper":         float64(11),
@@ -1412,7 +1268,6 @@ func TestParse_TimingsMultipleFieldsWithoutTemplate(t *testing.T) {
 		"count":         int64(5),
 		"lower":         float64(2),
 		"mean":          float64(6),
-		"median":        float64(2),
 		"stddev":        float64(8),
 		"sum":           float64(30),
 		"upper":         float64(22),
@@ -1726,7 +1581,6 @@ func TestTCP(t *testing.T) {
 		ServiceAddress:         "localhost:0",
 		AllowedPendingMessages: 10000,
 		MaxTCPConnections:      2,
-		NumberWorkerThreads:    5,
 	}
 	var acc testutil.Accumulator
 	require.NoError(t, statsd.Start(&acc))
@@ -1774,7 +1628,6 @@ func TestUdp(t *testing.T) {
 		Protocol:               "udp",
 		ServiceAddress:         "localhost:14223",
 		AllowedPendingMessages: 250000,
-		NumberWorkerThreads:    5,
 	}
 	var acc testutil.Accumulator
 	require.NoError(t, statsd.Start(&acc))
@@ -1813,36 +1666,6 @@ func TestUdp(t *testing.T) {
 	)
 }
 
-func TestUdpFillQueue(t *testing.T) {
-	logger := testutil.CaptureLogger{}
-	plugin := &Statsd{
-		Log:                    &logger,
-		Protocol:               "udp",
-		ServiceAddress:         "localhost:0",
-		AllowedPendingMessages: 10,
-		NumberWorkerThreads:    5,
-	}
-
-	var acc testutil.Accumulator
-	require.NoError(t, plugin.Start(&acc))
-
-	conn, err := net.Dial("udp", plugin.UDPlistener.LocalAddr().String())
-	require.NoError(t, err)
-	numberToSend := plugin.AllowedPendingMessages
-	for i := 0; i < numberToSend; i++ {
-		_, _ = fmt.Fprintf(conn, "cpu.time_idle:%d|c\n", i)
-	}
-	require.NoError(t, conn.Close())
-
-	require.Eventually(t, func() bool {
-		return plugin.UDPPacketsRecv.Get() >= int64(numberToSend)
-	}, 1*time.Second, 100*time.Millisecond)
-	defer plugin.Stop()
-
-	errs := logger.Errors()
-	require.Lenf(t, errs, 0, "got errors: %v", errs)
-}
-
 func TestParse_Ints(t *testing.T) {
 	s := NewTestStatsd()
 	s.Percentiles = []Number{90}
@@ -1877,121 +1700,4 @@ func TestParse_KeyValue(t *testing.T) {
 			t.Errorf("line: %s,  val expected %s, actual %s", line, line.output.val, val)
 		}
 	}
-}
-
-func TestParseSanitize(t *testing.T) {
-	s := NewTestStatsd()
-	s.SanitizeNamesMethod = "upstream"
-
-	tests := []struct {
-		inName  string
-		outName string
-	}{
-		{
-			"regex.ARP flood stats",
-			"regex_ARP_flood_stats",
-		},
-		{
-			"regex./dev/null",
-			"regex_-dev-null",
-		},
-		{
-			"regex.wow!!!",
-			"regex_wow",
-		},
-		{
-			"regex.all*things",
-			"regex_allthings",
-		},
-	}
-
-	for _, test := range tests {
-		name, _, _ := s.parseName(test.inName)
-		require.Equalf(t, name, test.outName, "Expected: %s, got %s", test.outName, name)
-	}
-}
-
-func TestParseNoSanitize(t *testing.T) {
-	s := NewTestStatsd()
-	s.SanitizeNamesMethod = ""
-
-	tests := []struct {
-		inName  string
-		outName string
-	}{
-		{
-			"regex.ARP flood stats",
-			"regex_ARP",
-		},
-		{
-			"regex./dev/null",
-			"regex_/dev/null",
-		},
-		{
-			"regex.wow!!!",
-			"regex_wow!!!",
-		},
-		{
-			"regex.all*things",
-			"regex_all*things",
-		},
-	}
-
-	for _, test := range tests {
-		name, _, _ := s.parseName(test.inName)
-		require.Equalf(t, name, test.outName, "Expected: %s, got %s", test.outName, name)
-	}
-}
-
-func TestParse_InvalidAndRecoverIntegration(t *testing.T) {
-	statsd := Statsd{
-		Log:                    testutil.Logger{},
-		Protocol:               "tcp",
-		ServiceAddress:         "localhost:8125",
-		AllowedPendingMessages: 10000,
-		MaxTCPConnections:      250,
-		TCPKeepAlive:           true,
-		NumberWorkerThreads:    5,
-	}
-
-	acc := &testutil.Accumulator{}
-	require.NoError(t, statsd.Start(acc))
-	defer statsd.Stop()
-
-	addr := statsd.TCPlistener.Addr().String()
-	conn, err := net.Dial("tcp", addr)
-	require.NoError(t, err)
-
-	// first write an invalid line
-	_, err = conn.Write([]byte("test.service.stat.missing_value:|h\n"))
-	require.NoError(t, err)
-
-	// pause to let statsd to parse the metric and force a collection interval
-	time.Sleep(100 * time.Millisecond)
-	require.NoError(t, statsd.Gather(acc))
-
-	// then verify we can write a valid line, service recovered
-	_, err = conn.Write([]byte("cpu.time_idle:42|c\n"))
-	require.NoError(t, err)
-
-	time.Sleep(100 * time.Millisecond)
-	require.NoError(t, statsd.Gather(acc))
-	acc.Wait(1)
-
-	expected := []telegraf.Metric{
-		testutil.MustMetric(
-			"cpu_time_idle",
-			map[string]string{
-				"metric_type": "counter",
-			},
-			map[string]interface{}{
-				"value": 42,
-			},
-			time.Now(),
-			telegraf.Counter,
-		),
-	}
-	testutil.RequireMetricsEqual(t, expected, acc.GetTelegrafMetrics(), testutil.IgnoreTime())
-
-	require.NoError(t, conn.Close())
 }

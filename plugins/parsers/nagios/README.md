@@ -1,4 +1,4 @@
-# Nagios Parser Plugin
+# Nagios
 
 The `nagios` data format parses the output of nagios plugins.
 

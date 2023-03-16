@@ -1,10 +1,8 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package nsd
 
 import (
 	"bufio"
 	"bytes"
-	_ "embed"
 	"fmt"
 	"net"
 	"os/exec"
@@ -17,9 +15,6 @@ import (
 	"github.com/influxdata/telegraf/internal"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 type runner func(cmdName string, timeout config.Duration, useSudo bool, Server string, ConfigFile string) (*bytes.Buffer, error)
 
@@ -36,6 +31,34 @@ type NSD struct {
 
 var defaultBinary = "/usr/sbin/nsd-control"
 var defaultTimeout = config.Duration(time.Second)
+
+var sampleConfig = `
+  ## Address of server to connect to, optionally ':port'. Defaults to the
+  ## address in the nsd config file.
+  server = "127.0.0.1:8953"
+
+  ## If running as a restricted user you can prepend sudo for additional access:
+  # use_sudo = false
+
+  ## The default location of the nsd-control binary can be overridden with:
+  # binary = "/usr/sbin/nsd-control"
+
+  ## The default location of the nsd config file can be overridden with:
+  # config_file = "/etc/nsd/nsd.conf"
+
+  ## The default timeout of 1s can be overridden with:
+  # timeout = "1s"
+`
+
+// Description displays what this plugin is about
+func (s *NSD) Description() string {
+	return "A plugin to collect stats from the NSD authoritative DNS name server"
+}
+
+// SampleConfig displays configuration instructions
+func (s *NSD) SampleConfig() string {
+	return sampleConfig
+}
 
 // Shell out to nsd_stat and return the output
 func nsdRunner(cmdName string, timeout config.Duration, useSudo bool, server string, configFile string) (*bytes.Buffer, error) {
@@ -65,21 +88,17 @@ func nsdRunner(cmdName string, timeout config.Duration, useSudo bool, server str
 	cmd.Stdout = &out
 	err := internal.RunTimeout(cmd, time.Duration(timeout))
 	if err != nil {
-		return &out, fmt.Errorf("error running nsd-control: %w (%s %v)", err, cmdName, cmdArgs)
+		return &out, fmt.Errorf("error running nsd-control: %s (%s %v)", err, cmdName, cmdArgs)
 	}
 
 	return &out, nil
-}
-
-func (*NSD) SampleConfig() string {
-	return sampleConfig
 }
 
 // Gather collects stats from nsd-control and adds them to the Accumulator
 func (s *NSD) Gather(acc telegraf.Accumulator) error {
 	out, err := s.run(s.Binary, s.Timeout, s.UseSudo, s.Server, s.ConfigFile)
 	if err != nil {
-		return fmt.Errorf("error gathering metrics: %w", err)
+		return fmt.Errorf("error gathering metrics: %s", err)
 	}
 
 	// Process values
@@ -119,7 +138,7 @@ func (s *NSD) Gather(acc telegraf.Accumulator) error {
 				}
 			}
 		} else {
-			field := strings.ReplaceAll(stat, ".", "_")
+			field := strings.Replace(stat, ".", "_", -1)
 			fields[field] = fieldValue
 		}
 	}

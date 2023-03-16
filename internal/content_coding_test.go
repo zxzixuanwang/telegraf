@@ -9,8 +9,10 @@ import (
 )
 
 func TestGzipEncodeDecode(t *testing.T) {
-	enc := NewGzipEncoder()
-	dec := NewGzipDecoder()
+	enc, err := NewGzipEncoder()
+	require.NoError(t, err)
+	dec, err := NewGzipDecoder()
+	require.NoError(t, err)
 
 	payload, err := enc.Encode([]byte("howdy"))
 	require.NoError(t, err)
@@ -22,8 +24,10 @@ func TestGzipEncodeDecode(t *testing.T) {
 }
 
 func TestGzipReuse(t *testing.T) {
-	enc := NewGzipEncoder()
-	dec := NewGzipDecoder()
+	enc, err := NewGzipEncoder()
+	require.NoError(t, err)
+	dec, err := NewGzipDecoder()
+	require.NoError(t, err)
 
 	payload, err := enc.Encode([]byte("howdy"))
 	require.NoError(t, err)
@@ -40,19 +44,6 @@ func TestGzipReuse(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, "doody", string(actual))
-}
-
-func TestZlibEncodeDecode(t *testing.T) {
-	enc := NewZlibEncoder()
-	dec := NewZlibDecoder()
-
-	payload, err := enc.Encode([]byte("howdy"))
-	require.NoError(t, err)
-
-	actual, err := dec.Decode(payload)
-	require.NoError(t, err)
-
-	require.Equal(t, "howdy", string(actual))
 }
 
 func TestIdentityEncodeDecode(t *testing.T) {
@@ -84,7 +75,8 @@ func TestStreamIdentityDecode(t *testing.T) {
 }
 
 func TestStreamGzipDecode(t *testing.T) {
-	enc := NewGzipEncoder()
+	enc, err := NewGzipEncoder()
+	require.NoError(t, err)
 	written, err := enc.Encode([]byte("howdy"))
 	require.NoError(t, err)
 

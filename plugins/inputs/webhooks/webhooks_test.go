@@ -4,7 +4,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/influxdata/telegraf/plugins/inputs/webhooks/artifactory"
 	"github.com/influxdata/telegraf/plugins/inputs/webhooks/github"
 	"github.com/influxdata/telegraf/plugins/inputs/webhooks/papertrail"
 	"github.com/influxdata/telegraf/plugins/inputs/webhooks/particle"
@@ -38,12 +37,6 @@ func TestAvailableWebhooks(t *testing.T) {
 
 	wb.Particle = &particle.ParticleWebhook{Path: "/particle"}
 	expected = append(expected, wb.Particle)
-	if !reflect.DeepEqual(wb.AvailableWebhooks(), expected) {
-		t.Errorf("expected to be %v.\nGot %v", expected, wb.AvailableWebhooks())
-	}
-
-	wb.Artifactory = &artifactory.ArtifactoryWebhook{Path: "/artifactory"}
-	expected = append(expected, wb.Artifactory)
 	if !reflect.DeepEqual(wb.AvailableWebhooks(), expected) {
 		t.Errorf("expected to be %v.\nGot %v", expected, wb.AvailableWebhooks())
 	}

@@ -1,9 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package clickhouse
 
 import (
 	"bytes"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,10 +19,73 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 var defaultTimeout = 5 * time.Second
+
+var sampleConfig = `
+  ## Username for authorization on ClickHouse server
+  ## example: username = "default"
+  username = "default"
+
+  ## Password for authorization on ClickHouse server
+  ## example: password = "super_secret"
+
+  ## HTTP(s) timeout while getting metrics values
+  ## The timeout includes connection time, any redirects, and reading the response body.
+  ##   example: timeout = 1s
+  # timeout = 5s
+
+  ## List of servers for metrics scraping
+  ## metrics scrape via HTTP(s) clickhouse interface
+  ## https://clickhouse.tech/docs/en/interfaces/http/
+  ##    example: servers = ["http://127.0.0.1:8123","https://custom-server.mdb.yandexcloud.net"]
+  servers         = ["http://127.0.0.1:8123"]
+
+  ## If "auto_discovery"" is "true" plugin tries to connect to all servers available in the cluster
+  ## with using same "user:password" described in "user" and "password" parameters
+  ## and get this server hostname list from "system.clusters" table
+  ## see
+  ## - https://clickhouse.tech/docs/en/operations/system_tables/#system-clusters
+  ## - https://clickhouse.tech/docs/en/operations/server_settings/settings/#server_settings_remote_servers
+  ## - https://clickhouse.tech/docs/en/operations/table_engines/distributed/
+  ## - https://clickhouse.tech/docs/en/operations/table_engines/replication/#creating-replicated-tables
+  ##    example: auto_discovery = false
+  # auto_discovery = true
+
+  ## Filter cluster names in "system.clusters" when "auto_discovery" is "true"
+  ## when this filter present then "WHERE cluster IN (...)" filter will apply
+  ## please use only full cluster names here, regexp and glob filters is not allowed
+  ## for "/etc/clickhouse-server/config.d/remote.xml"
+  ## <yandex>
+  ##  <remote_servers>
+  ##    <my-own-cluster>
+  ##        <shard>
+  ##          <replica><host>clickhouse-ru-1.local</host><port>9000</port></replica>
+  ##          <replica><host>clickhouse-ru-2.local</host><port>9000</port></replica>
+  ##        </shard>
+  ##        <shard>
+  ##          <replica><host>clickhouse-eu-1.local</host><port>9000</port></replica>
+  ##          <replica><host>clickhouse-eu-2.local</host><port>9000</port></replica>
+  ##        </shard>
+  ##    </my-onw-cluster>
+  ##  </remote_servers>
+  ##
+  ## </yandex>
+  ##
+  ## example: cluster_include = ["my-own-cluster"]
+  # cluster_include = []
+
+  ## Filter cluster names in "system.clusters" when "auto_discovery" is "true"
+  ## when this filter present then "WHERE cluster NOT IN (...)" filter will apply
+  ##    example: cluster_exclude = ["my-internal-not-discovered-cluster"]
+  # cluster_exclude = []
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+`
 
 type connect struct {
 	Cluster  string `json:"cluster"`
@@ -58,8 +119,14 @@ type ClickHouse struct {
 	tls.ClientConfig
 }
 
+// SampleConfig returns the sample config
 func (*ClickHouse) SampleConfig() string {
 	return sampleConfig
+}
+
+// Description return plugin description
+func (*ClickHouse) Description() string {
+	return "Read metrics from one or many ClickHouse servers"
 }
 
 // Start ClickHouse input service
@@ -580,25 +647,18 @@ const (
 	systemZookeeperRootNodesSQL = "SELECT count() AS zk_root_nodes FROM system.zookeeper WHERE path='/'"
 
 	systemReplicationExistsSQL   = "SELECT count() AS replication_queue_exists FROM system.tables WHERE database='system' AND name='replication_queue'"
-	systemReplicationNumTriesSQL = "SELECT countIf(num_tries>1) AS replication_num_tries_replicas, countIf(num_tries>100) " +
-		"AS replication_too_many_tries_replicas FROM system.replication_queue SETTINGS empty_result_for_aggregation_by_empty_set=0"
+	systemReplicationNumTriesSQL = "SELECT countIf(num_tries>1) AS replication_num_tries_replicas, countIf(num_tries>100) AS replication_too_many_tries_replicas FROM system.replication_queue SETTINGS empty_result_for_aggregation_by_empty_set=0"
 
 	systemDetachedPartsSQL = "SELECT count() AS detached_parts FROM system.detached_parts SETTINGS empty_result_for_aggregation_by_empty_set=0"
 
 	systemDictionariesSQL = "SELECT origin, status, bytes_allocated FROM system.dictionaries"
 
-	systemMutationSQL = "SELECT countIf(latest_fail_time>toDateTime('0000-00-00 00:00:00') AND is_done=0) " +
-		"AS failed, countIf(latest_fail_time=toDateTime('0000-00-00 00:00:00') AND is_done=0) " +
-		"AS running, countIf(is_done=1) AS completed FROM system.mutations SETTINGS empty_result_for_aggregation_by_empty_set=0"
-	systemDisksSQL = "SELECT name, path, toUInt64(100*free_space / total_space) " +
-		"AS free_space_percent, toUInt64( 100 * keep_free_space / total_space) AS keep_free_space_percent FROM system.disks"
-	systemProcessesSQL = "SELECT multiIf(positionCaseInsensitive(query,'select')=1,'select',positionCaseInsensitive(query,'insert')=1,'insert','other') " +
-		"AS query_type, quantile\n(0.5)(elapsed) AS p50, quantile(0.9)(elapsed) AS p90, max(elapsed) AS longest_running " +
-		"FROM system.processes GROUP BY query_type SETTINGS empty_result_for_aggregation_by_empty_set=0"
+	systemMutationSQL  = "SELECT countIf(latest_fail_time>toDateTime('0000-00-00 00:00:00') AND is_done=0) AS failed, countIf(latest_fail_time=toDateTime('0000-00-00 00:00:00') AND is_done=0) AS running, countIf(is_done=1) AS completed FROM system.mutations SETTINGS empty_result_for_aggregation_by_empty_set=0"
+	systemDisksSQL     = "SELECT name, path, toUInt64(100*free_space / total_space) AS free_space_percent, toUInt64( 100 * keep_free_space / total_space) AS keep_free_space_percent FROM system.disks"
+	systemProcessesSQL = "SELECT multiIf(positionCaseInsensitive(query,'select')=1,'select',positionCaseInsensitive(query,'insert')=1,'insert','other') AS query_type, quantile\n(0.5)(elapsed) AS p50, quantile(0.9)(elapsed) AS p90, max(elapsed) AS longest_running FROM system.processes GROUP BY query_type SETTINGS empty_result_for_aggregation_by_empty_set=0"
 
 	systemTextLogExistsSQL = "SELECT count() AS text_log_exists FROM system.tables WHERE database='system' AND name='text_log'"
-	systemTextLogSQL       = "SELECT count() AS messages_last_10_min, level FROM system.text_log " +
-		"WHERE level <= 'Notice' AND event_time >= now() - INTERVAL 600 SECOND GROUP BY level SETTINGS empty_result_for_aggregation_by_empty_set=0"
+	systemTextLogSQL       = "SELECT count() AS messages_last_10_min, level FROM system.text_log WHERE level <= 'Notice' AND event_time >= now() - INTERVAL 600 SECOND GROUP BY level SETTINGS empty_result_for_aggregation_by_empty_set=0"
 )
 
 var commonMetrics = map[string]string{

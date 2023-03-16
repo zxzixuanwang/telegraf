@@ -6,9 +6,7 @@ import (
 
 	"github.com/Shopify/sarama"
 
-	"github.com/influxdata/telegraf/plugins/parsers/graphite"
-	"github.com/influxdata/telegraf/plugins/parsers/influx"
-	"github.com/influxdata/telegraf/plugins/parsers/json"
+	"github.com/influxdata/telegraf/plugins/parsers"
 	"github.com/influxdata/telegraf/testutil"
 
 	"github.com/stretchr/testify/require"
@@ -44,10 +42,7 @@ func TestRunParser(t *testing.T) {
 	k.acc = &acc
 	defer close(k.done)
 
-	parser := &influx.Parser{}
-	require.NoError(t, parser.Init())
-	k.parser = parser
-
+	k.parser, _ = parsers.NewInfluxParser()
 	go k.receiver()
 	in <- saramaMsg(testMsg)
 	acc.Wait(1)
@@ -62,10 +57,7 @@ func TestRunParserInvalidMsg(t *testing.T) {
 	k.acc = &acc
 	defer close(k.done)
 
-	parser := &influx.Parser{}
-	require.NoError(t, parser.Init())
-	k.parser = parser
-
+	k.parser, _ = parsers.NewInfluxParser()
 	go k.receiver()
 	in <- saramaMsg(invalidMsg)
 	acc.WaitError(1)
@@ -97,10 +89,7 @@ func TestRunParserAndGather(t *testing.T) {
 	k.acc = &acc
 	defer close(k.done)
 
-	parser := &influx.Parser{}
-	require.NoError(t, parser.Init())
-	k.parser = parser
-
+	k.parser, _ = parsers.NewInfluxParser()
 	go k.receiver()
 	in <- saramaMsg(testMsg)
 	acc.Wait(1)
@@ -119,9 +108,7 @@ func TestRunParserAndGatherGraphite(t *testing.T) {
 	k.acc = &acc
 	defer close(k.done)
 
-	p := graphite.Parser{Separator: "_", Templates: []string{}}
-	require.NoError(t, p.Init())
-	k.parser = &p
+	k.parser, _ = parsers.NewGraphiteParser("_", []string{}, nil)
 	go k.receiver()
 	in <- saramaMsg(testMsgGraphite)
 	acc.Wait(1)
@@ -140,11 +127,10 @@ func TestRunParserAndGatherJSON(t *testing.T) {
 	k.acc = &acc
 	defer close(k.done)
 
-	parser := &json.Parser{
+	k.parser, _ = parsers.NewParser(&parsers.Config{
+		DataFormat: "json",
 		MetricName: "kafka_json_test",
-	}
-	require.NoError(t, parser.Init())
-	k.parser = parser
+	})
 	go k.receiver()
 	in <- saramaMsg(testMsgJSON)
 	acc.Wait(1)

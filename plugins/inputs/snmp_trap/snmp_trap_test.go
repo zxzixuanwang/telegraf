@@ -12,32 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/internal/snmp"
 	"github.com/influxdata/telegraf/testutil"
 )
-
-type entry struct {
-	oid string
-	e   snmp.MibEntry
-}
-
-type testTranslator struct {
-	entries []entry
-}
-
-func (t *testTranslator) lookup(input string) (snmp.MibEntry, error) {
-	for _, entry := range t.entries {
-		if input == entry.oid {
-			return snmp.MibEntry{MibName: entry.e.MibName, OidText: entry.e.OidText}, nil
-		}
-	}
-	return snmp.MibEntry{}, fmt.Errorf("unexpected oid")
-}
-
-func newTestTranslator(entries []entry) *testTranslator {
-	return &testTranslator{entries: entries}
-}
 
 func newMsgFlagsV3(secLevel string) gosnmp.SnmpV3MsgFlags {
 	var msgFlags gosnmp.SnmpV3MsgFlags
@@ -51,6 +28,7 @@ func newMsgFlagsV3(secLevel string) gosnmp.SnmpV3MsgFlags {
 	default:
 		msgFlags = gosnmp.NoAuthNoPriv
 	}
+
 	return msgFlags
 }
 
@@ -96,7 +74,7 @@ func newUsmSecurityParametersForV3(authProto string, privProto string, username 
 	}
 
 	return &gosnmp.UsmSecurityParameters{
-		AuthoritativeEngineID:    "deadbeef", // has to be between 5 & 32 chars
+		AuthoritativeEngineID:    "1",
 		AuthoritativeEngineBoots: 1,
 		AuthoritativeEngineTime:  1,
 		UserName:                 username,
@@ -136,16 +114,26 @@ func newGoSNMP(version gosnmp.SnmpVersion, port uint16) gosnmp.GoSNMP {
 }
 
 func sendTrap(t *testing.T, goSNMP gosnmp.GoSNMP, trap gosnmp.SnmpTrap) {
-	require.NoError(t, goSNMP.Connect())
+	err := goSNMP.Connect()
+	if err != nil {
+		t.Errorf("Connect() err: %v", err)
+	}
 	defer goSNMP.Conn.Close()
 
-	_, err := goSNMP.SendTrap(trap)
-	require.NoError(t, err)
+	_, err = goSNMP.SendTrap(trap)
+	if err != nil {
+		t.Errorf("SendTrap() err: %v", err)
+	}
 }
 
 func TestReceiveTrap(t *testing.T) {
 	now := uint32(123123123)
 	fakeTime := time.Unix(456456456, 456)
+
+	type entry struct {
+		oid string
+		e   snmp.MibEntry
+	}
 
 	// If the first pdu isn't type TimeTicks, gosnmp.SendTrap() will
 	// prepend one with time.Now()
@@ -1272,25 +1260,29 @@ func TestReceiveTrap(t *testing.T) {
 				timeFunc: func() time.Time {
 					return fakeTime
 				},
+				lookupFunc: func(input string) (snmp.MibEntry, error) {
+					for _, entry := range tt.entries {
+						if input == entry.oid {
+							return snmp.MibEntry{MibName: entry.e.MibName, OidText: entry.e.OidText}, nil
+						}
+					}
+					return snmp.MibEntry{}, fmt.Errorf("unexpected oid")
+				},
 				//if cold start be answer otherwise err
 				Log:          testutil.Logger{},
 				Version:      tt.version.String(),
-				SecName:      config.NewSecret([]byte(tt.secName)),
+				SecName:      tt.secName,
 				SecLevel:     tt.secLevel,
 				AuthProtocol: tt.authProto,
-				AuthPassword: config.NewSecret([]byte(tt.authPass)),
+				AuthPassword: tt.authPass,
 				PrivProtocol: tt.privProto,
-				PrivPassword: config.NewSecret([]byte(tt.privPass)),
-				Translator:   "netsnmp",
+				PrivPassword: tt.privPass,
 			}
 
 			require.NoError(t, s.Init())
 
-			//inject test translator
-			s.transl = newTestTranslator(tt.entries)
-
 			var acc testutil.Accumulator
-			require.NoError(t, s.Start(&acc))
+			require.Nil(t, s.Start(&acc))
 			defer s.Stop()
 
 			var goSNMP gosnmp.GoSNMP

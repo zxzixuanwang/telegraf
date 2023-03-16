@@ -2,7 +2,6 @@ package cloud_pubsub
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"runtime"
@@ -10,15 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"cloud.google.com/go/pubsub"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/api/support/bundler"
+	"encoding/base64"
 
+	"cloud.google.com/go/pubsub"
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/plugins/parsers"
-	"github.com/influxdata/telegraf/plugins/parsers/influx"
 	"github.com/influxdata/telegraf/plugins/serializers"
+	"google.golang.org/api/support/bundler"
 )
 
 const (
@@ -62,17 +60,17 @@ type (
 )
 
 func getTestResources(tT *testing.T, settings pubsub.PublishSettings, testM []testMetric) (*PubSub, *stubTopic, []telegraf.Metric) {
-	s := serializers.NewInfluxSerializer()
+	s, _ := serializers.NewInfluxSerializer()
 
-	metrics := make([]telegraf.Metric, 0, len(testM))
+	metrics := make([]telegraf.Metric, len(testM))
 	t := &stubTopic{
 		T:         tT,
 		ReturnErr: make(map[string]bool),
 		published: make(map[string]*pubsub.Message),
 	}
 
-	for _, tm := range testM {
-		metrics = append(metrics, tm.m)
+	for i, tm := range testM {
+		metrics[i] = tm.m
 		if tm.returnErr {
 			v, _ := tm.m.GetField("value")
 			t.ReturnErr[v.(string)] = true
@@ -180,9 +178,7 @@ func (t *stubTopic) sendBundle() func(items interface{}) {
 }
 
 func (t *stubTopic) parseIDs(msg *pubsub.Message) []string {
-	p := influx.Parser{}
-	err := p.Init()
-	require.NoError(t, err)
+	p, _ := parsers.NewInfluxParser()
 	metrics, err := p.Parse(msg.Data)
 	if err != nil {
 		// Just attempt to base64-decode first before returning error.
@@ -196,10 +192,10 @@ func (t *stubTopic) parseIDs(msg *pubsub.Message) []string {
 		}
 	}
 
-	ids := make([]string, 0, len(metrics))
-	for _, met := range metrics {
+	ids := make([]string, len(metrics))
+	for i, met := range metrics {
 		id, _ := met.GetField("value")
-		ids = append(ids, id.(string))
+		ids[i] = id.(string)
 	}
 	return ids
 }

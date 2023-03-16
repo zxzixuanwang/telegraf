@@ -1,9 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package sflow
 
 import (
 	"bytes"
-	_ "embed"
 	"fmt"
 	"io"
 	"net"
@@ -16,8 +14,17 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
+const sampleConfig = `
+  ## Address to listen for sFlow packets.
+  ##   example: service_address = "udp://:6343"
+  ##            service_address = "udp4://:6343"
+  ##            service_address = "udp6://:6343"
+  service_address = "udp://:6343"
+
+  ## Set the size of the operating system's receive buffer.
+  ##   example: read_buffer_size = "64KiB"
+  # read_buffer_size = ""
+`
 
 const (
 	maxPacketSize = 64 * 1024
@@ -35,7 +42,13 @@ type SFlow struct {
 	wg      sync.WaitGroup
 }
 
-func (*SFlow) SampleConfig() string {
+// Description answers a description of this input plugin
+func (s *SFlow) Description() string {
+	return "SFlow V5 Protocol Listener"
+}
+
+// SampleConfig answers a sample configuration
+func (s *SFlow) SampleConfig() string {
 	return sampleConfig
 }
 
@@ -48,7 +61,11 @@ func (s *SFlow) Init() error {
 // Start starts this sFlow listener listening on the configured network for sFlow packets
 func (s *SFlow) Start(acc telegraf.Accumulator) error {
 	s.decoder.OnPacket(func(p *V5Format) {
-		metrics := makeMetrics(p)
+		metrics, err := makeMetrics(p)
+		if err != nil {
+			s.Log.Errorf("Failed to make metric from packet: %s", err)
+			return
+		}
 		for _, m := range metrics {
 			acc.AddMetric(m)
 		}
@@ -90,7 +107,9 @@ func (s *SFlow) Gather(_ telegraf.Accumulator) error {
 
 func (s *SFlow) Stop() {
 	if s.closer != nil {
-		s.closer.Close() //nolint:revive // ignore the returned error as we cannot do anything about it anyway
+		// Ignore the returned error as we cannot do anything about it anyway
+		//nolint:errcheck,revive
+		s.closer.Close()
 	}
 	s.wg.Wait()
 }
@@ -115,7 +134,7 @@ func (s *SFlow) read(acc telegraf.Accumulator, conn net.PacketConn) {
 
 func (s *SFlow) process(acc telegraf.Accumulator, buf []byte) {
 	if err := s.decoder.Decode(bytes.NewBuffer(buf)); err != nil {
-		acc.AddError(fmt.Errorf("unable to parse incoming packet: %w", err))
+		acc.AddError(fmt.Errorf("unable to parse incoming packet: %s", err))
 	}
 }
 

@@ -1,10 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package pf
 
 import (
 	"bufio"
-	_ "embed"
-	"errors"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -14,9 +11,6 @@ import (
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 const measurement = "pf"
 const pfctlCommand = "pfctl"
@@ -29,8 +23,18 @@ type PF struct {
 	infoFunc     func() (string, error)
 }
 
-func (*PF) SampleConfig() string {
-	return sampleConfig
+func (pf *PF) Description() string {
+	return "Gather counters from PF"
+}
+
+func (pf *PF) SampleConfig() string {
+	return `
+  ## PF require root access on most systems.
+  ## Setting 'use_sudo' to true will make use of sudo to run pfctl.
+  ## Users must configure sudo to allow telegraf user to run pfctl with no password.
+  ## pfctl can be restricted to only list command "pfctl -s info".
+  use_sudo = false
+`
 }
 
 // Gather is the entrypoint for the plugin.
@@ -38,7 +42,7 @@ func (pf *PF) Gather(acc telegraf.Accumulator) error {
 	if pf.PfctlCommand == "" {
 		var err error
 		if pf.PfctlCommand, pf.PfctlArgs, err = pf.buildPfctlCmd(); err != nil {
-			acc.AddError(fmt.Errorf("can't construct pfctl commandline: %w", err))
+			acc.AddError(fmt.Errorf("Can't construct pfctl commandline: %s", err))
 			return nil
 		}
 	}
@@ -55,10 +59,10 @@ func (pf *PF) Gather(acc telegraf.Accumulator) error {
 	return nil
 }
 
-var errParseHeader = fmt.Errorf("cannot find header in %s output", pfctlCommand)
+var errParseHeader = fmt.Errorf("Cannot find header in %s output", pfctlCommand)
 
 func errMissingData(tag string) error {
-	return fmt.Errorf("struct data for tag %q not found in %s output", tag, pfctlCommand)
+	return fmt.Errorf("struct data for tag \"%s\" not found in %s output", tag, pfctlCommand)
 }
 
 type pfctlOutputStanza struct {
@@ -93,10 +97,11 @@ func (pf *PF) parsePfctlOutput(pfoutput string, acc telegraf.Accumulator) error 
 				for !anyTableHeaderRE.MatchString(line) {
 					stanzaLines = append(stanzaLines, line)
 					more := scanner.Scan()
-					if !more {
+					if more {
+						line = scanner.Text()
+					} else {
 						break
 					}
-					line = scanner.Text()
 				}
 				if perr := s.ParseFunc(stanzaLines, fields); perr != nil {
 					return perr
@@ -187,11 +192,11 @@ func (pf *PF) callPfctl() (string, error) {
 	cmd := execCommand(pf.PfctlCommand, pf.PfctlArgs...)
 	out, oerr := cmd.Output()
 	if oerr != nil {
-		var ee *exec.ExitError
-		if !errors.As(oerr, &ee) {
-			return string(out), fmt.Errorf("error running %q: %w: (unable to get stderr)", pfctlCommand, oerr)
+		ee, ok := oerr.(*exec.ExitError)
+		if !ok {
+			return string(out), fmt.Errorf("error running %s: %s: (unable to get stderr)", pfctlCommand, oerr)
 		}
-		return string(out), fmt.Errorf("error running %q: %w - %s", pfctlCommand, oerr, ee.Stderr)
+		return string(out), fmt.Errorf("error running %s: %s: %s", pfctlCommand, oerr, ee.Stderr)
 	}
 	return string(out), oerr
 }
@@ -202,14 +207,14 @@ var execCommand = exec.Command
 func (pf *PF) buildPfctlCmd() (string, []string, error) {
 	cmd, err := execLookPath(pfctlCommand)
 	if err != nil {
-		return "", nil, fmt.Errorf("can't locate %q: %w", pfctlCommand, err)
+		return "", nil, fmt.Errorf("can't locate %s: %v", pfctlCommand, err)
 	}
 	args := []string{"-s", "info"}
 	if pf.UseSudo {
 		args = append([]string{cmd}, args...)
 		cmd, err = execLookPath("sudo")
 		if err != nil {
-			return "", nil, fmt.Errorf("can't locate sudo: %w", err)
+			return "", nil, fmt.Errorf("can't locate sudo: %v", err)
 		}
 	}
 	return cmd, args, nil
@@ -217,7 +222,7 @@ func (pf *PF) buildPfctlCmd() (string, []string, error) {
 
 func init() {
 	inputs.Add("pf", func() telegraf.Input {
-		pf := &PF{}
+		pf := new(PF)
 		pf.infoFunc = pf.callPfctl
 		return pf
 	})

@@ -19,26 +19,10 @@ To generate a file with specific inputs and outputs, you can use the
 --input-filter and --output-filter flags:
 
 ```sh
-telegraf config --input-filter cpu:mem:net:swap --output-filter influxdb:kafka
+telegraf --input-filter cpu:mem:net:swap --output-filter influxdb:kafka config
 ```
 
 [View the full list][flags] of Telegraf commands and flags or by running `telegraf --help`.
-
-### Windows PowerShell v5 Encoding
-
-In PowerShell 5, the default encoding is UTF-16LE and not UTF-8. Telegraf
-expects a valid UTF-8 file. This is not an issue with PowerShell 6 or newer,
-as well as the Command Prompt or with using the Git Bash shell.
-
-As such, users will need to specify the output encoding when generating a full
-configuration file:
-
-```sh
-telegraf.exe config | Out-File -Encoding utf8 telegraf.conf
-```
-
-This will generate a UTF-8 encoded file with a BOM. However, Telegraf can
-handle the leading BOM.
 
 ## Configuration Loading
 
@@ -157,47 +141,6 @@ parsed:
   bucket = "replace_with_your_bucket_name"
 ```
 
-## Secret-store secrets
-
-Additional or instead of environment variables, you can use secret-stores
-to fill in credentials or similar. To do so, you need to configure one or more
-secret-store plugin(s) and then reference the secret in your plugin
-configurations. A reference to a secret is specified in form
-`@{<secret store id>:<secret name>}`, where the `secret store id` is the unique
-ID you defined for your secret-store and `secret name` is the name of the secret
-to use.
-**NOTE:** Both, the `secret store id` as well as the `secret name` can only
-consist of letters (both upper- and lowercase), numbers and underscores.
-
-**Example**:
-
-This example illustrates the use of secret-store(s) in plugins
-
-```toml
-[global_tags]
-  user = "alice"
-
-[[secretstores.os]]
-  id = "local_secrets"
-
-[[secretstores.jose]]
-  id = "cloud_secrets"
-  path = "/etc/telegraf/secrets"
-  # Optional reference to another secret store to unlock this one.
-  password = "@{local_secrets:cloud_store_passwd}"
-
-[[inputs.http]]
-  urls = ["http://server.company.org/metrics"]
-  username = "@{local_secrets:company_server_http_metric_user}"
-  password = "@{local_secrets:company_server_http_metric_pass}"
-
-[[outputs.influxdb_v2]]
-  urls = ["https://us-west-2-1.aws.cloud2.influxdata.com"]
-  token = "@{cloud_secrets:influxdb_token}"
-  organization = "yourname@yourcompany.com"
-  bucket = "replace_with_your_bucket_name"
-```
-
 ## Intervals
 
 Intervals are durations of time and can be specified for supporting settings by
@@ -244,11 +187,6 @@ The agent table configures Telegraf and the defaults used across all plugins.
   Each plugin will sleep for a random time within jitter before collecting.
   This can be used to avoid many plugins querying things like sysfs at the
   same time, which can have a measurable effect on the system.
-
-- **collection_offset**:
-  Collection offset is used to shift the collection by the given [interval][].
-  This can be be used to avoid many plugins querying constraint devices
-  at the same time by manually scheduling them in time.
 
 - **flush_interval**:
   Default flushing [interval][] for all outputs. Maximum flush_interval will be
@@ -299,20 +237,8 @@ The agent table configures Telegraf and the defaults used across all plugins.
 
 - **hostname**:
   Override default hostname, if empty use os.Hostname()
-
 - **omit_hostname**:
   If set to true, do no set the "host" tag in the telegraf agent.
-
-- **snmp_translator**:
-  Method of translating SNMP objects. Can be "netsnmp" (deprecated) which
-  translates by calling external programs `snmptranslate` and `snmptable`,
-  or "gosmi" which translates using the built-in gosmi library.
-
-- **statefile**:
-  Name of the file to load the states of plugins from and store the states to.
-  If uncommented and not empty, this file will be used to save the state of
-  stateful plugins on termination of Telegraf. If the file exists on start,
-  the state in the file will be restored for the plugins.
 
 ## Plugins
 
@@ -353,11 +279,6 @@ Parameters that can be used with any input plugin:
 - **collection_jitter**:
   Overrides the `collection_jitter` setting of the [agent][Agent] for the
   plugin.  Collection jitter is used to jitter the collection by a random
-  [interval][].
-
-- **collection_offset**:
-  Overrides the `collection_offset` setting of the [agent][Agent] for the
-  plugin. Collection offset is used to shift the collection by the given
   [interval][].
 
 - **name_override**: Override the base name of the measurement.  (Default is
@@ -405,16 +326,6 @@ Emit measurements with two additional tags: `tag1=foo` and `tag2=bar`
   [inputs.cpu.tags]
     tag1 = "foo"
     tag2 = "bar"
-```
-
-Alternatively, when using the inline table syntax, the tags do not need
-to go at the end:
-
-```toml
-[[inputs.cpu]]
-  tags = {tag1 = "foo", tag2 = "bar"}
-  percpu = false
-  totalcpu = true
 ```
 
 Utilize `name_override`, `name_prefix`, or `name_suffix` config options to
@@ -486,10 +397,8 @@ input plugins and before any aggregator plugins.
 Parameters that can be used with any processor plugin:
 
 - **alias**: Name an instance of a plugin.
-- **order**: The order in which the processor(s) are executed. starting with 1.
-  If this is not specified then processor execution order will be the order in
-  the config. Processors without "order" will take precedence over those
-  with a defined order.
+- **order**: The order in which the processor(s) are executed. If this is not
+  specified then processor execution order will be random.
 
 The [metric filtering][] parameters can be used to limit what metrics are
 handled by the processor.  Excluded metrics are passed downstream to the next
@@ -607,20 +516,15 @@ is tested on metrics after they have passed the `namepass` test.
 - **tagpass**:
 A table mapping tag keys to arrays of [glob pattern][] strings.  Only metrics
 that contain a tag key in the table and a tag value matching one of its
-patterns is emitted. This can either use the explicit table synax (e.g.
-a subsection using a `[...]` header) or inline table syntax (e.g like
-a JSON table with `{...}`.
+patterns is emitted.
 
 - **tagdrop**:
 The inverse of `tagpass`.  If a match is found the metric is discarded. This
 is tested on metrics after they have passed the `tagpass` test.
 
-> NOTE: Due to the way TOML is parsed, when using the explicit table
-> syntax (with `[...]`) for `tagpass` and `tagdrop` parameters, they
-> must be defined at the **end** of the plugin definition, otherwise subsequent
-> plugin config options will be interpreted as part of the tagpass/tagdrop
-> tables. This limitation does not apply when using the inline table
-> syntax (`{...}`).
+> NOTE: Due to the way TOML is parsed, `tagpass` and `tagdrop` parameters must be
+defined at the *_end_* of the plugin definition, otherwise subsequent plugin config
+options will be interpreted as part of the tagpass/tagdrop tables.
 
 ### Modifiers
 
@@ -680,8 +584,8 @@ tags and the agent `host` tag.
     ]
     Measurement = "win_net"
   # Don't send metrics where the Windows interface name (instance) begins with isatap or Local
-  # This illustrates the inline table syntax
-  tagdrop = {instance = ["isatap*", "Local*"]}
+  [inputs.win_perf_counters.tagdrop]
+    instance = ["isatap*", "Local*"]
 ```
 
 #### Using fieldpass and fielddrop

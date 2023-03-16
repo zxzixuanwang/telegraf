@@ -7,19 +7,9 @@ The `kibana` plugin queries the [Kibana][] API to obtain the service status.
 
 [Kibana]: https://www.elastic.co/
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
-# Read status information from one or more Kibana servers
+```toml
 [[inputs.kibana]]
   ## Specify a list of one or more Kibana servers
   servers = ["http://localhost:5601"]
@@ -52,7 +42,6 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
     - heap_total_bytes (integer)
     - heap_max_bytes (integer; deprecated in 1.13.3: use `heap_total_bytes` field)
     - heap_used_bytes (integer)
-    - heap_size_limit (integer)
     - uptime_ms (integer)
     - response_time_avg_ms (float)
     - response_time_max_ms (integer)
@@ -72,17 +61,10 @@ Requires the following tools:
 - [Docker](https://docs.docker.com/get-docker/)
 - [Docker Compose](https://docs.docker.com/compose/install/)
 
-From the root of this project execute the following script:
-`./plugins/inputs/kibana/test_environment/run_test_env.sh`
+From the root of this project execute the following script: `./plugins/inputs/kibana/test_environment/run_test_env.sh`
 
-This will build the latest Telegraf and then start up Kibana and Elasticsearch,
-Telegraf will begin monitoring Kibana's status and write its results to the file
-`/tmp/metrics.out` in the Telegraf container.
+This will build the latest Telegraf and then start up Kibana and Elasticsearch, Telegraf will begin monitoring Kibana's status and write its results to the file `/tmp/metrics.out` in the Telegraf container.
 
-Then you can attach to the telegraf container to inspect the file
-`/tmp/metrics.out` to see if the status is being reported.
+Then you can attach to the telegraf container to inspect the file `/tmp/metrics.out` to see if the status is being reported.
 
-The Visual Studio Code [Remote - Containers][remote] extension provides an easy
-user interface to attach to the running container.
-
-[remote]: https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers
+The Visual Studio Code [Remote - Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension provides an easy user interface to attach to the running container.

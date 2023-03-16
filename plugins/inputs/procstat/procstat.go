@@ -1,9 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package procstat
 
 import (
 	"bytes"
-	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,14 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shirou/gopsutil/v3/process"
-
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/inputs"
+	"github.com/shirou/gopsutil/v3/process"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 var (
 	defaultPIDFinder = NewPgrep
@@ -54,14 +48,64 @@ type Procstat struct {
 	createProcess   func(PID) (Process, error)
 }
 
+var sampleConfig = `
+  ## PID file to monitor process
+  pid_file = "/var/run/nginx.pid"
+  ## executable name (ie, pgrep <exe>)
+  # exe = "nginx"
+  ## pattern as argument for pgrep (ie, pgrep -f <pattern>)
+  # pattern = "nginx"
+  ## user as argument for pgrep (ie, pgrep -u <user>)
+  # user = "nginx"
+  ## Systemd unit name, supports globs when include_systemd_children is set to true
+  # systemd_unit = "nginx.service"
+  # include_systemd_children = false
+  ## CGroup name or path, supports globs
+  # cgroup = "systemd/system.slice/nginx.service"
+
+  ## Windows service name
+  # win_service = ""
+
+  ## override for process_name
+  ## This is optional; default is sourced from /proc/<pid>/status
+  # process_name = "bar"
+
+  ## Field name prefix
+  # prefix = ""
+
+  ## When true add the full cmdline as a tag.
+  # cmdline_tag = false
+
+  ## Mode to use when calculating CPU usage. Can be one of 'solaris' or 'irix'.
+  # mode = "irix"
+
+  ## Add the PID as a tag instead of as a field.  When collecting multiple
+  ## processes with otherwise matching tags this setting should be enabled to
+  ## ensure each process has a unique identity.
+  ##
+  ## Enabling this option may result in a large number of series, especially
+  ## when processes have a short lifetime.
+  # pid_tag = false
+
+  ## Method to use when finding process IDs.  Can be one of 'pgrep', or
+  ## 'native'.  The pgrep finder calls the pgrep executable in the PATH while
+  ## the native finder performs the search directly in a manor dependent on the
+  ## platform.  Default is 'pgrep'
+  # pid_finder = "pgrep"
+`
+
+func (p *Procstat) SampleConfig() string {
+	return sampleConfig
+}
+
+func (p *Procstat) Description() string {
+	return "Monitor process cpu and memory usage"
+}
+
 type PidsTags struct {
 	PIDS []PID
 	Tags map[string]string
 	Err  error
-}
-
-func (*Procstat) SampleConfig() string {
-	return sampleConfig
 }
 
 func (p *Procstat) Gather(acc telegraf.Accumulator) error {
@@ -103,7 +147,11 @@ func (p *Procstat) Gather(acc telegraf.Accumulator) error {
 			return err
 		}
 
-		p.updateProcesses(pids, tags, p.procs, newProcs)
+		err = p.updateProcesses(pids, tags, p.procs, newProcs)
+		if err != nil {
+			acc.AddError(fmt.Errorf("procstat getting process, exe: [%s] pidfile: [%s] pattern: [%s] user: [%s] %s",
+				p.Exe, p.PidFile, p.Pattern, p.User, err.Error()))
+		}
 	}
 
 	p.procs = newProcs
@@ -294,7 +342,7 @@ func (p *Procstat) addMetric(proc Process, acc telegraf.Accumulator, t time.Time
 }
 
 // Update monitored Processes
-func (p *Procstat) updateProcesses(pids []PID, tags map[string]string, prevInfo map[PID]Process, procs map[PID]Process) {
+func (p *Procstat) updateProcesses(pids []PID, tags map[string]string, prevInfo map[PID]Process, procs map[PID]Process) error {
 	for _, pid := range pids {
 		info, ok := prevInfo[pid]
 		if ok {
@@ -329,6 +377,7 @@ func (p *Procstat) updateProcesses(pids []PID, tags map[string]string, prevInfo 
 			}
 		}
 	}
+	return nil
 }
 
 // Create and return PIDGatherer lazily
@@ -412,14 +461,14 @@ func (p *Procstat) systemdUnitPIDs() []PidsTags {
 }
 
 func (p *Procstat) simpleSystemdUnitPIDs() ([]PID, error) {
-	out, err := execCommand("systemctl", "show", p.SystemdUnit).Output()
+	var pids []PID
+
+	cmd := execCommand("systemctl", "show", p.SystemdUnit)
+	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
-
-	lines := bytes.Split(out, []byte{'\n'})
-	pids := make([]PID, 0, len(lines))
-	for _, line := range lines {
+	for _, line := range bytes.Split(out, []byte{'\n'}) {
 		kv := bytes.SplitN(line, []byte{'='}, 2)
 		if len(kv) != 2 {
 			continue
@@ -432,7 +481,7 @@ func (p *Procstat) simpleSystemdUnitPIDs() ([]PID, error) {
 		}
 		pid, err := strconv.ParseInt(string(kv[1]), 10, 32)
 		if err != nil {
-			return nil, fmt.Errorf("invalid pid %q", kv[1])
+			return nil, fmt.Errorf("invalid pid '%s'", kv[1])
 		}
 		pids = append(pids, PID(pid))
 	}
@@ -441,17 +490,17 @@ func (p *Procstat) simpleSystemdUnitPIDs() ([]PID, error) {
 }
 
 func (p *Procstat) cgroupPIDs() []PidsTags {
+	var pidTags []PidsTags
+
 	procsPath := p.CGroup
 	if procsPath[0] != '/' {
 		procsPath = "/sys/fs/cgroup/" + procsPath
 	}
-
 	items, err := filepath.Glob(procsPath)
 	if err != nil {
-		return []PidsTags{{nil, nil, fmt.Errorf("glob failed: %w", err)}}
+		pidTags = append(pidTags, PidsTags{nil, nil, fmt.Errorf("glob failed '%s'", err)})
+		return pidTags
 	}
-
-	pidTags := make([]PidsTags, 0, len(items))
 	for _, item := range items {
 		pids, err := p.singleCgroupPIDs(item)
 		tags := map[string]string{"cgroup": p.CGroup, "cgroup_full": item}
@@ -462,6 +511,8 @@ func (p *Procstat) cgroupPIDs() []PidsTags {
 }
 
 func (p *Procstat) singleCgroupPIDs(path string) ([]PID, error) {
+	var pids []PID
+
 	ok, err := isDir(path)
 	if err != nil {
 		return nil, err
@@ -474,16 +525,13 @@ func (p *Procstat) singleCgroupPIDs(path string) ([]PID, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	lines := bytes.Split(out, []byte{'\n'})
-	pids := make([]PID, 0, len(lines))
-	for _, pidBS := range lines {
+	for _, pidBS := range bytes.Split(out, []byte{'\n'}) {
 		if len(pidBS) == 0 {
 			continue
 		}
 		pid, err := strconv.ParseInt(string(pidBS), 10, 32)
 		if err != nil {
-			return nil, fmt.Errorf("invalid pid %q", pidBS)
+			return nil, fmt.Errorf("invalid pid '%s'", pidBS)
 		}
 		pids = append(pids, PID(pid))
 	}

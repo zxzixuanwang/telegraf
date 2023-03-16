@@ -1,10 +1,9 @@
-//go:generate ../../../tools/readme_config_includer/generator
 //go:build linux
+// +build linux
 
 package dpdk
 
 import (
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -17,10 +16,40 @@ import (
 	jsonparser "github.com/influxdata/telegraf/plugins/parsers/json"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 const (
+	description  = "Reads metrics from DPDK applications using v2 telemetry interface."
+	sampleConfig = `
+  ## Path to DPDK telemetry socket. This shall point to v2 version of DPDK telemetry interface.
+  # socket_path = "/var/run/dpdk/rte/dpdk_telemetry.v2"
+
+  ## Duration that defines how long the connected socket client will wait for a response before terminating connection.
+  ## This includes both writing to and reading from socket. Since it's local socket access
+  ## to a fast packet processing application, the timeout should be sufficient for most users.
+  ## Setting the value to 0 disables the timeout (not recommended)
+  # socket_access_timeout = "200ms"
+
+  ## Enables telemetry data collection for selected device types.
+  ## Adding "ethdev" enables collection of telemetry from DPDK NICs (stats, xstats, link_status).
+  ## Adding "rawdev" enables collection of telemetry from DPDK Raw Devices (xstats).
+  # device_types = ["ethdev"]
+
+  ## List of custom, application-specific telemetry commands to query
+  ## The list of available commands depend on the application deployed. Applications can register their own commands
+  ##   via telemetry library API http://doc.dpdk.org/guides/prog_guide/telemetry_lib.html#registering-commands
+  ## For e.g. L3 Forwarding with Power Management Sample Application this could be: 
+  ##   additional_commands = ["/l3fwd-power/stats"]
+  # additional_commands = []
+
+  ## Allows turning off collecting data for individual "ethdev" commands.
+  ## Remove "/ethdev/link_status" from list to start getting link status metrics.
+  [inputs.dpdk.ethdev]
+    exclude_commands = ["/ethdev/link_status"]
+
+  ## When running multiple instances of the plugin it's recommended to add a unique tag to each instance to identify
+  ## metrics exposed by an instance of DPDK application. This is useful when multiple DPDK apps run on a single host.  
+  ##  [inputs.dpdk.tags]
+  ##    dpdk_instance = "my-fwd-app"
+`
 	defaultPathToSocket        = "/var/run/dpdk/rte/dpdk_telemetry.v2"
 	defaultAccessTimeout       = config.Duration(200 * time.Millisecond)
 	maxCommandLength           = 56
@@ -59,8 +88,12 @@ func init() {
 	})
 }
 
-func (*dpdk) SampleConfig() string {
+func (dpdk *dpdk) SampleConfig() string {
 	return sampleConfig
+}
+
+func (dpdk *dpdk) Description() string {
+	return description
 }
 
 // Performs validation of all parameters from configuration
@@ -96,7 +129,7 @@ func (dpdk *dpdk) Init() error {
 
 	dpdk.ethdevExcludedCommandsFilter, err = filter.Compile(dpdk.EthdevConfig.EthdevExcludeCommands)
 	if err != nil {
-		return fmt.Errorf("error occurred during filter prepation for ethdev excluded commands: %w", err)
+		return fmt.Errorf("error occurred during filter prepation for ethdev excluded commands - %v", err)
 	}
 
 	dpdk.connector = newDpdkConnector(dpdk.SocketPath, dpdk.AccessTimeout)
@@ -118,15 +151,15 @@ func (dpdk *dpdk) validateCommands() error {
 		}
 
 		if commandWithParams[0] != '/' {
-			return fmt.Errorf("%q command should start with '/'", commandWithParams)
+			return fmt.Errorf("'%v' command should start with '/'", commandWithParams)
 		}
 
 		if commandWithoutParams := stripParams(commandWithParams); len(commandWithoutParams) >= maxCommandLength {
-			return fmt.Errorf("%q command is too long. It shall be less than %v characters", commandWithoutParams, maxCommandLength)
+			return fmt.Errorf("'%v' command is too long. It shall be less than %v characters", commandWithoutParams, maxCommandLength)
 		}
 
 		if len(commandWithParams) >= maxCommandLengthWithParams {
-			return fmt.Errorf("command with parameters %q shall be less than %v characters", commandWithParams, maxCommandLengthWithParams)
+			return fmt.Errorf("command with parameters '%v' shall be less than %v characters", commandWithParams, maxCommandLengthWithParams)
 		}
 	}
 
@@ -154,7 +187,7 @@ func (dpdk *dpdk) gatherCommands(acc telegraf.Accumulator) []string {
 		ethdevCommands := removeSubset(dpdk.ethdevCommands, dpdk.ethdevExcludedCommandsFilter)
 		ethdevCommands, err := dpdk.appendCommandsWithParamsFromList(ethdevListCommand, ethdevCommands)
 		if err != nil {
-			acc.AddError(fmt.Errorf("error occurred during fetching of %q params: %w", ethdevListCommand, err))
+			acc.AddError(fmt.Errorf("error occurred during fetching of %v params - %v", ethdevListCommand, err))
 		}
 
 		commands = append(commands, ethdevCommands...)
@@ -163,7 +196,7 @@ func (dpdk *dpdk) gatherCommands(acc telegraf.Accumulator) []string {
 	if choice.Contains("rawdev", dpdk.DeviceTypes) {
 		rawdevCommands, err := dpdk.appendCommandsWithParamsFromList(rawdevListCommand, dpdk.rawdevCommands)
 		if err != nil {
-			acc.AddError(fmt.Errorf("error occurred during fetching of %q params: %w", rawdevListCommand, err))
+			acc.AddError(fmt.Errorf("error occurred during fetching of %v params - %v", rawdevListCommand, err))
 		}
 
 		commands = append(commands, rawdevCommands...)
@@ -206,21 +239,21 @@ func (dpdk *dpdk) processCommand(acc telegraf.Accumulator, commandWithParams str
 	var parsedResponse map[string]interface{}
 	err = json.Unmarshal(buf, &parsedResponse)
 	if err != nil {
-		acc.AddError(fmt.Errorf("failed to unmarshall json response from %q command: %w", commandWithParams, err))
+		acc.AddError(fmt.Errorf("failed to unmarshall json response from %v command - %v", commandWithParams, err))
 		return
 	}
 
 	command := stripParams(commandWithParams)
 	value := parsedResponse[command]
 	if isEmpty(value) {
-		acc.AddError(fmt.Errorf("got empty json on %q command", commandWithParams))
+		acc.AddError(fmt.Errorf("got empty json on '%v' command", commandWithParams))
 		return
 	}
 
 	jf := jsonparser.JSONFlattener{}
 	err = jf.FullFlattenJSON("", value, true, true)
 	if err != nil {
-		acc.AddError(fmt.Errorf("failed to flatten response: %w", err))
+		acc.AddError(fmt.Errorf("failed to flatten response - %v", err))
 		return
 	}
 

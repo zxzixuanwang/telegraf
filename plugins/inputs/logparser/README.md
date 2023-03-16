@@ -1,7 +1,6 @@
 # Logparser Input Plugin
 
-**Deprecated in Telegraf 1.15: Please use the [tail][] plugin along with the
-[`grok` data format][grok parser]**
+## Deprecated in Telegraf 1.15: Please use the [tail][] plugin along with the [`grok` data format][grok parser]
 
 The `logparser` plugin streams and parses the given logfiles. Currently it
 has the capability of parsing "grok" patterns from logfiles, which also supports
@@ -46,19 +45,9 @@ Migration Example:
 +   data_format = "grok"
 ```
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
-# Read metrics off Arista LANZ, via socket
+```toml
 [[inputs.logparser]]
   ## Log files to parse.
   ## These accept standard unix glob matching rules, but with the addition of
@@ -106,10 +95,6 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
     ##   2. "Canada/Eastern"  -- Unix TZ values like those found in https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
     ##   3. UTC               -- or blank/unspecified, will return timestamp in UTC
     # timezone = "Canada/Eastern"
-
-    ## When set to "disable", timestamp will not incremented if there is a
-    ## duplicate.
-    # unique_timestamp = "auto"
 ```
 
 ## Grok Parser
@@ -123,7 +108,3 @@ configuration.
 
 [tail]: /plugins/inputs/tail/README.md
 [grok parser]: /plugins/parsers/grok/README.md
-
-## Metrics
-
-## Example Output

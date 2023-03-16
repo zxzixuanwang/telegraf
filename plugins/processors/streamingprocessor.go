@@ -24,6 +24,10 @@ func (sp *streamingProcessor) SampleConfig() string {
 	return sp.processor.SampleConfig()
 }
 
+func (sp *streamingProcessor) Description() string {
+	return sp.processor.Description()
+}
+
 func (sp *streamingProcessor) Start(acc telegraf.Accumulator) error {
 	sp.acc = acc
 	return nil
@@ -36,7 +40,8 @@ func (sp *streamingProcessor) Add(m telegraf.Metric, acc telegraf.Accumulator) e
 	return nil
 }
 
-func (sp *streamingProcessor) Stop() {
+func (sp *streamingProcessor) Stop() error {
+	return nil
 }
 
 // Make the streamingProcessor of type Initializer to be able

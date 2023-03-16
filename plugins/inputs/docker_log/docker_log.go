@@ -1,4 +1,3 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package docker_log
 
 import (
@@ -6,8 +5,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	_ "embed"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -27,8 +24,44 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
+var sampleConfig = `
+  ## Docker Endpoint
+  ##   To use TCP, set endpoint = "tcp://[ip]:[port]"
+  ##   To use environment variables (ie, docker-machine), set endpoint = "ENV"
+  # endpoint = "unix:///var/run/docker.sock"
+
+  ## When true, container logs are read from the beginning; otherwise
+  ## reading begins at the end of the log.
+  # from_beginning = false
+
+  ## Timeout for Docker API calls.
+  # timeout = "5s"
+
+  ## Containers to include and exclude. Globs accepted.
+  ## Note that an empty array for both will include all containers
+  # container_name_include = []
+  # container_name_exclude = []
+
+  ## Container states to include and exclude. Globs accepted.
+  ## When empty only containers in the "running" state will be captured.
+  # container_state_include = []
+  # container_state_exclude = []
+
+  ## docker labels to include and exclude as tags.  Globs accepted.
+  ## Note that an empty array for both will include all labels as tags
+  # docker_label_include = []
+  # docker_label_exclude = []
+
+  ## Set the source tag for the metrics to the container ID hostname, eg first 12 chars
+  source_tag = false
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+`
 
 const (
 	defaultEndpoint = "unix:///var/run/docker.sock"
@@ -65,14 +98,13 @@ type DockerLogs struct {
 	wg              sync.WaitGroup
 	mu              sync.Mutex
 	containerList   map[string]context.CancelFunc
-
-	// State of the plugin mapping container-ID to the timestamp of the
-	// last record processed
-	lastRecord    map[string]time.Time
-	lastRecordMtx sync.Mutex
 }
 
-func (*DockerLogs) SampleConfig() string {
+func (d *DockerLogs) Description() string {
+	return "Read logging output from the Docker engine"
+}
+
+func (d *DockerLogs) SampleConfig() string {
 	return sampleConfig
 }
 
@@ -120,34 +152,6 @@ func (d *DockerLogs) Init() error {
 			Filters: filterArgs,
 		}
 	}
-
-	d.lastRecord = make(map[string]time.Time)
-
-	return nil
-}
-
-// State persistence interfaces
-func (d *DockerLogs) GetState() interface{} {
-	d.lastRecordMtx.Lock()
-	recordOffsets := make(map[string]time.Time, len(d.lastRecord))
-	for k, v := range d.lastRecord {
-		recordOffsets[k] = v
-	}
-	d.lastRecordMtx.Unlock()
-
-	return recordOffsets
-}
-
-func (d *DockerLogs) SetState(state interface{}) error {
-	recordOffsets, ok := state.(map[string]time.Time)
-	if !ok {
-		return fmt.Errorf("state has wrong type %T", state)
-	}
-	d.lastRecordMtx.Lock()
-	for k, v := range recordOffsets {
-		d.lastRecord[k] = v
-	}
-	d.lastRecordMtx.Unlock()
 
 	return nil
 }
@@ -223,7 +227,7 @@ func (d *DockerLogs) Gather(acc telegraf.Accumulator) error {
 			defer d.removeFromContainerList(container.ID)
 
 			err = d.tailContainerLogs(ctx, acc, container, containerName)
-			if err != nil && !errors.Is(err, context.Canceled) {
+			if err != nil && err != context.Canceled {
 				acc.AddError(err)
 			}
 		}(container)
@@ -270,13 +274,9 @@ func (d *DockerLogs) tailContainerLogs(
 		return err
 	}
 
-	since := time.Time{}.Format(time.RFC3339Nano)
-	if !d.FromBeginning {
-		d.lastRecordMtx.Lock()
-		if ts, ok := d.lastRecord[container.ID]; ok {
-			since = ts.Format(time.RFC3339Nano)
-		}
-		d.lastRecordMtx.Unlock()
+	tail := "0"
+	if d.FromBeginning {
+		tail = "all"
 	}
 
 	logOptions := types.ContainerLogsOptions{
@@ -285,7 +285,7 @@ func (d *DockerLogs) tailContainerLogs(
 		Timestamps: true,
 		Details:    false,
 		Follow:     true,
-		Since:      since,
+		Tail:       tail,
 	}
 
 	logReader, err := d.client.ContainerLogs(ctx, container.ID, logOptions)
@@ -299,23 +299,10 @@ func (d *DockerLogs) tailContainerLogs(
 	//
 	// If the container is *not* using a TTY, streams for stdout and stderr are
 	// multiplexed.
-	var last time.Time
 	if hasTTY {
-		last, err = tailStream(acc, tags, container.ID, logReader, "tty")
-	} else {
-		last, err = tailMultiplexed(acc, tags, container.ID, logReader)
+		return tailStream(acc, tags, container.ID, logReader, "tty")
 	}
-	if err != nil {
-		return err
-	}
-
-	if ts, ok := d.lastRecord[container.ID]; !ok || ts.Before(last) {
-		d.lastRecordMtx.Lock()
-		d.lastRecord[container.ID] = last
-		d.lastRecordMtx.Unlock()
-	}
-
-	return nil
+	return tailMultiplexed(acc, tags, container.ID, logReader)
 }
 
 func parseLine(line []byte) (time.Time, string, error) {
@@ -335,7 +322,7 @@ func parseLine(line []byte) (time.Time, string, error) {
 
 	ts, err := time.Parse(time.RFC3339Nano, tsString)
 	if err != nil {
-		return time.Time{}, "", fmt.Errorf("error parsing timestamp %q: %w", tsString, err)
+		return time.Time{}, "", fmt.Errorf("error parsing timestamp %q: %v", tsString, err)
 	}
 
 	return ts, string(message), nil
@@ -347,7 +334,7 @@ func tailStream(
 	containerID string,
 	reader io.ReadCloser,
 	stream string,
-) (time.Time, error) {
+) error {
 	defer reader.Close()
 
 	tags := make(map[string]string, len(baseTags)+1)
@@ -358,7 +345,6 @@ func tailStream(
 
 	r := bufio.NewReaderSize(reader, 64*1024)
 
-	var lastTs time.Time
 	for {
 		line, err := r.ReadBytes('\n')
 
@@ -372,18 +358,13 @@ func tailStream(
 					"message":      message,
 				}, tags, ts)
 			}
-
-			// Store the last processed timestamp
-			if ts.After(lastTs) {
-				lastTs = ts
-			}
 		}
 
 		if err != nil {
 			if err == io.EOF {
-				return lastTs, nil
+				return nil
 			}
-			return time.Time{}, err
+			return err
 		}
 	}
 }
@@ -393,17 +374,15 @@ func tailMultiplexed(
 	tags map[string]string,
 	containerID string,
 	src io.ReadCloser,
-) (time.Time, error) {
+) error {
 	outReader, outWriter := io.Pipe()
 	errReader, errWriter := io.Pipe()
 
-	var tsStdout, tsStderr time.Time
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		var err error
-		tsStdout, err = tailStream(acc, tags, containerID, outReader, "stdout")
+		err := tailStream(acc, tags, containerID, outReader, "stdout")
 		if err != nil {
 			acc.AddError(err)
 		}
@@ -412,28 +391,21 @@ func tailMultiplexed(
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		var err error
-		tsStderr, err = tailStream(acc, tags, containerID, errReader, "stderr")
+		err := tailStream(acc, tags, containerID, errReader, "stderr")
 		if err != nil {
 			acc.AddError(err)
 		}
 	}()
 
 	_, err := stdcopy.StdCopy(outWriter, errWriter, src)
-
-	// Ignore the returned errors as we cannot do anything if the closing fails
-	_ = outWriter.Close()
-	_ = errWriter.Close()
-	_ = src.Close()
+	//nolint:errcheck,revive // we cannot do anything if the closing fails
+	outWriter.Close()
+	//nolint:errcheck,revive // we cannot do anything if the closing fails
+	errWriter.Close()
+	//nolint:errcheck,revive // we cannot do anything if the closing fails
+	src.Close()
 	wg.Wait()
-
-	if err != nil {
-		return time.Time{}, err
-	}
-	if tsStdout.After(tsStderr) {
-		return tsStdout, nil
-	}
-	return tsStderr, nil
+	return err
 }
 
 // Start is a noop which is required for a *DockerLogs to implement

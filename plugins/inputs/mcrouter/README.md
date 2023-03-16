@@ -2,18 +2,9 @@
 
 This plugin gathers statistics data from a Mcrouter server.
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
+```toml
 # Read metrics from one or many mcrouter servers.
 [[inputs.mcrouter]]
   ## An array of address to gather stats about. Specify an ip or hostname
@@ -24,12 +15,11 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   # timeout = "5s"
 ```
 
-## Metrics
+## Measurements & Fields
 
 The fields from this plugin are gathered in the *mcrouter* measurement.
 
-Description of gathered fields can be found
-[here](https://github.com/facebook/mcrouter/wiki/Stats-list).
+Description of gathered fields can be found [here](https://github.com/facebook/mcrouter/wiki/Stats-list).
 
 Fields:
 

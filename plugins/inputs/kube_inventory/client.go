@@ -20,36 +20,19 @@ type client struct {
 	*kubernetes.Clientset
 }
 
-func newClient(baseURL, namespace, bearerTokenFile string, bearerToken string, timeout time.Duration, tlsConfig tls.ClientConfig) (*client, error) {
-	var config *rest.Config
-	var err error
-
-	if baseURL == "" {
-		config, err = rest.InClusterConfig()
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		config = &rest.Config{
-			TLSClientConfig: rest.TLSClientConfig{
-				ServerName: tlsConfig.ServerName,
-				Insecure:   tlsConfig.InsecureSkipVerify,
-				CAFile:     tlsConfig.TLSCA,
-				CertFile:   tlsConfig.TLSCert,
-				KeyFile:    tlsConfig.TLSKey,
-			},
-			Host:          baseURL,
-			ContentConfig: rest.ContentConfig{},
-		}
-
-		if bearerTokenFile != "" {
-			config.BearerTokenFile = bearerTokenFile
-		} else if bearerToken != "" {
-			config.BearerToken = bearerToken
-		}
-	}
-
-	c, err := kubernetes.NewForConfig(config)
+func newClient(baseURL, namespace, bearerToken string, timeout time.Duration, tlsConfig tls.ClientConfig) (*client, error) {
+	c, err := kubernetes.NewForConfig(&rest.Config{
+		TLSClientConfig: rest.TLSClientConfig{
+			ServerName: tlsConfig.ServerName,
+			Insecure:   tlsConfig.InsecureSkipVerify,
+			CAFile:     tlsConfig.TLSCA,
+			CertFile:   tlsConfig.TLSCert,
+			KeyFile:    tlsConfig.TLSKey,
+		},
+		Host:          baseURL,
+		BearerToken:   bearerToken,
+		ContentConfig: rest.ContentConfig{},
+	})
 	if err != nil {
 		return nil, err
 	}

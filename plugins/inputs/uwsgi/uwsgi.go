@@ -1,11 +1,8 @@
 // Package uwsgi implements a telegraf plugin for collecting uwsgi stats from
 // the uwsgi stats server.
-//
-//go:generate ../../../tools/readme_config_includer/generator
 package uwsgi
 
 import (
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,9 +19,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 // Uwsgi server struct
 type Uwsgi struct {
 	Servers []string        `toml:"servers"`
@@ -33,8 +27,24 @@ type Uwsgi struct {
 	client *http.Client
 }
 
-func (*Uwsgi) SampleConfig() string {
-	return sampleConfig
+// Description returns the plugin description
+func (u *Uwsgi) Description() string {
+	return "Read uWSGI metrics."
+}
+
+// SampleConfig returns the sample configuration
+func (u *Uwsgi) SampleConfig() string {
+	return `
+  ## List with urls of uWSGI Stats servers. URL must match pattern:
+  ## scheme://address[:port]
+  ##
+  ## For example:
+  ## servers = ["tcp://localhost:5050", "http://localhost:1717", "unix:///tmp/statsock"]
+  servers = ["tcp://127.0.0.1:1717"]
+
+  ## General connection timeout
+  # timeout = "5s"
+`
 }
 
 // Gather collect data from uWSGI Server
@@ -52,7 +62,7 @@ func (u *Uwsgi) Gather(acc telegraf.Accumulator) error {
 			defer wg.Done()
 			n, err := url.Parse(s)
 			if err != nil {
-				acc.AddError(fmt.Errorf("could not parse uWSGI Stats Server url %q: %w", s, err))
+				acc.AddError(fmt.Errorf("could not parse uWSGI Stats Server url '%s': %s", s, err.Error()))
 				return
 			}
 
@@ -97,13 +107,13 @@ func (u *Uwsgi) gatherServer(acc telegraf.Accumulator, address *url.URL) error {
 		r = resp.Body
 		s.source = address.Host
 	default:
-		return fmt.Errorf("%q is not a supported scheme", address.Scheme)
+		return fmt.Errorf("'%s' is not a supported scheme", address.Scheme)
 	}
 
 	defer r.Close()
 
 	if err := json.NewDecoder(r).Decode(&s); err != nil {
-		return fmt.Errorf("failed to decode json payload from %q: %w", address.String(), err)
+		return fmt.Errorf("failed to decode json payload from '%s': %s", address.String(), err.Error())
 	}
 
 	u.gatherStatServer(acc, &s)

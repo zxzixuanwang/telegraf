@@ -8,7 +8,7 @@ import (
 	"github.com/influxdata/telegraf/metric"
 )
 
-func makeMetrics(p *V5Format) []telegraf.Metric {
+func makeMetrics(p *V5Format) ([]telegraf.Metric, error) {
 	now := time.Now()
 	metrics := []telegraf.Metric{}
 	tags := map[string]string{
@@ -39,5 +39,5 @@ func makeMetrics(p *V5Format) []telegraf.Metric {
 			}
 		}
 	}
-	return metrics
+	return metrics, nil
 }

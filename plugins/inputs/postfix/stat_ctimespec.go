@@ -1,4 +1,5 @@
 //go:build darwin || freebsd
+// +build darwin freebsd
 
 package postfix
 

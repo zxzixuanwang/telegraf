@@ -1,12 +1,9 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package suricata
 
 import (
 	"bufio"
 	"context"
-	_ "embed"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -16,9 +13,6 @@ import (
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 const (
 	// InBufSize is the input buffer size for JSON received via socket.
@@ -41,7 +35,28 @@ type Suricata struct {
 	wg sync.WaitGroup
 }
 
-func (*Suricata) SampleConfig() string {
+// Description returns the plugin description.
+func (s *Suricata) Description() string {
+	return "Suricata stats and alerts plugin"
+}
+
+const sampleConfig = `
+  ## Data sink for Suricata stats and alerts logs
+  # This is expected to be a filename of a
+  # unix socket to be created for listening.
+  source = "/var/run/suricata-stats.sock"
+
+  # Delimiter for flattening field keys, e.g. subitem "alert" of "detect"
+  # becomes "detect_alert" when delimiter is "_".
+  delimiter = "_"
+  
+  ## Detect alert logs 
+  # alerts = false 
+`
+
+// SampleConfig returns a sample TOML section to illustrate configuration
+// options.
+func (s *Suricata) SampleConfig() string {
 	return sampleConfig
 }
 
@@ -70,7 +85,9 @@ func (s *Suricata) Start(acc telegraf.Accumulator) error {
 // Stop causes the plugin to cease collecting JSON data from the socket provided
 // to Suricata.
 func (s *Suricata) Stop() {
-	s.inputListener.Close() //nolint:revive // Ignore the returned error as we cannot do anything about it anyway
+	// Ignore the returned error as we cannot do anything about it anyway
+	//nolint:errcheck,revive
+	s.inputListener.Close()
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -117,7 +134,7 @@ func (s *Suricata) handleServerConnection(ctx context.Context, acc telegraf.Accu
 			// we want to handle EOF as an opportunity to wait for a new
 			// connection -- this could, for example, happen when Suricata is
 			// restarted while Telegraf is running.
-			if !errors.Is(err, io.EOF) {
+			if err != io.EOF {
 				acc.AddError(err)
 				return
 			}
@@ -183,7 +200,7 @@ func (s *Suricata) parseStats(acc telegraf.Accumulator, result map[string]interf
 		return
 	}
 
-	fields := make(map[string]map[string]interface{})
+	fields := make(map[string](map[string]interface{}))
 	totalmap := make(map[string]interface{})
 	for k, v := range result["stats"].(map[string]interface{}) {
 		if k == "threads" {

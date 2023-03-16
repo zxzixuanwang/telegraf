@@ -1,3 +1,4 @@
+
 # OpenStack Input Plugin
 
 Collects the metrics from following services of OpenStack:
@@ -11,29 +12,23 @@ Collects the metrics from following services of OpenStack:
 
 At present this plugin requires the following APIs:
 
-* blockstorage  v3
+* blockstorage  v2
 * compute  v2
 * identity  v3
 * networking  v2
 * orchestration  v1
 
-## Recommendations
+## Configuration and Recommendations
 
-Due to the large number of unique tags that this plugin generates, in order to
-keep the cardinality down it is **highly recommended** to use
-[modifiers](../../../docs/CONFIGURATION.md#modifiers) like `tagexclude` to
-discard unwanted tags.
+### Recommendations
 
-For deployments with only a small number of VMs and hosts, a small polling
-interval (e.g. seconds-minutes) is acceptable. For larger deployments, polling a
-large number of systems will impact performance. Use the `interval` option to
-change how often the plugin is run:
+Due to the large number of unique tags that this plugin generates, in order to keep the cardinality down it is **highly recommended** to use [modifiers](https://github.com/influxdata/telegraf/blob/master/docs/CONFIGURATION.md#modifiers) like `tagexclude` to discard unwanted tags.
 
-`interval`: How often a metric is gathered. Setting this value at the plugin
-level overrides the global agent interval setting.
+For deployments with only a small number of VMs and hosts, a small polling interval (e.g. seconds-minutes) is acceptable. For larger deployments, polling a large number of systems will impact performance. Use the `interval` option to change how often the plugin is run:
 
-Also, consider polling OpenStack services at different intervals depending on
-your requirements. This will help with load and cardinality as well.
+`interval`: How often a metric is gathered. Setting this value at the plugin level overrides the global agent interval setting.
+
+Also, consider polling OpenStack services at different intervals depending on your requirements. This will help with load and cardinality as well.
 
 ```toml
 [[inputs.openstack]]
@@ -53,20 +48,9 @@ your requirements. This will help with load and cardinality as well.
   ....
 ```
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
+### Configuration
 
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
-## Configuration
-
-```toml @sample.conf
-# Collects performance metrics from OpenStack services
-[[inputs.openstack]]
+```toml
   ## The recommended interval to poll is '30m'
 
   ## The identity endpoint to authenticate against and get the service catalog from.
@@ -82,7 +66,7 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   username = "admin"
   password = "password"
 
-  ## Available services are:
+  ## Available services are: 
   ## "agents", "aggregates", "flavors", "hypervisors", "networks", "nova_services",
   ## "ports", "projects", "servers", "services", "stacks", "storage_pools", "subnets", "volumes"
   # enabled_services = ["services", "projects", "hypervisors", "flavors", "networks", "volumes"]
@@ -106,11 +90,11 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   ## Use TLS but skip chain & host verification
   # insecure_skip_verify = false
 
-  ## Options for tags received from Openstack
+  ## Options for tags received from Openstack 
   # tag_prefix = "openstack_tag_"
   # tag_value = "true"
 
-  ## Timestamp format for timestamp data received from Openstack.
+  ## Timestamp format for timestamp data recieved from Openstack.
   ## If false format is unix nanoseconds.
   # human_readable_timestamps = false
 
@@ -118,7 +102,7 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   # measure_openstack_requests = false
 ```
 
-## Metrics
+### Measurements, Tags & Fields
 
 * openstack_aggregate
   * name
@@ -357,7 +341,7 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   * total_attachments  [integer]
   * updated_at  [string]
 
-## Example Output
+### Example Output
 
 ```text
 > openstack_neutron_agent,agent_host=vim2,agent_type=DHCP\ agent,availability_zone=nova,binary=neutron-dhcp-agent,host=telegraf_host,topic=dhcp_agent admin_state_up=true,alive=true,created_at="2021-01-07T03:40:53Z",heartbeat_timestamp="2021-10-14T07:46:40Z",id="17e1e446-d7da-4656-9e32-67d3690a306f",resources_synced=false,started_at="2021-07-02T21:47:42Z" 1634197616000000000

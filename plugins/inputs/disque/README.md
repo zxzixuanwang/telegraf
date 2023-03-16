@@ -1,21 +1,10 @@
 # Disque Input Plugin
 
-[Disque](https://github.com/antirez/disque) is an ongoing experiment to build a
-distributed, in-memory, message broker.
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+[Disque](https://github.com/antirez/disque) is an ongoing experiment to build a distributed, in-memory, message broker.
 
 ## Configuration
 
-```toml @sample.conf
-# Read metrics from one or many disque servers
+```toml
 [[inputs.disque]]
   ## An array of URI to gather stats about. Specify an ip or hostname
   ## with optional port and password.
@@ -45,5 +34,3 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
     - used_cpu_user_children
     - registered_jobs
     - registered_queues
-
-## Example Output

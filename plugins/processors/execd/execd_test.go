@@ -1,7 +1,6 @@
 package execd
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -21,15 +20,10 @@ func TestExternalProcessorWorks(t *testing.T) {
 	e := New()
 	e.Log = testutil.Logger{}
 
-	parser := &influx.Parser{}
-	require.NoError(t, parser.Init())
-	e.SetParser(parser)
-
 	exe, err := os.Executable()
 	require.NoError(t, err)
 	t.Log(exe)
 	e.Command = []string{exe, "-countmultiplier"}
-	e.Environment = []string{"PLUGINS_PROCESSORS_EXECD_MODE=application", "FIELD_NAME=count"}
 	e.RestartDelay = config.Duration(5 * time.Second)
 
 	acc := &testutil.Accumulator{}
@@ -54,7 +48,7 @@ func TestExternalProcessorWorks(t *testing.T) {
 	}
 
 	acc.Wait(1)
-	e.Stop()
+	require.NoError(t, e.Stop())
 	acc.Wait(9)
 
 	metrics := acc.GetTelegrafMetrics()
@@ -86,15 +80,10 @@ func TestParseLinesWithNewLines(t *testing.T) {
 	e := New()
 	e.Log = testutil.Logger{}
 
-	parser := &influx.Parser{}
-	require.NoError(t, parser.Init())
-	e.SetParser(parser)
-
 	exe, err := os.Executable()
 	require.NoError(t, err)
 	t.Log(exe)
 	e.Command = []string{exe, "-countmultiplier"}
-	e.Environment = []string{"PLUGINS_PROCESSORS_EXECD_MODE=application", "FIELD_NAME=count"}
 	e.RestartDelay = config.Duration(5 * time.Second)
 
 	acc := &testutil.Accumulator{}
@@ -117,7 +106,7 @@ func TestParseLinesWithNewLines(t *testing.T) {
 	require.NoError(t, e.Add(m, acc))
 
 	acc.Wait(1)
-	e.Stop()
+	require.NoError(t, e.Stop())
 
 	processedMetric := acc.GetTelegrafMetrics()[0]
 
@@ -140,8 +129,7 @@ var countmultiplier = flag.Bool("countmultiplier", false,
 
 func TestMain(m *testing.M) {
 	flag.Parse()
-	runMode := os.Getenv("PLUGINS_PROCESSORS_EXECD_MODE")
-	if *countmultiplier && runMode == "application" {
+	if *countmultiplier {
 		runCountMultiplierProgram()
 		os.Exit(0)
 	}
@@ -150,51 +138,55 @@ func TestMain(m *testing.M) {
 }
 
 func runCountMultiplierProgram() {
-	fieldName := os.Getenv("FIELD_NAME")
 	parser := influx.NewStreamParser(os.Stdin)
-	serializer := serializers.NewInfluxSerializer()
+	serializer, _ := serializers.NewInfluxSerializer()
 
 	for {
 		m, err := parser.Next()
 		if err != nil {
-			if errors.Is(err, influx.EOF) {
+			if err == influx.EOF {
 				return // stream ended
 			}
-			var parseErr *influx.ParseError
-			if errors.As(err, &parseErr) {
+			if parseErr, isParseError := err.(*influx.ParseError); isParseError {
+				//nolint:errcheck,revive // Test will fail anyway
 				fmt.Fprintf(os.Stderr, "parse ERR %v\n", parseErr)
 				//nolint:revive // os.Exit called intentionally
 				os.Exit(1)
 			}
+			//nolint:errcheck,revive // Test will fail anyway
 			fmt.Fprintf(os.Stderr, "ERR %v\n", err)
 			//nolint:revive // os.Exit called intentionally
 			os.Exit(1)
 		}
 
-		c, found := m.GetField(fieldName)
+		c, found := m.GetField("count")
 		if !found {
-			fmt.Fprintf(os.Stderr, "metric has no %s field\n", fieldName)
+			//nolint:errcheck,revive // Test will fail anyway
+			fmt.Fprintf(os.Stderr, "metric has no count field\n")
 			//nolint:revive // os.Exit called intentionally
 			os.Exit(1)
 		}
 		switch t := c.(type) {
 		case float64:
 			t *= 2
-			m.AddField(fieldName, t)
+			m.AddField("count", t)
 		case int64:
 			t *= 2
-			m.AddField(fieldName, t)
+			m.AddField("count", t)
 		default:
-			fmt.Fprintf(os.Stderr, "%s is not an unknown type, it's a %T\n", fieldName, c)
+			//nolint:errcheck,revive // Test will fail anyway
+			fmt.Fprintf(os.Stderr, "count is not an unknown type, it's a %T\n", c)
 			//nolint:revive // os.Exit called intentionally
 			os.Exit(1)
 		}
 		b, err := serializer.Serialize(m)
 		if err != nil {
+			//nolint:errcheck,revive // Test will fail anyway
 			fmt.Fprintf(os.Stderr, "ERR %v\n", err)
 			//nolint:revive // os.Exit called intentionally
 			os.Exit(1)
 		}
+		//nolint:errcheck,revive // Test will fail anyway
 		fmt.Fprint(os.Stdout, string(b))
 	}
 }

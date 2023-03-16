@@ -1,4 +1,4 @@
-# Form Urlencoded Parser Plugin
+# Form Urlencoded
 
 The `form-urlencoded` data format parses `application/x-www-form-urlencoded`
 data, such as commonly used in the [query string][].

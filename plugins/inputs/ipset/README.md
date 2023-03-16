@@ -44,19 +44,9 @@ telegraf  ALL=(root) NOPASSWD: IPSETSAVE
 Defaults!IPSETSAVE !logfile, !syslog, !pam_session
 ```
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
-# Gather packets and bytes counters from Linux ipsets
+```toml
   [[inputs.ipset]]
     ## By default, we only show sets which have already matched at least 1 packet.
     ## set include_unmatched_sets = true to gather them all.
@@ -69,8 +59,6 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
     # timeout = "1s"
 
 ```
-
-## Metrics
 
 ## Example Output
 

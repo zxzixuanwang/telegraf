@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// Template represents a pattern and tags to map a metric string to an influxdb Point
+// Template represents a pattern and tags to map a metric string to a influxdb Point
 type Template struct {
 	separator         string
 	parts             []string
@@ -14,21 +14,19 @@ type Template struct {
 	greedyMeasurement bool
 }
 
-// Apply extracts the template fields from the given line and returns the measurement
+// apply extracts the template fields from the given line and returns the measurement
 // name, tags and field name
-//
-//nolint:revive //function-result-limit conditionally 4 return results allowed
-func (t *Template) Apply(line string, joiner string) (measurementName string, tags map[string]string, field string, err error) {
-	allFields := strings.Split(line, t.separator)
+func (t *Template) Apply(line string, joiner string) (string, map[string]string, string, error) {
+	fields := strings.Split(line, t.separator)
 	var (
-		measurements []string
-		tagsMap      = make(map[string][]string)
-		fields       []string
+		measurement []string
+		tags        = make(map[string][]string)
+		field       []string
 	)
 
 	// Set any default tags
 	for k, v := range t.defaultTags {
-		tagsMap[k] = append(tagsMap[k], v)
+		tags[k] = append(tags[k], v)
 	}
 
 	// See if an invalid combination has been specified in the template:
@@ -47,7 +45,7 @@ func (t *Template) Apply(line string, joiner string) (measurementName string, ta
 	}
 
 	for i, tag := range t.parts {
-		if i >= len(allFields) {
+		if i >= len(fields) {
 			continue
 		}
 		if tag == "" {
@@ -56,25 +54,25 @@ func (t *Template) Apply(line string, joiner string) (measurementName string, ta
 
 		switch tag {
 		case "measurement":
-			measurements = append(measurements, allFields[i])
+			measurement = append(measurement, fields[i])
 		case "field":
-			fields = append(fields, allFields[i])
+			field = append(field, fields[i])
 		case "field*":
-			fields = append(fields, allFields[i:]...)
+			field = append(field, fields[i:]...)
 		case "measurement*":
-			measurements = append(measurements, allFields[i:]...)
+			measurement = append(measurement, fields[i:]...)
 		default:
-			tagsMap[tag] = append(tagsMap[tag], allFields[i])
+			tags[tag] = append(tags[tag], fields[i])
 		}
 	}
 
 	// Convert to map of strings.
-	tags = make(map[string]string)
-	for k, values := range tagsMap {
-		tags[k] = strings.Join(values, joiner)
+	outtags := make(map[string]string)
+	for k, values := range tags {
+		outtags[k] = strings.Join(values, joiner)
 	}
 
-	return strings.Join(measurements, joiner), tags, strings.Join(fields, joiner), nil
+	return strings.Join(measurement, joiner), outtags, strings.Join(field, joiner), nil
 }
 
 func NewDefaultTemplateWithPattern(pattern string) (*Template, error) {

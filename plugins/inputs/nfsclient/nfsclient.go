@@ -1,10 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package nfsclient
 
 import (
 	"bufio"
-	_ "embed"
-	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -15,9 +12,6 @@ import (
 	"github.com/influxdata/telegraf/internal/choice"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 type NFSClient struct {
 	Fullstat          bool            `toml:"fullstat"`
@@ -31,10 +25,46 @@ type NFSClient struct {
 	mountstatsPath    string
 }
 
+const sampleConfig = `
+  ## Read more low-level metrics (optional, defaults to false)
+  # fullstat = false
+
+  ## List of mounts to explictly include or exclude (optional)
+  ## The pattern (Go regexp) is matched against the mount point (not the
+  ## device being mounted).  If include_mounts is set, all mounts are ignored
+  ## unless present in the list. If a mount is listed in both include_mounts
+  ## and exclude_mounts, it is excluded.  Go regexp patterns can be used.
+  # include_mounts = []
+  # exclude_mounts = []
+
+  ## List of operations to include or exclude from collecting.  This applies
+  ## only when fullstat=true.  Symantics are similar to {include,exclude}_mounts:
+  ## the default is to collect everything; when include_operations is set, only
+  ## those OPs are collected; when exclude_operations is set, all are collected
+  ## except those listed.  If include and exclude are set, the OP is excluded.
+  ## See /proc/self/mountstats for a list of valid operations; note that
+  ## NFSv3 and NFSv4 have different lists.  While it is not possible to
+  ## have different include/exclude lists for NFSv3/4, unused elements
+  ## in the list should be okay.  It is possible to have different lists
+  ## for different mountpoints:  use mulitple [[input.nfsclient]] stanzas,
+  ## with their own lists.  See "include_mounts" above, and be careful of
+  ## duplicate metrics.
+  # include_operations = []
+  # exclude_operations = []
+`
+
+func (n *NFSClient) SampleConfig() string {
+	return sampleConfig
+}
+
+func (n *NFSClient) Description() string {
+	return "Read per-mount NFS client metrics from /proc/self/mountstats"
+}
+
 func convertToUint64(line []string) ([]uint64, error) {
 	/* A "line" of input data (a pre-split array of strings) is
 	   processed one field at a time.  Each field is converted to
-	   an uint64 value, and appended to an array of return values.
+	   an uint64 value, and appened to an array of return values.
 	   On an error, check for ErrRange, and returns an error
 	   if found.  This situation indicates a pretty major issue in
 	   the /proc/self/mountstats file, and returning faulty data
@@ -42,18 +72,18 @@ func convertToUint64(line []string) ([]uint64, error) {
 	   whatever we got in the first place (probably 0).
 	   Yes, this is ugly. */
 
+	var nline []uint64
+
 	if len(line) < 2 {
-		return nil, nil
+		return nline, nil
 	}
 
-	nline := make([]uint64, 0, len(line[1:]))
 	// Skip the first field; it's handled specially as the "first" variable
 	for _, l := range line[1:] {
 		val, err := strconv.ParseUint(l, 10, 64)
 		if err != nil {
-			var numError *strconv.NumError
-			if errors.As(err, &numError) {
-				if errors.Is(numError.Err, strconv.ErrRange) {
+			if numError, ok := err.(*strconv.NumError); ok {
+				if numError.Err == strconv.ErrRange {
 					return nil, fmt.Errorf("errrange: line:[%v] raw:[%v] -> parsed:[%v]", line, l, val)
 				}
 			}
@@ -160,10 +190,6 @@ func (n *NFSClient) parseStat(mountpoint string, export string, version string, 
 		fields["bytes"] = nline[3] + nline[4]
 		fields["rtt"] = nline[6]
 		fields["exe"] = nline[7]
-		fields["rtt_per_op"] = 0.0
-		if nline[0] > 0 {
-			fields["rtt_per_op"] = float64(nline[6]) / float64(nline[0])
-		}
 		tags["operation"] = first
 		acc.AddFields("nfsstat", fields, tags)
 	}
@@ -291,10 +317,6 @@ func (n *NFSClient) getMountStatsPath() string {
 	return path
 }
 
-func (*NFSClient) SampleConfig() string {
-	return sampleConfig
-}
-
 func (n *NFSClient) Gather(acc telegraf.Accumulator) error {
 	file, err := os.Open(n.mountstatsPath)
 	if err != nil {
@@ -308,7 +330,12 @@ func (n *NFSClient) Gather(acc telegraf.Accumulator) error {
 		return err
 	}
 
-	return scanner.Err()
+	if err := scanner.Err(); err != nil {
+		n.Log.Errorf("%s", err)
+		return err
+	}
+
+	return nil
 }
 
 func (n *NFSClient) Init() error {

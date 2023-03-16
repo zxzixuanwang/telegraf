@@ -6,14 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/metric"
-	"github.com/influxdata/telegraf/plugins/outputs"
-	serializer "github.com/influxdata/telegraf/plugins/serializers/wavefront"
 	"github.com/influxdata/telegraf/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 // default config used by Tests
@@ -48,27 +44,25 @@ func TestBuildMetrics(t *testing.T) {
 
 	var metricTests = []struct {
 		metric       telegraf.Metric
-		metricPoints []serializer.MetricPoint
+		metricPoints []MetricPoint
 	}{
 		{
 			testutil.TestMetric(float64(1), "testing_just*a%metric:float", "metric2"),
-			[]serializer.MetricPoint{
+			[]MetricPoint{
 				{Metric: w.Prefix + "testing.just-a-metric-float", Value: 1, Timestamp: timestamp, Tags: map[string]string{"tag1": "value1"}},
 				{Metric: w.Prefix + "testing.metric2", Value: 1, Timestamp: timestamp, Tags: map[string]string{"tag1": "value1"}},
 			},
 		},
 		{
 			testutil.TestMetric(float64(1), "testing_just/another,metric:float", "metric2"),
-			[]serializer.MetricPoint{
+			[]MetricPoint{
 				{Metric: w.Prefix + "testing.just-another-metric-float", Value: 1, Timestamp: timestamp, Tags: map[string]string{"tag1": "value1"}},
 				{Metric: w.Prefix + "testing.metric2", Value: 1, Timestamp: timestamp, Tags: map[string]string{"tag1": "value1"}},
 			},
 		},
 		{
 			testMetric1,
-			[]serializer.MetricPoint{
-				{Metric: w.Prefix + "test.simple.metric", Value: 123, Timestamp: timestamp, Source: "testHost", Tags: map[string]string{"tag1": "value1"}},
-			},
+			[]MetricPoint{{Metric: w.Prefix + "test.simple.metric", Value: 123, Timestamp: timestamp, Source: "testHost", Tags: map[string]string{"tag1": "value1"}}},
 		},
 	}
 
@@ -93,24 +87,19 @@ func TestBuildMetricsStrict(t *testing.T) {
 
 	var metricTests = []struct {
 		metric       telegraf.Metric
-		metricPoints []serializer.MetricPoint
+		metricPoints []MetricPoint
 	}{
 		{
 			testutil.TestMetric(float64(1), "testing_just*a%metric:float", "metric2"),
-			[]serializer.MetricPoint{
+			[]MetricPoint{
 				{Metric: w.Prefix + "testing.just-a-metric-float", Value: 1, Timestamp: timestamp, Tags: map[string]string{"tag1": "value1"}},
 				{Metric: w.Prefix + "testing.metric2", Value: 1, Timestamp: timestamp, Tags: map[string]string{"tag1": "value1"}},
 			},
 		},
 		{
 			testutil.TestMetric(float64(1), "testing_just/another,metric:float", "metric2"),
-			[]serializer.MetricPoint{
-				{
-					Metric:    w.Prefix + "testing.just/another,metric-float",
-					Value:     1,
-					Timestamp: timestamp,
-					Tags:      map[string]string{"tag/1": "value1", "tag,2": "value2"},
-				},
+			[]MetricPoint{
+				{Metric: w.Prefix + "testing.just/another,metric-float", Value: 1, Timestamp: timestamp, Tags: map[string]string{"tag/1": "value1", "tag,2": "value2"}},
 				{Metric: w.Prefix + "testing.metric2", Value: 1, Timestamp: timestamp, Tags: map[string]string{"tag/1": "value1", "tag,2": "value2"}},
 			},
 		},
@@ -142,15 +131,15 @@ func TestBuildMetricsWithSimpleFields(t *testing.T) {
 
 	var metricTests = []struct {
 		metric      telegraf.Metric
-		metricLines []serializer.MetricPoint
+		metricLines []MetricPoint
 	}{
 		{
 			testutil.TestMetric(float64(1), "testing_just*a%metric:float"),
-			[]serializer.MetricPoint{{Metric: w.Prefix + "testing.just-a-metric-float.value", Value: 1}},
+			[]MetricPoint{{Metric: w.Prefix + "testing.just-a-metric-float.value", Value: 1}},
 		},
 		{
 			testMetric1,
-			[]serializer.MetricPoint{{Metric: w.Prefix + "test.simple.metric.value", Value: 123}},
+			[]MetricPoint{{Metric: w.Prefix + "test.simple.metric.value", Value: 123}},
 		},
 	}
 
@@ -253,11 +242,6 @@ func TestBuildTagsWithSource(t *testing.T) {
 			map[string]string{"something": "abc", "host": "r*@l\"Ho/st"},
 			"r-@l\"Ho/st",
 			map[string]string{"something": "abc"},
-		},
-		{
-			map[string]string{"hostagent": "realHost", "env": "qa", "tag": "val"},
-			"realHost",
-			map[string]string{"env": "qa", "tag": "val"},
 		},
 	}
 
@@ -365,27 +349,7 @@ func TestTagLimits(t *testing.T) {
 	require.Equal(t, longKey, tags[longKey])
 }
 
-func TestSenderURLFromHostAndPort(t *testing.T) {
-	require.Equal(t, "http://localhost:2878", senderURLFromHostAndPort("localhost", 2878))
-}
-
-func TestSenderURLFromURLAndToken(t *testing.T) {
-	w := &Wavefront{
-		URL:   "https://surf.wavefront.com",
-		Token: config.NewSecret([]byte("11111111-2222-3333-4444-555555555555")),
-	}
-
-	url, err := w.senderURLFromURLAndToken()
-	require.NoError(t, err)
-	require.Equal(t, "https://11111111-2222-3333-4444-555555555555@surf.wavefront.com", url)
-}
-
-func TestDefaults(t *testing.T) {
-	defaultWavefront := outputs.Outputs["wavefront"]().(*Wavefront)
-	require.Equal(t, 10000, defaultWavefront.HTTPMaximumBatchSize)
-}
-
-// Benchmarks to test performance of string replacement via Regex and Sanitize
+// Benchmarks to test performance of string replacement via Regex and Replacer
 var testString = "this_is*my!test/string\\for=replacement"
 
 func BenchmarkReplaceAllString(b *testing.B) {
@@ -402,6 +366,6 @@ func BenchmarkReplaceAllLiteralString(b *testing.B) {
 
 func BenchmarkReplacer(b *testing.B) {
 	for n := 0; n < b.N; n++ {
-		serializer.Sanitize(false, testString)
+		sanitizedChars.Replace(testString)
 	}
 }

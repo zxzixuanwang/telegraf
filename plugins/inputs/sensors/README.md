@@ -1,25 +1,14 @@
 # LM Sensors Input Plugin
 
-Collect [lm-sensors](https://en.wikipedia.org/wiki/Lm_sensors) metrics -
-requires the lm-sensors package installed.
+Collect [lm-sensors](https://en.wikipedia.org/wiki/Lm_sensors) metrics - requires the lm-sensors
+package installed.
 
-This plugin collects sensor metrics with the `sensors` executable from the
-lm-sensor package.
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+This plugin collects sensor metrics with the `sensors` executable from the lm-sensor package.
 
 ## Configuration
 
-```toml @sample.conf
+```toml
 # Monitor sensors, requires lm-sensors package
-# This plugin ONLY supports Linux
 [[inputs.sensors]]
   ## Remove numbers from field names.
   ## If true, a field name like 'temp1_input' will be changed to 'temp_input'.
@@ -29,11 +18,11 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   # timeout = "5s"
 ```
 
-## Metrics
+## Measurements & Fields
 
 Fields are created dynamically depending on the sensors. All fields are float.
 
-### Tags
+## Tags
 
 - All measurements have the following tags:
   - chip

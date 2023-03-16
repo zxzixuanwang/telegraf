@@ -1,32 +1,26 @@
 # HTTP Listener v2 Input Plugin
 
 HTTP Listener v2 is a service input plugin that listens for metrics sent via
-HTTP. Metrics may be sent in any supported [data format][data_format]. For
-metrics in [InfluxDB Line Protocol][line_protocol] it's recommended to use the
-[`influxdb_listener`][influxdb_listener] or
-[`influxdb_v2_listener`][influxdb_v2_listener] instead.
+HTTP. Metrics may be sent in any supported [data format][data_format]. For metrics in
+[InfluxDB Line Protocol][line_protocol] it's recommended to use the [`influxdb_listener`][influxdb_listener]
+or [`influxdb_v2_listener`][influxdb_v2_listener] instead.
 
 **Note:** The plugin previously known as `http_listener` has been renamed
 `influxdb_listener`.  If you would like Telegraf to act as a proxy/relay for
-InfluxDB it is recommended to use [`influxdb_listener`][influxdb_listener] or
-[`influxdb_v2_listener`][influxdb_v2_listener].
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+InfluxDB it is recommended to use [`influxdb_listener`][influxdb_listener] or [`influxdb_v2_listener`][influxdb_v2_listener].
 
 ## Configuration
 
-```toml @sample.conf
-# Generic HTTP write listener
+This is a sample configuration for the plugin.
+
+```toml
 [[inputs.http_listener_v2]]
   ## Address and port to host HTTP listener on
   service_address = ":8080"
+
+  ## Path to listen to.
+  ## This option is deprecated and only available for backward-compatibility. Please use paths instead.
+  # path = ""
 
   ## Paths to listen to.
   # paths = ["/telegraf"]
@@ -36,11 +30,6 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
 
   ## HTTP methods to accept.
   # methods = ["POST", "PUT"]
-
-  ## Optional HTTP headers
-  ## These headers are applied to the server that is listening for HTTP
-  ## requests and included in responses.
-  # http_headers = {"HTTP_HEADER" = "TAG_NAME"}
 
   ## maximum duration before timing out read of the request
   # read_timeout = "10s"
@@ -63,9 +52,6 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   # tls_cert = "/etc/telegraf/cert.pem"
   # tls_key = "/etc/telegraf/key.pem"
 
-  ## Minimal TLS version accepted by the server
-  # tls_min_version = "TLS12"
-
   ## Optional username and password to accept for HTTP basic authentication.
   ## You probably want to make sure you have TLS configured above for this.
   # basic_username = "foobar"
@@ -85,10 +71,7 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
 
 ## Metrics
 
-Metrics are collected from the part of the request specified by the
-`data_source` param and are parsed depending on the value of `data_format`.
-
-## Example Output
+Metrics are collected from the part of the request specified by the `data_source` param and are parsed depending on the value of `data_format`.
 
 ## Troubleshooting
 

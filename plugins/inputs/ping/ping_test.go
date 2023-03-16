@@ -1,4 +1,5 @@
 //go:build !windows
+// +build !windows
 
 package ping
 
@@ -10,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	ping "github.com/prometheus-community/pro-bing"
+	"github.com/go-ping/ping"
 	"github.com/stretchr/testify/require"
 
 	"github.com/influxdata/telegraf/plugins/inputs"
@@ -362,7 +363,7 @@ func TestFatalPingGather(t *testing.T) {
 
 	err := acc.GatherError(p.Gather)
 	require.Error(t, err)
-	require.EqualValues(t, "host \"www.amazon.com\": so very bad - ping: -i interval too short: Operation not permitted", err.Error())
+	require.EqualValues(t, err.Error(), "host www.amazon.com: ping: -i interval too short: Operation not permitted, so very bad")
 	require.False(t, acc.HasMeasurement("packets_transmitted"),
 		"Fatal ping should not have packet measurements")
 	require.False(t, acc.HasMeasurement("packets_received"),
@@ -384,8 +385,8 @@ func TestErrorWithHostNamePingGather(t *testing.T) {
 		out   string
 		error error
 	}{
-		{"", errors.New("host \"www.amazon.com\": so very bad")},
-		{"so bad", errors.New("host \"www.amazon.com\": so very bad")},
+		{"", errors.New("host www.amazon.com: so very bad")},
+		{"so bad", errors.New("host www.amazon.com: so bad, so very bad")},
 	}
 
 	for _, param := range params {
@@ -397,8 +398,8 @@ func TestErrorWithHostNamePingGather(t *testing.T) {
 			},
 		}
 		require.Error(t, acc.GatherError(p.Gather))
-		require.Equal(t, 1, len(acc.Errors))
-		require.Contains(t, acc.Errors[0].Error(), param.error.Error())
+		require.True(t, len(acc.Errors) > 0)
+		require.Contains(t, acc.Errors, param.error)
 	}
 }
 
@@ -414,7 +415,7 @@ func TestPingBinary(t *testing.T) {
 	}
 	err := acc.GatherError(p.Gather)
 	require.Error(t, err)
-	require.EqualValues(t, "\"www.google.com\": fatal error processing ping output", err.Error())
+	require.EqualValues(t, err.Error(), "fatal error processing ping output: www.google.com")
 }
 
 // Test that Gather function works using native ping

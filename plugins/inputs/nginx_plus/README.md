@@ -1,45 +1,20 @@
 # Nginx Plus Input Plugin
 
-Nginx Plus is a commercial version of the open source web server Nginx. The use
-this plugin you will need a license. For more information about the differences
-between Nginx (F/OSS) and Nginx Plus, see the Nginx [documentation][diff-doc].
+Nginx Plus is a commercial version of the open source web server Nginx. The use this plugin you will need a license. For more information about the differences between Nginx (F/OSS) and Nginx Plus, [click here](https://www.nginx.com/blog/whats-difference-nginx-foss-nginx-plus/).
 
-Structures for Nginx Plus have been built based on history of [status module
-documentation][status-mod].
-
-[diff-doc]: https://www.nginx.com/blog/whats-difference-nginx-foss-nginx-plus/
-
-[status-mod]: http://nginx.org/en/docs/http/ngx_http_status_module.html
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+Structures for Nginx Plus have been built based on history of
+[status module documentation](http://nginx.org/en/docs/http/ngx_http_status_module.html)
 
 ## Configuration
 
-```toml @sample.conf
+```toml
 # Read Nginx Plus' advanced status information
 [[inputs.nginx_plus]]
   ## An array of Nginx status URIs to gather stats.
   urls = ["http://localhost/status"]
-
-  # HTTP response timeout (default: 5s)
-  response_timeout = "5s"
-
-  ## Optional TLS Config
-  # tls_ca = "/etc/telegraf/ca.pem"
-  # tls_cert = "/etc/telegraf/cert.pem"
-  # tls_key = "/etc/telegraf/key.pem"
-  ## Use TLS but skip chain & host verification
-  # insecure_skip_verify = false
 ```
 
-## Metrics
+## Measurements & Fields
 
 - nginx_plus_processes
   - respawned
@@ -84,7 +59,7 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   - fails
   - downtime
 
-### Tags
+## Tags
 
 - nginx_plus_processes, nginx_plus_connections, nginx_plus_ssl, nginx_plus_requests
   - server

@@ -1,7 +1,6 @@
 # Ping Input Plugin
 
-Sends a ping message by executing the system ping command and reports the
-results.
+Sends a ping message by executing the system ping command and reports the results.
 
 This plugin has two main methods of operation: `exec` and `native`.  The
 recommended method is `native`, which has greater system compatibility and
@@ -23,19 +22,9 @@ When using `method = "native"` a ping is sent and the results are reported in
 native Go by the Telegraf process, eliminating the need to execute the system
 `ping` command.
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
-# Ping given url(s) and return statistics
+```toml
 [[inputs.ping]]
   ## Hosts to send ping packets to.
   urls = ["example.org"]
@@ -120,9 +109,8 @@ systemctl restart telegraf
 
 ### Linux Permissions
 
-When using `method = "native"`, Telegraf will attempt to use privileged raw ICMP
-sockets.  On most systems, doing so requires `CAP_NET_RAW` capabilities or for
-Telegraf to be run as root.
+When using `method = "native"`, Telegraf will attempt to use privileged raw
+ICMP sockets.  On most systems, doing so requires `CAP_NET_RAW` capabilities or for Telegraf to be run as root.
 
 With systemd:
 
@@ -153,8 +141,7 @@ setting capabilities.
 
 ### Other OS Permissions
 
-When using `method = "native"`, you will need permissions similar to the
-executable ping program for your OS.
+When using `method = "native"`, you will need permissions similar to the executable ping program for your OS.
 
 ## Metrics
 
@@ -178,8 +165,7 @@ executable ping program for your OS.
 
 ### reply_received vs packets_received
 
-On Windows systems with `method = "exec"`, the "Destination net unreachable"
-reply will increment `packets_received` but not `reply_received`*.
+On Windows systems with `method = "exec"`, the "Destination net unreachable" reply will increment `packets_received` but not `reply_received`*.
 
 ### ttl
 

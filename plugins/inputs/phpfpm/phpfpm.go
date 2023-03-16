@@ -1,10 +1,8 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package phpfpm
 
 import (
 	"bufio"
 	"bytes"
-	_ "embed"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,9 +18,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 const (
 	PfPool               = "pool"
@@ -51,8 +46,45 @@ type phpfpm struct {
 	client *http.Client
 }
 
-func (*phpfpm) SampleConfig() string {
+var sampleConfig = `
+  ## An array of addresses to gather stats about. Specify an ip or hostname
+  ## with optional port and path
+  ##
+  ## Plugin can be configured in three modes (either can be used):
+  ##   - http: the URL must start with http:// or https://, ie:
+  ##       "http://localhost/status"
+  ##       "http://192.168.130.1/status?full"
+  ##
+  ##   - unixsocket: path to fpm socket, ie:
+  ##       "/var/run/php5-fpm.sock"
+  ##      or using a custom fpm status path:
+  ##       "/var/run/php5-fpm.sock:fpm-custom-status-path"
+  ##
+  ##   - fcgi: the URL must start with fcgi:// or cgi://, and port must be present, ie:
+  ##       "fcgi://10.0.0.12:9000/status"
+  ##       "cgi://10.0.10.12:9001/status"
+  ##
+  ## Example of multiple gathering from local socket and remote host
+  ## urls = ["http://192.168.1.20/status", "/tmp/fpm.sock"]
+  urls = ["http://localhost/status"]
+
+  ## Duration allowed to complete HTTP requests.
+  # timeout = "5s"
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+`
+
+func (p *phpfpm) SampleConfig() string {
 	return sampleConfig
+}
+
+func (p *phpfpm) Description() string {
+	return "Read metrics of phpfpm, via HTTP status page or socket"
 }
 
 func (p *phpfpm) Init() error {
@@ -113,7 +145,7 @@ func (p *phpfpm) gatherServer(addr string, acc telegraf.Accumulator) error {
 	if strings.HasPrefix(addr, "fcgi://") || strings.HasPrefix(addr, "cgi://") {
 		u, err := url.Parse(addr)
 		if err != nil {
-			return fmt.Errorf("unable parse server address %q: %w", addr, err)
+			return fmt.Errorf("unable parse server address '%s': %s", addr, err)
 		}
 		socketAddr := strings.Split(u.Host, ":")
 		fcgiIP := socketAddr[0]
@@ -158,29 +190,29 @@ func (p *phpfpm) gatherFcgi(fcgi *conn, statusPath string, acc telegraf.Accumula
 		importMetric(bytes.NewReader(fpmOutput), acc, addr)
 		return nil
 	}
-	return fmt.Errorf("unable parse phpfpm status, error: %s; %w", string(fpmErr), err)
+	return fmt.Errorf("unable parse phpfpm status, error: %v %v", string(fpmErr), err)
 }
 
 // Gather stat using http protocol
 func (p *phpfpm) gatherHTTP(addr string, acc telegraf.Accumulator) error {
 	u, err := url.Parse(addr)
 	if err != nil {
-		return fmt.Errorf("unable parse server address %q: %w", addr, err)
+		return fmt.Errorf("unable parse server address '%s': %v", addr, err)
 	}
 
 	req, err := http.NewRequest("GET", u.String(), nil)
 	if err != nil {
-		return fmt.Errorf("unable to create new request %q: %w", addr, err)
+		return fmt.Errorf("unable to create new request '%s': %v", addr, err)
 	}
 
 	res, err := p.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("unable to connect to phpfpm status page %q: %w", addr, err)
+		return fmt.Errorf("unable to connect to phpfpm status page '%s': %v", addr, err)
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != 200 {
-		return fmt.Errorf("unable to get valid stat result from %q: %w", addr, err)
+		return fmt.Errorf("unable to get valid stat result from '%s': %v", addr, err)
 	}
 
 	importMetric(res.Body, acc, addr)
@@ -236,7 +268,7 @@ func importMetric(r io.Reader, acc telegraf.Accumulator, addr string) {
 		}
 		fields := make(map[string]interface{})
 		for k, v := range stats[pool] {
-			fields[strings.ReplaceAll(k, " ", "_")] = v
+			fields[strings.Replace(k, " ", "_", -1)] = v
 		}
 		acc.AddFields("phpfpm", fields, tags)
 	}
@@ -262,7 +294,7 @@ func globUnixSocket(address string) ([]string, error) {
 	pattern, status := unixSocketPaths(address)
 	glob, err := globpath.Compile(pattern)
 	if err != nil {
-		return nil, fmt.Errorf("could not compile glob %q: %w", pattern, err)
+		return nil, fmt.Errorf("could not compile glob %q: %v", pattern, err)
 	}
 	paths := glob.Match()
 	if len(paths) == 0 {

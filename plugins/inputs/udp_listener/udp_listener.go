@@ -1,9 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package udp_listener
 
 import (
-	_ "embed"
-	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -14,9 +11,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/parsers"
 	"github.com/influxdata/telegraf/selfstat"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 // UDPListener main struct for the collector
 type UDPListener struct {
@@ -73,8 +67,18 @@ var dropwarn = "udp_listener message queue full. " +
 var malformedwarn = "udp_listener has received %d malformed packets" +
 	" thus far."
 
-func (*UDPListener) SampleConfig() string {
+const sampleConfig = `
+  # DEPRECATED: the TCP listener plugin has been deprecated in favor of the
+  # socket_listener plugin
+  # see https://github.com/influxdata/telegraf/tree/master/plugins/inputs/socket_listener
+`
+
+func (u *UDPListener) SampleConfig() string {
 	return sampleConfig
+}
+
+func (u *UDPListener) Description() string {
+	return "Generic UDP listener"
 }
 
 // All the work is done in the Start() function, so this is just a dummy
@@ -121,7 +125,9 @@ func (u *UDPListener) Stop() {
 	defer u.Unlock()
 	close(u.done)
 	u.wg.Wait()
-	u.listener.Close() //nolint:revive // Ignore the returned error as we cannot do anything about it anyway
+	// Ignore the returned error as we cannot do anything about it anyway
+	//nolint:errcheck,revive
+	u.listener.Close()
 	close(u.in)
 	u.Log.Infof("Stopped service on %q", u.ServiceAddress)
 }
@@ -141,7 +147,7 @@ func (u *UDPListener) udpListen() error {
 	if u.UDPBufferSize > 0 {
 		err = u.listener.SetReadBuffer(u.UDPBufferSize) // if we want to move away from OS default
 		if err != nil {
-			return fmt.Errorf("failed to set UDP read buffer to %d: %w", u.UDPBufferSize, err)
+			return fmt.Errorf("failed to set UDP read buffer to %d: %s", u.UDPBufferSize, err)
 		}
 	}
 
@@ -165,8 +171,7 @@ func (u *UDPListener) udpListenLoop() {
 
 			n, _, err := u.listener.ReadFromUDP(buf)
 			if err != nil {
-				var netErr net.Error
-				if !errors.As(err, &netErr) || !netErr.Timeout() {
+				if err, ok := err.(net.Error); !ok || !err.Timeout() {
 					u.Log.Error(err.Error())
 				}
 				continue

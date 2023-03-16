@@ -1,6 +1,7 @@
 //go:build windows
+// +build windows
 
-package port_name
+package portname
 
 import (
 	"os"

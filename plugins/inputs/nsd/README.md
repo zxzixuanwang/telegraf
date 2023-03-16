@@ -4,18 +4,9 @@ This plugin gathers stats from
 [NSD](https://www.nlnetlabs.nl/projects/nsd/about) - an authoritative DNS name
 server.
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
+```toml
 # A plugin to collect stats from the NSD DNS resolver
 [[inputs.nsd]]
   ## Address of server to connect to, optionally ':port'. Defaults to the
@@ -186,5 +177,3 @@ dots in the nsd-control stat name are replaced by underscores (see
     - server
   - fields:
     - queries
-
-## Example Output

@@ -7,10 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/go-connections/nat"
-	"github.com/go-redis/redis/v8"
+	"github.com/go-redis/redis"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/influxdata/telegraf/testutil"
 )
@@ -30,26 +28,12 @@ func (t *testClient) Do(_ string, _ ...interface{}) (interface{}, error) {
 	return 2, nil
 }
 
-func (t *testClient) Close() error {
-	return nil
-}
-
 func TestRedisConnectIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	servicePort := "6379"
-	container := testutil.Container{
-		Image:        "redis:alpine",
-		ExposedPorts: []string{servicePort},
-		WaitingFor:   wait.ForListeningPort(nat.Port(servicePort)),
-	}
-	err := container.Start()
-	require.NoError(t, err, "failed to start container")
-	defer container.Terminate()
-
-	addr := fmt.Sprintf("%s:%s", container.Address, container.Ports[servicePort])
+	addr := fmt.Sprintf(testutil.GetLocalHost() + ":6379")
 
 	r := &Redis{
 		Log:     testutil.Logger{},
@@ -58,7 +42,7 @@ func TestRedisConnectIntegration(t *testing.T) {
 
 	var acc testutil.Accumulator
 
-	err = acc.GatherError(r.Gather)
+	err := acc.GatherError(r.Gather)
 	require.NoError(t, err)
 }
 

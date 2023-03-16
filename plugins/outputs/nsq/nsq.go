@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package nsq
 
 import (
-	_ "embed"
 	"fmt"
 
 	"github.com/nsqio/go-nsq"
@@ -11,9 +9,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/outputs"
 	"github.com/influxdata/telegraf/plugins/serializers"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 type NSQ struct {
 	Server string
@@ -24,9 +19,18 @@ type NSQ struct {
 	serializer serializers.Serializer
 }
 
-func (*NSQ) SampleConfig() string {
-	return sampleConfig
-}
+var sampleConfig = `
+  ## Location of nsqd instance listening on TCP
+  server = "localhost:4150"
+  ## NSQ topic for producer messages
+  topic = "telegraf"
+
+  ## Data format to output.
+  ## Each data format has its own unique set of configuration options, read
+  ## more about them here:
+  ## https://github.com/influxdata/telegraf/blob/master/docs/DATA_FORMATS_OUTPUT.md
+  data_format = "influx"
+`
 
 func (n *NSQ) SetSerializer(serializer serializers.Serializer) {
 	n.serializer = serializer
@@ -49,6 +53,14 @@ func (n *NSQ) Close() error {
 	return nil
 }
 
+func (n *NSQ) SampleConfig() string {
+	return sampleConfig
+}
+
+func (n *NSQ) Description() string {
+	return "Send telegraf measurements to NSQD"
+}
+
 func (n *NSQ) Write(metrics []telegraf.Metric) error {
 	if len(metrics) == 0 {
 		return nil
@@ -63,7 +75,7 @@ func (n *NSQ) Write(metrics []telegraf.Metric) error {
 
 		err = n.producer.Publish(n.Topic, buf)
 		if err != nil {
-			return fmt.Errorf("failed to send NSQD message: %w", err)
+			return fmt.Errorf("failed to send NSQD message: %s", err)
 		}
 	}
 	return nil

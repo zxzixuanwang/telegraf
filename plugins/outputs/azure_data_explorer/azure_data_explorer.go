@@ -1,31 +1,24 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package azure_data_explorer
 
 import (
 	"bytes"
 	"context"
-	_ "embed"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
 	"github.com/Azure/azure-kusto-go/kusto"
-	kustoerrors "github.com/Azure/azure-kusto-go/kusto/data/errors"
 	"github.com/Azure/azure-kusto-go/kusto/ingest"
 	"github.com/Azure/azure-kusto-go/kusto/unsafe"
 	"github.com/Azure/go-autorest/autorest/azure/auth"
-
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
-	"github.com/influxdata/telegraf/internal/choice"
 	"github.com/influxdata/telegraf/plugins/outputs"
 	"github.com/influxdata/telegraf/plugins/serializers"
 	"github.com/influxdata/telegraf/plugins/serializers/json"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 type AzureDataExplorer struct {
 	Endpoint        string          `toml:"endpoint_url"`
@@ -35,10 +28,10 @@ type AzureDataExplorer struct {
 	MetricsGrouping string          `toml:"metrics_grouping_type"`
 	TableName       string          `toml:"table_name"`
 	CreateTables    bool            `toml:"create_tables"`
-	IngestionType   string          `toml:"ingestion_type"`
+	client          localClient
+	ingesters       map[string]localIngestor
 	serializer      serializers.Serializer
-	kustoClient     *kusto.Client
-	metricIngestors map[string]ingest.Ingestor
+	createIngestor  ingestorFactory
 }
 
 const (
@@ -49,20 +42,51 @@ const (
 	maxBuffers = 5
 )
 
-const createTableCommand = `.create-merge table ['%s']  (['fields']:dynamic, ['name']:string, ['tags']:dynamic, ['timestamp']:datetime);`
-const createTableMappingCommand = `.create-or-alter table ['%s'] ingestion json mapping '%s_mapping' '[{"column":"fields", ` +
-	`"Properties":{"Path":"$[\'fields\']"}},{"column":"name", ` +
-	`"Properties":{"Path":"$[\'name\']"}},{"column":"tags", ` +
-	`"Properties":{"Path":"$[\'tags\']"}},{"column":"timestamp", ` +
-	`"Properties":{"Path":"$[\'timestamp\']"}}]'`
-const managedIngestion = "managed"
-const queuedIngestion = "queued"
-
-func (*AzureDataExplorer) SampleConfig() string {
-	return sampleConfig
+type localIngestor interface {
+	FromReader(ctx context.Context, reader io.Reader, options ...ingest.FileOption) (*ingest.Result, error)
 }
 
-// Initialize the client and the ingestor
+type localClient interface {
+	Mgmt(ctx context.Context, db string, query kusto.Stmt, options ...kusto.MgmtOption) (*kusto.RowIterator, error)
+}
+
+type ingestorFactory func(localClient, string, string) (localIngestor, error)
+
+const createTableCommand = `.create-merge table ['%s']  (['fields']:dynamic, ['name']:string, ['tags']:dynamic, ['timestamp']:datetime);`
+const createTableMappingCommand = `.create-or-alter table ['%s'] ingestion json mapping '%s_mapping' '[{"column":"fields", "Properties":{"Path":"$[\'fields\']"}},{"column":"name", "Properties":{"Path":"$[\'name\']"}},{"column":"tags", "Properties":{"Path":"$[\'tags\']"}},{"column":"timestamp", "Properties":{"Path":"$[\'timestamp\']"}}]'`
+
+func (adx *AzureDataExplorer) Description() string {
+	return "Sends metrics to Azure Data Explorer"
+}
+
+func (adx *AzureDataExplorer) SampleConfig() string {
+	return `
+  ## Azure Data Explorer cluster endpoint
+  ## ex: endpoint_url = "https://clustername.australiasoutheast.kusto.windows.net"
+  endpoint_url = ""
+  
+  ## The Azure Data Explorer database that the metrics will be ingested into.
+  ## The plugin will NOT generate this database automatically, it's expected that this database already exists before ingestion.
+  ## ex: "exampledatabase"
+  database = ""
+
+  ## Timeout for Azure Data Explorer operations
+  # timeout = "20s"
+
+  ## Type of metrics grouping used when pushing to Azure Data Explorer. 
+  ## Default is "TablePerMetric" for one table per different metric. 
+  ## For more information, please check the plugin README.
+  # metrics_grouping_type = "TablePerMetric"
+
+  ## Name of the single table to store all the metrics (Only needed if metrics_grouping_type is "SingleTable").
+  # table_name = ""
+
+  ## Creates tables and relevant mapping if set to true(default). 
+  ## Skips table and mapping creation if set to false, this is useful for running Telegraf with the lowest possible permissions i.e. table ingestor role.
+  # create_tables = true
+`
+}
+
 func (adx *AzureDataExplorer) Connect() error {
 	authorizer, err := auth.NewAuthorizerFromEnvironmentWithResource(adx.Endpoint)
 	if err != nil {
@@ -76,34 +100,18 @@ func (adx *AzureDataExplorer) Connect() error {
 	if err != nil {
 		return err
 	}
-	adx.kustoClient = client
-	adx.metricIngestors = make(map[string]ingest.Ingestor)
+	adx.client = client
+	adx.ingesters = make(map[string]localIngestor)
+	adx.createIngestor = createRealIngestor
 
 	return nil
 }
 
-// Clean up and close the ingestor
 func (adx *AzureDataExplorer) Close() error {
-	var errs []error
-	for _, v := range adx.metricIngestors {
-		if err := v.Close(); err != nil {
-			// accumulate errors while closing ingestors
-			errs = append(errs, err)
-		}
-	}
-	if err := adx.kustoClient.Close(); err != nil {
-		errs = append(errs, err)
-	}
+	adx.client = nil
+	adx.ingesters = nil
 
-	adx.kustoClient = nil
-	adx.metricIngestors = nil
-
-	if len(errs) == 0 {
-		adx.Log.Info("Closed ingestors and client")
-		return nil
-	}
-	// Combine errors into a single object and return the combined error
-	return kustoerrors.GetCombinedError(errs...)
+	return nil
 }
 
 func (adx *AzureDataExplorer) Write(metrics []telegraf.Metric) error {
@@ -165,40 +173,32 @@ func (adx *AzureDataExplorer) writeSingleTable(metrics []telegraf.Metric) error 
 }
 
 func (adx *AzureDataExplorer) pushMetrics(ctx context.Context, format ingest.FileOption, tableName string, metricsArray []byte) error {
-	var metricIngestor ingest.Ingestor
-	var err error
-
-	metricIngestor, err = adx.getMetricIngestor(ctx, tableName)
+	ingestor, err := adx.getIngestor(ctx, tableName)
 	if err != nil {
 		return err
 	}
 
-	length := len(metricsArray)
-	adx.Log.Debugf("Writing %s metrics to table %q", length, tableName)
 	reader := bytes.NewReader(metricsArray)
 	mapping := ingest.IngestionMappingRef(fmt.Sprintf("%s_mapping", tableName), ingest.JSON)
-	if metricIngestor != nil {
-		if _, err := metricIngestor.FromReader(ctx, reader, format, mapping); err != nil {
-			adx.Log.Errorf("sending ingestion request to Azure Data Explorer for table %q failed: %v", tableName, err)
-		}
+	if _, err := ingestor.FromReader(ctx, reader, format, mapping); err != nil {
+		adx.Log.Errorf("sending ingestion request to Azure Data Explorer for table %q failed: %v", tableName, err)
 	}
 	return nil
 }
 
-func (adx *AzureDataExplorer) getMetricIngestor(ctx context.Context, tableName string) (ingest.Ingestor, error) {
-	ingestor := adx.metricIngestors[tableName]
+func (adx *AzureDataExplorer) getIngestor(ctx context.Context, tableName string) (localIngestor, error) {
+	ingestor := adx.ingesters[tableName]
 
 	if ingestor == nil {
 		if err := adx.createAzureDataExplorerTable(ctx, tableName); err != nil {
-			return nil, fmt.Errorf("creating table for %q failed: %w", tableName, err)
+			return nil, fmt.Errorf("creating table for %q failed: %v", tableName, err)
 		}
 		//create a new ingestor client for the table
-		tempIngestor, err := createIngestorByTable(adx.kustoClient, adx.Database, tableName, adx.IngestionType)
+		tempIngestor, err := adx.createIngestor(adx.client, adx.Database, tableName)
 		if err != nil {
-			return nil, fmt.Errorf("creating ingestor for %q failed: %w", tableName, err)
+			return nil, fmt.Errorf("creating ingestor for %q failed: %v", tableName, err)
 		}
-		adx.metricIngestors[tableName] = tempIngestor
-		adx.Log.Debugf("Ingestor for table %s created", tableName)
+		adx.ingesters[tableName] = tempIngestor
 		ingestor = tempIngestor
 	}
 	return ingestor, nil
@@ -210,13 +210,12 @@ func (adx *AzureDataExplorer) createAzureDataExplorerTable(ctx context.Context, 
 		return nil
 	}
 	createStmt := kusto.NewStmt("", kusto.UnsafeStmt(unsafe.Stmt{Add: true, SuppressWarning: true})).UnsafeAdd(fmt.Sprintf(createTableCommand, tableName))
-	if _, err := adx.kustoClient.Mgmt(ctx, adx.Database, createStmt); err != nil {
+	if _, err := adx.client.Mgmt(ctx, adx.Database, createStmt); err != nil {
 		return err
 	}
 
-	createTableMappingstmt := kusto.NewStmt("", kusto.UnsafeStmt(unsafe.Stmt{Add: true, SuppressWarning: true})).
-		UnsafeAdd(fmt.Sprintf(createTableMappingCommand, tableName, tableName))
-	if _, err := adx.kustoClient.Mgmt(ctx, adx.Database, createTableMappingstmt); err != nil {
+	createTableMappingstmt := kusto.NewStmt("", kusto.UnsafeStmt(unsafe.Stmt{Add: true, SuppressWarning: true})).UnsafeAdd(fmt.Sprintf(createTableMappingCommand, tableName, tableName))
+	if _, err := adx.client.Mgmt(ctx, adx.Database, createTableMappingstmt); err != nil {
 		return err
 	}
 
@@ -225,33 +224,24 @@ func (adx *AzureDataExplorer) createAzureDataExplorerTable(ctx context.Context, 
 
 func (adx *AzureDataExplorer) Init() error {
 	if adx.Endpoint == "" {
-		return errors.New("endpoint configuration cannot be empty")
+		return errors.New("Endpoint configuration cannot be empty")
 	}
 	if adx.Database == "" {
-		return errors.New("database configuration cannot be empty")
+		return errors.New("Database configuration cannot be empty")
 	}
 
 	adx.MetricsGrouping = strings.ToLower(adx.MetricsGrouping)
 	if adx.MetricsGrouping == singleTable && adx.TableName == "" {
-		return errors.New("table name cannot be empty for SingleTable metrics grouping type")
+		return errors.New("Table name cannot be empty for SingleTable metrics grouping type")
 	}
 	if adx.MetricsGrouping == "" {
 		adx.MetricsGrouping = tablePerMetric
 	}
 	if !(adx.MetricsGrouping == singleTable || adx.MetricsGrouping == tablePerMetric) {
-		return errors.New("metrics grouping type is not valid")
+		return errors.New("Metrics grouping type is not valid")
 	}
 
-	if adx.IngestionType == "" {
-		adx.IngestionType = queuedIngestion
-	} else if !(choice.Contains(adx.IngestionType, []string{managedIngestion, queuedIngestion})) {
-		return fmt.Errorf("unknown ingestion type %q", adx.IngestionType)
-	}
-
-	serializer, err := json.NewSerializer(json.FormatConfig{
-		TimestampUnits:  time.Nanosecond,
-		TimestampFormat: time.RFC3339Nano,
-	})
+	serializer, err := json.NewSerializer(time.Second, "") // FIXME: get the json.TimestampFormat from the config file
 	if err != nil {
 		return err
 	}
@@ -268,15 +258,10 @@ func init() {
 	})
 }
 
-// For each table create the ingestor
-func createIngestorByTable(client *kusto.Client, database string, tableName string, ingestionType string) (ingest.Ingestor, error) {
-	switch strings.ToLower(ingestionType) {
-	case managedIngestion:
-		mi, err := ingest.NewManaged(client, database, tableName)
-		return mi, err
-	case queuedIngestion:
-		qi, err := ingest.New(client, database, tableName, ingest.WithStaticBuffer(bufferSize, maxBuffers))
-		return qi, err
+func createRealIngestor(client localClient, database string, tableName string) (localIngestor, error) {
+	ingestor, err := ingest.New(client.(*kusto.Client), database, tableName, ingest.WithStaticBuffer(bufferSize, maxBuffers))
+	if ingestor != nil {
+		return ingestor, nil
 	}
-	return nil, fmt.Errorf(`ingestion_type has to be one of %q or %q`, managedIngestion, queuedIngestion)
+	return nil, err
 }

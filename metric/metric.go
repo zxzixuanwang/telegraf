@@ -175,11 +175,6 @@ func (m *metric) GetTag(key string) (string, bool) {
 	return "", false
 }
 
-func (m *metric) Tag(key string) string {
-	v, _ := m.GetTag(key)
-	return v
-}
-
 func (m *metric) RemoveTag(key string) {
 	for i, tag := range m.tags {
 		if tag.Key == key {
@@ -219,13 +214,6 @@ func (m *metric) GetField(key string) (interface{}, bool) {
 	return nil, false
 }
 
-func (m *metric) Field(key string) interface{} {
-	if v, found := m.GetField(key); found {
-		return v
-	}
-	return nil
-}
-
 func (m *metric) RemoveField(key string) {
 	for i, field := range m.fields {
 		if field.Key == key {
@@ -262,13 +250,13 @@ func (m *metric) Copy() telegraf.Metric {
 
 func (m *metric) HashID() uint64 {
 	h := fnv.New64a()
-	h.Write([]byte(m.name)) //nolint:revive // all Write() methods for hash in fnv.go returns nil err
-	h.Write([]byte("\n"))   //nolint:revive // all Write() methods for hash in fnv.go returns nil err
+	h.Write([]byte(m.name))
+	h.Write([]byte("\n"))
 	for _, tag := range m.tags {
-		h.Write([]byte(tag.Key))   //nolint:revive // all Write() methods for hash in fnv.go returns nil err
-		h.Write([]byte("\n"))      //nolint:revive // all Write() methods for hash in fnv.go returns nil err
-		h.Write([]byte(tag.Value)) //nolint:revive // all Write() methods for hash in fnv.go returns nil err
-		h.Write([]byte("\n"))      //nolint:revive // all Write() methods for hash in fnv.go returns nil err
+		h.Write([]byte(tag.Key))
+		h.Write([]byte("\n"))
+		h.Write([]byte(tag.Value))
+		h.Write([]byte("\n"))
 	}
 	return h.Sum64()
 }
@@ -282,7 +270,7 @@ func (m *metric) Reject() {
 func (m *metric) Drop() {
 }
 
-// Convert field to a supported type or nil if inconvertible
+// Convert field to a supported type or nil if unconvertible
 func convertField(v interface{}) interface{} {
 	switch v := v.(type) {
 	case float64:

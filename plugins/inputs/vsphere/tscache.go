@@ -62,10 +62,7 @@ func (t *TSCache) Get(key string, metricName string) (time.Time, bool) {
 func (t *TSCache) Put(key string, metricName string, timestamp time.Time) {
 	t.mux.Lock()
 	defer t.mux.Unlock()
-	k := makeKey(key, metricName)
-	if timestamp.After(t.table[k]) {
-		t.table[k] = timestamp
-	}
+	t.table[makeKey(key, metricName)] = timestamp
 }
 
 func makeKey(resource string, metric string) string {

@@ -24,7 +24,6 @@ func (rp RunningProcessors) Less(i, j int) bool { return rp[i].Config.Order < rp
 type ProcessorConfig struct {
 	Name   string
 	Alias  string
-	ID     string
 	Order  int64
 	Filter Filter
 }
@@ -61,13 +60,6 @@ func (rp *RunningProcessor) Init() error {
 		}
 	}
 	return nil
-}
-
-func (rp *RunningProcessor) ID() string {
-	if p, ok := rp.Processor.(telegraf.PluginWithID); ok {
-		return p.ID()
-	}
-	return rp.Config.ID
 }
 
 func (rp *RunningProcessor) Log() telegraf.Logger {

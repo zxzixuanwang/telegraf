@@ -1,6 +1,7 @@
 package shim
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -13,8 +14,10 @@ import (
 )
 
 func TestLoadConfig(t *testing.T) {
-	t.Setenv("SECRET_TOKEN", "xxxxxxxxxx")
-	t.Setenv("SECRET_VALUE", `test"\test`)
+	err := os.Setenv("SECRET_TOKEN", "xxxxxxxxxx")
+	require.NoError(t, err)
+	err = os.Setenv("SECRET_VALUE", `test"\test`)
+	require.NoError(t, err)
 
 	inputs.Add("test", func() telegraf.Input {
 		return &serviceInput{}
@@ -29,6 +32,16 @@ func TestLoadConfig(t *testing.T) {
 	require.Equal(t, "awesome name", inp.ServiceName)
 	require.Equal(t, "xxxxxxxxxx", inp.SecretToken)
 	require.Equal(t, `test"\test`, inp.SecretValue)
+}
+
+func TestDefaultImportedPluginsSelfRegisters(t *testing.T) {
+	inputs.Add("test", func() telegraf.Input {
+		return &testInput{}
+	})
+
+	cfg, err := LoadConfig(nil)
+	require.NoError(t, err)
+	require.Equal(t, "test", cfg.Input.Description())
 }
 
 func TestLoadingSpecialTypes(t *testing.T) {

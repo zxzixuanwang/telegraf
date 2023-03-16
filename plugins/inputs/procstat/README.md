@@ -1,7 +1,7 @@
 # Procstat Input Plugin
 
-The procstat plugin can be used to monitor the system resource usage of one or
-more processes.  The procstat_lookup metric displays the query information,
+The procstat plugin can be used to monitor the system resource usage of one or more processes.
+The procstat_lookup metric displays the query information,
 specifically the number of PIDs returned on a search
 
 Processes can be selected for monitoring using one of several methods:
@@ -14,18 +14,9 @@ Processes can be selected for monitoring using one of several methods:
 - cgroup
 - win_service
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
+```toml
 # Monitor process cpu and memory usage
 [[inputs.procstat]]
   ## PID file to monitor process
@@ -39,7 +30,7 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   ## Systemd unit name, supports globs when include_systemd_children is set to true
   # systemd_unit = "nginx.service"
   # include_systemd_children = false
-  ## CGroup name or path, supports globs
+  ## CGroup name or path
   # cgroup = "systemd/system.slice/nginx.service"
 
   ## Windows service name
@@ -123,7 +114,6 @@ the `win_perf_counters` input plugin as a more mature alternative.
     - num_fds (int, *telegraf* may need to be ran as **root**)
     - num_threads (int)
     - pid (int)
-    - ppid (int)
     - read_bytes (int, *telegraf* may need to be ran as **root**)
     - read_count (int, *telegraf* may need to be ran as **root**)
     - realtime_priority (int)

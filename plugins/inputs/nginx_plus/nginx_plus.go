@@ -1,11 +1,8 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package nginx_plus
 
 import (
 	"bufio"
-	_ "embed"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -21,9 +18,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 type NginxPlus struct {
 	Urls            []string        `toml:"urls"`
 	ResponseTimeout config.Duration `toml:"response_timeout"`
@@ -32,8 +26,27 @@ type NginxPlus struct {
 	client *http.Client
 }
 
-func (*NginxPlus) SampleConfig() string {
+var sampleConfig = `
+  ## An array of ngx_http_status_module or status URI to gather stats.
+  urls = ["http://localhost/status"]
+
+  # HTTP response timeout (default: 5s)
+  response_timeout = "5s"
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+`
+
+func (n *NginxPlus) SampleConfig() string {
 	return sampleConfig
+}
+
+func (n *NginxPlus) Description() string {
+	return "Read Nginx Plus' full status information (ngx_http_status_module)"
 }
 
 func (n *NginxPlus) Gather(acc telegraf.Accumulator) error {
@@ -53,7 +66,7 @@ func (n *NginxPlus) Gather(acc telegraf.Accumulator) error {
 	for _, u := range n.Urls {
 		addr, err := url.Parse(u)
 		if err != nil {
-			acc.AddError(fmt.Errorf("unable to parse address %q: %w", u, err))
+			acc.AddError(fmt.Errorf("Unable to parse address '%s': %s", u, err))
 			continue
 		}
 
@@ -92,7 +105,7 @@ func (n *NginxPlus) gatherURL(addr *url.URL, acc telegraf.Accumulator) error {
 	resp, err := n.client.Get(addr.String())
 
 	if err != nil {
-		return fmt.Errorf("error making HTTP request to %q: %w", addr.String(), err)
+		return fmt.Errorf("error making HTTP request to %s: %s", addr.String(), err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -274,7 +287,7 @@ func gatherStatusURL(r *bufio.Reader, tags map[string]string, acc telegraf.Accum
 	dec := json.NewDecoder(r)
 	status := &Status{}
 	if err := dec.Decode(status); err != nil {
-		return errors.New("error while decoding JSON response")
+		return fmt.Errorf("Error while decoding JSON response")
 	}
 	status.Gather(tags, acc)
 	return nil

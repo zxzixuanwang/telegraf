@@ -1,24 +1,13 @@
 # Burrow Kafka Consumer Lag Checking Input Plugin
 
-Collect Kafka topic, consumer and partition status via
-[Burrow](https://github.com/linkedin/Burrow) HTTP
-[API](https://github.com/linkedin/Burrow/wiki/HTTP-Endpoint).
+Collect Kafka topic, consumer and partition status
+via [Burrow](https://github.com/linkedin/Burrow) HTTP [API](https://github.com/linkedin/Burrow/wiki/HTTP-Endpoint).
 
 Supported Burrow version: `1.x`
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
-# Collect Kafka topics and consumers status from Burrow HTTP API.
+```toml
 [[inputs.burrow]]
   ## Burrow API endpoints in format "schema://host:port".
   ## Default is "http://localhost:8000".
@@ -72,9 +61,7 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
 
 > unknown value will be mapped to 0
 
-## Metrics
-
-### Fields
+## Fields
 
 * `burrow_group` (one event per each consumer group)
   * status (string, see Partition Status mappings)
@@ -95,7 +82,7 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
 * `burrow_topic` (one event per topic offset)
   * offset (int64)
 
-### Tags
+## Tags
 
 * `burrow_group`
   * cluster (string)
@@ -112,5 +99,3 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   * cluster (string)
   * topic (string)
   * partition (int)
-
-## Example Output

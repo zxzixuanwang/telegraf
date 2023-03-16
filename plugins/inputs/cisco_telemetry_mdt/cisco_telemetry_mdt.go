@@ -1,12 +1,9 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package cisco_telemetry_mdt
 
 import (
 	"bytes"
-	_ "embed"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -20,46 +17,30 @@ import (
 	telemetry "github.com/cisco-ie/nx-telemetry-proto/telemetry_bis"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-	_ "google.golang.org/grpc/encoding/gzip" // Required to allow gzip encoding
-	"google.golang.org/grpc/keepalive"
+	_ "google.golang.org/grpc/encoding/gzip" // Register GRPC gzip decoder to support compressed telemetry
 	"google.golang.org/grpc/peer"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/metric"
 	internaltls "github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 const (
 	// Maximum telemetry payload size (in bytes) to accept for GRPC dialout transport
 	tcpMaxMsgLen uint32 = 1024 * 1024
 )
 
-// default minimum time between successive pings
-// this value is specified in the GRPC docs via GRPC_ARG_HTTP2_MIN_RECV_PING_INTERVAL_WITHOUT_DATA_MS
-const defaultKeepaliveMinTime = config.Duration(time.Second * 300)
-
-type GRPCEnforcementPolicy struct {
-	PermitKeepaliveWithoutCalls bool            `toml:"permit_keepalive_without_calls"`
-	KeepaliveMinTime            config.Duration `toml:"keepalive_minimum_time"`
-}
-
 // CiscoTelemetryMDT plugin for IOS XR, IOS XE and NXOS platforms
 type CiscoTelemetryMDT struct {
 	// Common configuration
-	Transport          string                `toml:"transport"`
-	ServiceAddress     string                `toml:"service_address"`
-	MaxMsgSize         int                   `toml:"max_msg_size"`
-	Aliases            map[string]string     `toml:"aliases"`
-	Dmes               map[string]string     `toml:"dmes"`
-	EmbeddedTags       []string              `toml:"embedded_tags"`
-	EnforcementPolicy  GRPCEnforcementPolicy `toml:"grpc_enforcement_policy"`
-	IncludeDeleteField bool                  `toml:"include_delete_field"`
+	Transport      string
+	ServiceAddress string            `toml:"service_address"`
+	MaxMsgSize     int               `toml:"max_msg_size"`
+	Aliases        map[string]string `toml:"aliases"`
+	Dmes           map[string]string `toml:"dmes"`
+	EmbeddedTags   []string          `toml:"embedded_tags"`
 
 	Log telegraf.Logger
 
@@ -91,10 +72,6 @@ type NxPayloadXfromStructure struct {
 		Key   string `json:"Key"`
 		Value string `json:"Value"`
 	} `json:"prop"`
-}
-
-func (*CiscoTelemetryMDT) SampleConfig() string {
-	return sampleConfig
 }
 
 // Start the Cisco MDT service
@@ -159,7 +136,7 @@ func (c *CiscoTelemetryMDT) Start(acc telegraf.Accumulator) error {
 	// Fill extra tags
 	c.extraTags = make(map[string]map[string]struct{})
 	for _, tag := range c.EmbeddedTags {
-		dir := strings.ReplaceAll(path.Dir(tag), "-", "_")
+		dir := strings.Replace(path.Dir(tag), "-", "_", -1)
 		if _, hasKey := c.extraTags[dir]; !hasKey {
 			c.extraTags[dir] = make(map[string]struct{})
 		}
@@ -179,7 +156,8 @@ func (c *CiscoTelemetryMDT) Start(acc telegraf.Accumulator) error {
 		var opts []grpc.ServerOption
 		tlsConfig, err := c.ServerConfig.TLSConfig()
 		if err != nil {
-			c.listener.Close() //nolint:revive // we cannot do anything if the closing fails
+			//nolint:errcheck,revive // we cannot do anything if the closing fails
+			c.listener.Close()
 			return err
 		} else if tlsConfig != nil {
 			opts = append(opts, grpc.Creds(credentials.NewTLS(tlsConfig)))
@@ -187,15 +165,6 @@ func (c *CiscoTelemetryMDT) Start(acc telegraf.Accumulator) error {
 
 		if c.MaxMsgSize > 0 {
 			opts = append(opts, grpc.MaxRecvMsgSize(c.MaxMsgSize))
-		}
-
-		if c.EnforcementPolicy.PermitKeepaliveWithoutCalls ||
-			(c.EnforcementPolicy.KeepaliveMinTime != 0 && c.EnforcementPolicy.KeepaliveMinTime != defaultKeepaliveMinTime) {
-			// Only set if either parameter does not match defaults
-			opts = append(opts, grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-				MinTime:             time.Duration(c.EnforcementPolicy.KeepaliveMinTime),
-				PermitWithoutStream: c.EnforcementPolicy.PermitKeepaliveWithoutCalls,
-			}))
 		}
 
 		c.grpcServer = grpc.NewServer(opts...)
@@ -210,7 +179,8 @@ func (c *CiscoTelemetryMDT) Start(acc telegraf.Accumulator) error {
 		}()
 
 	default:
-		c.listener.Close() //nolint:revive // we cannot do anything if the closing fails
+		//nolint:errcheck,revive // we cannot do anything if the closing fails
+		c.listener.Close()
 		return fmt.Errorf("invalid Cisco MDT transport: %s", c.Transport)
 	}
 
@@ -225,8 +195,7 @@ func (c *CiscoTelemetryMDT) acceptTCPClients() {
 
 	for {
 		conn, err := c.listener.Accept()
-		var neterr *net.OpError
-		if errors.As(err, &neterr) && (neterr.Timeout() || neterr.Temporary()) {
+		if neterr, ok := err.(*net.OpError); ok && (neterr.Timeout() || neterr.Temporary()) {
 			continue
 		} else if err != nil {
 			break // Stop() will close the connection so Accept() will fail here
@@ -321,8 +290,8 @@ func (c *CiscoTelemetryMDT) MdtDialout(stream dialout.GRPCMdtDialout_MdtDialoutS
 	for {
 		packet, err := stream.Recv()
 		if err != nil {
-			if !errors.Is(err, io.EOF) {
-				c.acc.AddError(fmt.Errorf("GRPC dialout receive error: %w", err))
+			if err != io.EOF {
+				c.acc.AddError(fmt.Errorf("GRPC dialout receive error: %v", err))
 			}
 			break
 		}
@@ -337,7 +306,7 @@ func (c *CiscoTelemetryMDT) MdtDialout(stream dialout.GRPCMdtDialout_MdtDialoutS
 			c.handleTelemetry(packet.Data)
 		} else if int(packet.TotalSize) <= c.MaxMsgSize {
 			if _, err := chunkBuffer.Write(packet.Data); err != nil {
-				c.acc.AddError(fmt.Errorf("writing packet %q failed: %w", packet.Data, err))
+				c.acc.AddError(fmt.Errorf("writing packet %q failed: %v", packet.Data, err))
 			}
 			if chunkBuffer.Len() >= int(packet.TotalSize) {
 				c.handleTelemetry(chunkBuffer.Bytes())
@@ -360,7 +329,7 @@ func (c *CiscoTelemetryMDT) handleTelemetry(data []byte) {
 	msg := &telemetry.Telemetry{}
 	err := proto.Unmarshal(data, msg)
 	if err != nil {
-		c.acc.AddError(fmt.Errorf("failed to decode: %w", err))
+		c.acc.AddError(fmt.Errorf("failed to decode: %v", err))
 		return
 	}
 
@@ -387,55 +356,26 @@ func (c *CiscoTelemetryMDT) handleTelemetry(data []byte) {
 			}
 		}
 
-		if content == nil && !c.IncludeDeleteField {
-			c.Log.Debug("Message skipped because no content found and include of delete field not enabled")
+		if keys == nil || content == nil {
+			c.Log.Infof("Message from %s missing keys or content", msg.GetNodeIdStr())
 			continue
 		}
 
-		if keys != nil {
-			tags = make(map[string]string, len(keys.Fields)+3)
-			for _, subfield := range keys.Fields {
-				c.parseKeyField(tags, subfield, "")
-			}
-		} else {
-			tags = make(map[string]string, 3)
-		}
 		// Parse keys
+		tags = make(map[string]string, len(keys.Fields)+3)
 		tags["source"] = msg.GetNodeIdStr()
 		if msgID := msg.GetSubscriptionIdStr(); msgID != "" {
 			tags["subscription"] = msgID
 		}
-		encodingPath := msg.GetEncodingPath()
-		tags["path"] = encodingPath
+		tags["path"] = msg.GetEncodingPath()
 
-		if content != nil {
-			// Parse values
-			for _, subfield := range content.Fields {
-				prefix := ""
-				switch subfield.Name {
-				case "operation-metric":
-					if len(subfield.Fields[0].Fields) > 0 {
-						prefix = subfield.Fields[0].Fields[0].GetStringValue()
-					}
-				case "class-stats":
-					if len(subfield.Fields[0].Fields) > 1 {
-						prefix = subfield.Fields[0].Fields[1].GetStringValue()
-					}
-				}
-				c.parseContentField(grouper, subfield, prefix, encodingPath, tags, timestamp)
-			}
-		}
-		if c.IncludeDeleteField {
-			grouper.Add(c.getMeasurementName(encodingPath), tags, timestamp, "delete", gpbkv.GetDelete())
-		}
-
-		if content == nil {
-			continue
+		for _, subfield := range keys.Fields {
+			c.parseKeyField(tags, subfield, "")
 		}
 
 		// Parse values
 		for _, subfield := range content.Fields {
-			c.parseContentField(grouper, subfield, "", encodingPath, tags, timestamp)
+			c.parseContentField(grouper, subfield, "", msg.EncodingPath, tags, timestamp)
 		}
 	}
 
@@ -500,7 +440,7 @@ func decodeTag(field *telemetry.TelemetryField) string {
 
 // Recursively parse tag fields
 func (c *CiscoTelemetryMDT) parseKeyField(tags map[string]string, field *telemetry.TelemetryField, prefix string) {
-	localname := strings.ReplaceAll(field.Name, "-", "_")
+	localname := strings.Replace(field.Name, "-", "_", -1)
 	name := localname
 	if len(localname) == 0 {
 		name = prefix
@@ -532,7 +472,9 @@ func (c *CiscoTelemetryMDT) parseRib(grouper *metric.SeriesGrouper, field *telem
 			tags[subfield.Name] = decodeTag(subfield)
 		}
 		if value := decodeValue(subfield); value != nil {
-			grouper.Add(measurement, tags, timestamp, subfield.Name, value)
+			if err := grouper.Add(measurement, tags, timestamp, subfield.Name, value); err != nil {
+				c.Log.Errorf("adding field %q to group failed: %v", subfield.Name, err)
+			}
 		}
 		if subfield.Name != "nextHop" {
 			continue
@@ -547,7 +489,9 @@ func (c *CiscoTelemetryMDT) parseRib(grouper *metric.SeriesGrouper, field *telem
 				}
 				if value := decodeValue(ff); value != nil {
 					name := "nextHop/" + ff.Name
-					grouper.Add(measurement, tags, timestamp, name, value)
+					if err := grouper.Add(measurement, tags, timestamp, name, value); err != nil {
+						c.Log.Errorf("adding field %q to group failed: %v", name, err)
+					}
 				}
 			}
 		}
@@ -582,25 +526,9 @@ func (c *CiscoTelemetryMDT) parseClassAttributeField(grouper *metric.SeriesGroup
 	}
 }
 
-func (c *CiscoTelemetryMDT) getMeasurementName(encodingPath string) string {
-	// Do alias lookup, to shorten measurement names
-	measurement := encodingPath
-	if alias, ok := c.internalAliases[encodingPath]; ok {
-		measurement = alias
-	} else {
-		c.mutex.Lock()
-		if _, haveWarned := c.warned[encodingPath]; !haveWarned {
-			c.Log.Debugf("No measurement alias for encoding path: %s", encodingPath)
-			c.warned[encodingPath] = struct{}{}
-		}
-		c.mutex.Unlock()
-	}
-	return measurement
-}
-
 func (c *CiscoTelemetryMDT) parseContentField(grouper *metric.SeriesGrouper, field *telemetry.TelemetryField, prefix string,
 	encodingPath string, tags map[string]string, timestamp time.Time) {
-	name := strings.ReplaceAll(field.Name, "-", "_")
+	name := strings.Replace(field.Name, "-", "_", -1)
 
 	if (name == "modTs" || name == "createTs") && decodeValue(field) == "never" {
 		return
@@ -611,14 +539,30 @@ func (c *CiscoTelemetryMDT) parseContentField(grouper *metric.SeriesGrouper, fie
 		name = prefix + "/" + name
 	}
 
-	extraTags := c.extraTags[strings.ReplaceAll(encodingPath, "-", "_")+"/"+name]
+	extraTags := c.extraTags[strings.Replace(encodingPath, "-", "_", -1)+"/"+name]
 
 	if value := decodeValue(field); value != nil {
-		measurement := c.getMeasurementName(encodingPath)
-		if val := c.nxosValueXform(field, value, encodingPath); val != nil {
-			grouper.Add(measurement, tags, timestamp, name, val)
+		// Do alias lookup, to shorten measurement names
+		measurement := encodingPath
+		if alias, ok := c.internalAliases[encodingPath]; ok {
+			measurement = alias
 		} else {
-			grouper.Add(measurement, tags, timestamp, name, value)
+			c.mutex.Lock()
+			if _, haveWarned := c.warned[encodingPath]; !haveWarned {
+				c.Log.Debugf("No measurement alias for encoding path: %s", encodingPath)
+				c.warned[encodingPath] = struct{}{}
+			}
+			c.mutex.Unlock()
+		}
+
+		if val := c.nxosValueXform(field, value, encodingPath); val != nil {
+			if err := grouper.Add(measurement, tags, timestamp, name, val); err != nil {
+				c.Log.Errorf("adding field %q to group failed: %v", name, err)
+			}
+		} else {
+			if err := grouper.Add(measurement, tags, timestamp, name, value); err != nil {
+				c.Log.Errorf("adding field %q to group failed: %v", name, err)
+			}
 		}
 		return
 	}
@@ -626,7 +570,7 @@ func (c *CiscoTelemetryMDT) parseContentField(grouper *metric.SeriesGrouper, fie
 	if len(extraTags) > 0 {
 		for _, subfield := range field.Fields {
 			if _, isExtraTag := extraTags[subfield.Name]; isExtraTag {
-				tags[name+"/"+strings.ReplaceAll(subfield.Name, "-", "_")] = decodeTag(subfield)
+				tags[name+"/"+strings.Replace(subfield.Name, "-", "_", -1)] = decodeTag(subfield)
 			}
 		}
 	}
@@ -728,12 +672,52 @@ func (c *CiscoTelemetryMDT) Address() net.Addr {
 func (c *CiscoTelemetryMDT) Stop() {
 	if c.grpcServer != nil {
 		// Stop server and terminate all running dialout routines
+		//nolint:errcheck,revive // we cannot do anything if the stopping fails
 		c.grpcServer.Stop()
 	}
 	if c.listener != nil {
-		c.listener.Close() //nolint:revive // we cannot do anything if the closing fails
+		//nolint:errcheck,revive // we cannot do anything if the closing fails
+		c.listener.Close()
 	}
 	c.wg.Wait()
+}
+
+const sampleConfig = `
+ ## Telemetry transport can be "tcp" or "grpc".  TLS is only supported when
+ ## using the grpc transport.
+ transport = "grpc"
+
+ ## Address and port to host telemetry listener
+ service_address = ":57000"
+
+ ## Enable TLS; grpc transport only.
+ # tls_cert = "/etc/telegraf/cert.pem"
+ # tls_key = "/etc/telegraf/key.pem"
+
+ ## Enable TLS client authentication and define allowed CA certificates; grpc
+ ##  transport only.
+ # tls_allowed_cacerts = ["/etc/telegraf/clientca.pem"]
+
+ ## Define (for certain nested telemetry measurements with embedded tags) which fields are tags
+ # embedded_tags = ["Cisco-IOS-XR-qos-ma-oper:qos/interface-table/interface/input/service-policy-names/service-policy-instance/statistics/class-stats/class-name"]
+
+ ## Define aliases to map telemetry encoding paths to simple measurement names
+ [inputs.cisco_telemetry_mdt.aliases]
+   ifstats = "ietf-interfaces:interfaces-state/interface/statistics"
+ ##Define Property Xformation, please refer README and https://pubhub.devnetcloud.com/media/dme-docs-9-3-3/docs/appendix/ for Model details.
+ [inputs.cisco_telemetry_mdt.dmes]
+   ModTs = "ignore"
+   CreateTs = "ignore"
+`
+
+// SampleConfig of plugin
+func (c *CiscoTelemetryMDT) SampleConfig() string {
+	return sampleConfig
+}
+
+// Description of plugin
+func (c *CiscoTelemetryMDT) Description() string {
+	return "Cisco model-driven telemetry (MDT) input plugin for IOS XR, IOS XE and NX-OS platforms"
 }
 
 // Gather plugin measurements (unused)

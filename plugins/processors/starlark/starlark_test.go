@@ -17,7 +17,7 @@ import (
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
 	common "github.com/influxdata/telegraf/plugins/common/starlark"
-	"github.com/influxdata/telegraf/plugins/parsers/influx"
+	"github.com/influxdata/telegraf/plugins/parsers"
 	"github.com/influxdata/telegraf/testutil"
 )
 
@@ -232,7 +232,9 @@ def apply(metric):
 				}
 			}
 
-			plugin.Stop()
+			err = plugin.Stop()
+			require.NoError(t, err)
+
 			testutil.RequireMetricsEqual(t, tt.expected, acc.GetTelegrafMetrics())
 		})
 	}
@@ -2574,7 +2576,9 @@ def apply(metric):
 				}
 			}
 
-			plugin.Stop()
+			err = plugin.Stop()
+			require.NoError(t, err)
+
 			testutil.RequireMetricsEqual(t, tt.expected, acc.GetTelegrafMetrics())
 		})
 	}
@@ -2655,7 +2659,9 @@ def apply(metric):
 				require.NoError(t, err)
 			}
 
-			plugin.Stop()
+			err = plugin.Stop()
+			require.NoError(t, err)
+
 			testutil.RequireMetricsEqual(t, tt.expected, acc.GetTelegrafMetrics())
 		})
 	}
@@ -2929,7 +2935,9 @@ func TestScript(t *testing.T) {
 				}
 			}
 
-			tt.plugin.Stop()
+			err = tt.plugin.Stop()
+			require.NoError(t, err)
+
 			testutil.RequireMetricsEqual(t, tt.expected, acc.GetTelegrafMetrics())
 		})
 	}
@@ -3175,68 +3183,6 @@ def apply(metric):
 				),
 			},
 		},
-		{
-			name: "concatenate 2 tags",
-			source: `
-def apply(metric):
-	metric.tags["result"] = '_'.join(metric.tags.values())
-	return metric
-`,
-			input: []telegraf.Metric{
-				testutil.MustMetric("cpu",
-					map[string]string{
-						"tag_1": "a",
-						"tag_2": "b",
-					},
-					map[string]interface{}{"value": 42},
-					time.Unix(0, 0),
-				),
-			},
-		},
-		{
-			name: "concatenate 4 tags",
-			source: `
-def apply(metric):
-	metric.tags["result"] = '_'.join(metric.tags.values())
-	return metric
-`,
-			input: []telegraf.Metric{
-				testutil.MustMetric("cpu",
-					map[string]string{
-						"tag_1": "a",
-						"tag_2": "b",
-						"tag_3": "c",
-						"tag_4": "d",
-					},
-					map[string]interface{}{"value": 42},
-					time.Unix(0, 0),
-				),
-			},
-		},
-		{
-			name: "concatenate 8 tags",
-			source: `
-def apply(metric):
-	metric.tags["result"] = '_'.join(metric.tags.values())
-	return metric
-`,
-			input: []telegraf.Metric{
-				testutil.MustMetric("cpu",
-					map[string]string{
-						"tag_1": "a",
-						"tag_2": "b",
-						"tag_3": "c",
-						"tag_4": "d",
-						"tag_5": "e",
-						"tag_6": "f",
-						"tag_7": "g",
-						"tag_8": "h",
-					},
-					map[string]interface{}{"value": 42},
-					time.Unix(0, 0),
-				),
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -3259,7 +3205,8 @@ def apply(metric):
 				}
 			}
 
-			plugin.Stop()
+			err = plugin.Stop()
+			require.NoError(b, err)
 		})
 	}
 }
@@ -3300,7 +3247,9 @@ func TestAllScriptTestData(t *testing.T) {
 					}
 				}
 
-				plugin.Stop()
+				err = plugin.Stop()
+				require.NoError(t, err)
+
 				testutil.RequireMetricsEqual(t, outputMetrics, acc.GetTelegrafMetrics(), testutil.SortMetrics())
 			})
 			return nil
@@ -3309,11 +3258,10 @@ func TestAllScriptTestData(t *testing.T) {
 	}
 }
 
+var parser, _ = parsers.NewInfluxParser() // literally never returns errors.
+
 // parses metric lines out of line protocol following a header, with a trailing blank line
 func parseMetricsFrom(t *testing.T, lines []string, header string) (metrics []telegraf.Metric) {
-	parser := &influx.Parser{}
-	require.NoError(t, parser.Init())
-
 	require.NotZero(t, len(lines), "Expected some lines to parse from .star file, found none")
 	startIdx := -1
 	endIdx := len(lines)
@@ -3377,7 +3325,7 @@ func testNow(_ *starlark.Thread, _ *starlark.Builtin, _ starlark.Tuple, _ []star
 
 func newStarlarkFromSource(source string) *Starlark {
 	return &Starlark{
-		Common: common.Common{
+		StarlarkCommon: common.StarlarkCommon{
 			StarlarkLoadFunc: testLoadFunc,
 			Log:              testutil.Logger{},
 			Source:           source,
@@ -3387,7 +3335,7 @@ func newStarlarkFromSource(source string) *Starlark {
 
 func newStarlarkFromScript(script string) *Starlark {
 	return &Starlark{
-		Common: common.Common{
+		StarlarkCommon: common.StarlarkCommon{
 			StarlarkLoadFunc: testLoadFunc,
 			Log:              testutil.Logger{},
 			Script:           script,
@@ -3397,7 +3345,7 @@ func newStarlarkFromScript(script string) *Starlark {
 
 func newStarlarkNoScript() *Starlark {
 	return &Starlark{
-		Common: common.Common{
+		StarlarkCommon: common.StarlarkCommon{
 			StarlarkLoadFunc: testLoadFunc,
 			Log:              testutil.Logger{},
 		},

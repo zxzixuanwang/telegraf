@@ -32,7 +32,7 @@ func TestGetExitCode(t *testing.T) {
 			errF: func() error {
 				return errors.New("I am not *exec.ExitError")
 			},
-			expCode: 3,
+			expCode: 0,
 			expErr:  errors.New("I am not *exec.ExitError"),
 		},
 	}
@@ -89,11 +89,10 @@ func assertEqual(t *testing.T, exp, actual []telegraf.Metric) {
 
 func TestTryAddState(t *testing.T) {
 	tests := []struct {
-		name          string
-		runErrF       func() error
-		runErrMessage []byte
-		metrics       []telegraf.Metric
-		assertF       func(*testing.T, []telegraf.Metric)
+		name    string
+		runErrF func() error
+		metrics []telegraf.Metric
+		assertF func(*testing.T, []telegraf.Metric, error)
 	}{
 		{
 			name: "should append state=0 field to existing metric",
@@ -108,7 +107,7 @@ func TestTryAddState(t *testing.T) {
 					n("nagios_state").
 					f("service_output", "OK: system working").b(),
 			},
-			assertF: func(t *testing.T, metrics []telegraf.Metric) {
+			assertF: func(t *testing.T, metrics []telegraf.Metric, err error) {
 				exp := []telegraf.Metric{
 					mb().
 						n("nagios").
@@ -119,6 +118,7 @@ func TestTryAddState(t *testing.T) {
 						f("state", 0).b(),
 				}
 				assertEqual(t, exp, metrics)
+				require.NoError(t, err)
 			},
 		},
 		{
@@ -131,7 +131,7 @@ func TestTryAddState(t *testing.T) {
 					n("nagios").
 					f("perfdata", 0).b(),
 			},
-			assertF: func(t *testing.T, metrics []telegraf.Metric) {
+			assertF: func(t *testing.T, metrics []telegraf.Metric, err error) {
 				exp := []telegraf.Metric{
 					mb().
 						n("nagios").
@@ -141,6 +141,7 @@ func TestTryAddState(t *testing.T) {
 						f("state", 0).b(),
 				}
 				assertEqual(t, exp, metrics)
+				require.NoError(t, err)
 			},
 		},
 		{
@@ -149,7 +150,7 @@ func TestTryAddState(t *testing.T) {
 				return nil
 			},
 			metrics: []telegraf.Metric{},
-			assertF: func(t *testing.T, metrics []telegraf.Metric) {
+			assertF: func(t *testing.T, metrics []telegraf.Metric, err error) {
 				require.Len(t, metrics, 1)
 				m := metrics[0]
 				require.Equal(t, "nagios_state", m.Name())
@@ -157,54 +158,37 @@ func TestTryAddState(t *testing.T) {
 				require.True(t, ok)
 				require.Equal(t, int64(0), s)
 				require.WithinDuration(t, time.Now().UTC(), m.Time(), 10*time.Second)
+				require.NoError(t, err)
 			},
 		},
 		{
-			name: "should return metrics with state unknown and thrown error is service_output",
+			name: "should return original metrics and an error",
 			runErrF: func() error {
 				return errors.New("non parsable error")
 			},
 			metrics: []telegraf.Metric{
 				mb().
-					n("nagios_state").b(),
+					n("nagios").
+					f("perfdata", 0).b(),
 			},
-			assertF: func(t *testing.T, metrics []telegraf.Metric) {
+			assertF: func(t *testing.T, metrics []telegraf.Metric, err error) {
 				exp := []telegraf.Metric{
 					mb().
-						n("nagios_state").
-						f("state", 3).
-						f("service_output", "non parsable error").b(),
+						n("nagios").
+						f("perfdata", 0).b(),
 				}
+				expErr := "exec: get exit code: non parsable error"
 
 				assertEqual(t, exp, metrics)
-			},
-		},
-		{
-			name: "should return metrics with state unknown and service_output error from error message parameter",
-			runErrF: func() error {
-				return errors.New("")
-			},
-			runErrMessage: []byte("some error message"),
-			metrics: []telegraf.Metric{
-				mb().
-					n("nagios_state").b(),
-			},
-			assertF: func(t *testing.T, metrics []telegraf.Metric) {
-				exp := []telegraf.Metric{
-					mb().
-						n("nagios_state").
-						f("state", 3).
-						f("service_output", "some error message").b(),
-				}
-				assertEqual(t, exp, metrics)
+				require.Equal(t, expErr, err.Error())
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			metrics := AddState(tt.runErrF(), tt.runErrMessage, tt.metrics)
-			tt.assertF(t, metrics)
+			metrics, err := TryAddState(tt.runErrF(), tt.metrics)
+			tt.assertF(t, metrics, err)
 		})
 	}
 }
@@ -215,8 +199,8 @@ func assertNagiosState(t *testing.T, m telegraf.Metric, f map[string]interface{}
 }
 
 func TestParse(t *testing.T) {
-	parser := Parser{
-		metricName: "nagios_test",
+	parser := NagiosParser{
+		MetricName: "nagios_test",
 	}
 
 	tests := []struct {

@@ -4,13 +4,14 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 	"unsafe"
 
+	"github.com/influxdata/toml"
 	"github.com/stretchr/testify/require"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/simulator"
@@ -21,6 +22,23 @@ import (
 	itls "github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/testutil"
 )
+
+var configHeader = `
+[agent]
+  interval = "10s"
+  round_interval = true
+  metric_batch_size = 1000
+  metric_buffer_limit = 10000
+  collection_jitter = "0s"
+  flush_interval = "10s"
+  flush_jitter = "0s"
+  precision = ""
+  debug = false
+  quiet = false
+  logfile = ""
+  hostname = ""
+  omit_hostname = false
+`
 
 func defaultVSphere() *VSphere {
 	return &VSphere{
@@ -121,28 +139,22 @@ func defaultVSphere() *VSphere {
 		DatastoreMetricInclude: []string{
 			"disk.used.*",
 			"disk.provisioned.*"},
-		DatastoreMetricExclude: nil,
-		DatastoreInclude:       []string{"/**"},
-		ResourcePoolMetricInclude: []string{
-			"cpu.capacity.*",
-			"mem.capacity.*"},
-		ResourcePoolMetricExclude: nil,
-		ResourcePoolInclude:       []string{"/**"},
-		DatacenterMetricInclude:   nil,
-		DatacenterMetricExclude:   nil,
-		DatacenterInclude:         []string{"/**"},
-		ClientConfig:              itls.ClientConfig{InsecureSkipVerify: true},
+		DatastoreMetricExclude:  nil,
+		DatastoreInclude:        []string{"/**"},
+		DatacenterMetricInclude: nil,
+		DatacenterMetricExclude: nil,
+		DatacenterInclude:       []string{"/**"},
+		ClientConfig:            itls.ClientConfig{InsecureSkipVerify: true},
 
-		MaxQueryObjects:             256,
-		MaxQueryMetrics:             256,
-		ObjectDiscoveryInterval:     config.Duration(time.Second * 300),
-		Timeout:                     config.Duration(time.Second * 20),
-		ForceDiscoverOnInit:         true,
-		DiscoverConcurrency:         1,
-		CollectConcurrency:          1,
-		Separator:                   ".",
-		HistoricalInterval:          config.Duration(time.Second * 300),
-		DisconnectedServersBehavior: "error",
+		MaxQueryObjects:         256,
+		MaxQueryMetrics:         256,
+		ObjectDiscoveryInterval: config.Duration(time.Second * 300),
+		Timeout:                 config.Duration(time.Second * 20),
+		ForceDiscoverOnInit:     true,
+		DiscoverConcurrency:     1,
+		CollectConcurrency:      1,
+		Separator:               ".",
+		HistoricalInterval:      config.Duration(time.Second * 300),
 	}
 }
 
@@ -166,14 +178,14 @@ func createSim(folders int) (*simulator.Model, *simulator.Server, error) {
 
 func testAlignUniform(t *testing.T, n int) {
 	now := time.Now().Truncate(60 * time.Second)
-	info := make([]types.PerfSampleInfo, 0, n)
-	values := make([]int64, 0, n)
+	info := make([]types.PerfSampleInfo, n)
+	values := make([]int64, n)
 	for i := 0; i < n; i++ {
-		info = append(info, types.PerfSampleInfo{
+		info[i] = types.PerfSampleInfo{
 			Timestamp: now.Add(time.Duration(20*i) * time.Second),
 			Interval:  20,
-		})
-		values = append(values, 1)
+		}
+		values[i] = 1
 	}
 	e := Endpoint{log: testutil.Logger{}}
 	newInfo, newValues := e.alignSamples(info, values, 60*time.Second)
@@ -192,14 +204,14 @@ func TestAlignMetrics(t *testing.T) {
 	// 20s to 60s of 1,2,3,1,2,3... (should average to 2)
 	n := 30
 	now := time.Now().Truncate(60 * time.Second)
-	info := make([]types.PerfSampleInfo, 0, n)
-	values := make([]int64, 0, n)
+	info := make([]types.PerfSampleInfo, n)
+	values := make([]int64, n)
 	for i := 0; i < n; i++ {
-		info = append(info, types.PerfSampleInfo{
+		info[i] = types.PerfSampleInfo{
 			Timestamp: now.Add(time.Duration(20*i) * time.Second),
 			Interval:  20,
-		})
-		values = append(values, int64(i%3+1))
+		}
+		values[i] = int64(i%3 + 1)
 	}
 	e := Endpoint{log: testutil.Logger{}}
 	newInfo, newValues := e.alignSamples(info, values, 60*time.Second)
@@ -210,16 +222,22 @@ func TestAlignMetrics(t *testing.T) {
 	}
 }
 
+func TestParseConfig(t *testing.T) {
+	v := VSphere{}
+	c := v.SampleConfig()
+	p := regexp.MustCompile("\n#")
+	c = configHeader + "\n[[inputs.vsphere]]\n" + p.ReplaceAllLiteralString(c, "\n")
+	tab, err := toml.Parse([]byte(c))
+	require.NoError(t, err)
+	require.NotNil(t, tab)
+}
+
 func TestConfigDurationParsing(t *testing.T) {
 	v := defaultVSphere()
 	require.Equal(t, int32(300), int32(time.Duration(v.HistoricalInterval).Seconds()), "HistoricalInterval.Seconds() with default duration should resolve 300")
 }
 
 func TestMaxQuery(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping long test in short mode")
-	}
-
 	// Don't run test on 32-bit machines due to bug in simulator.
 	// https://github.com/vmware/govmomi/issues/1330
 	var i int
@@ -227,7 +245,9 @@ func TestMaxQuery(t *testing.T) {
 		return
 	}
 	m, s, err := createSim(0)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer m.Remove()
 	defer s.Close()
 
@@ -235,7 +255,9 @@ func TestMaxQuery(t *testing.T) {
 	v.MaxQueryMetrics = 256
 	ctx := context.Background()
 	c, err := NewClient(ctx, s.URL, v)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatal(err)
+	}
 	require.Equal(t, 256, v.MaxQueryMetrics)
 
 	om := object.NewOptionManager(c.Client.Client, *c.Client.Client.ServiceContent.Setting)
@@ -243,12 +265,16 @@ func TestMaxQuery(t *testing.T) {
 		Key:   "config.vpxd.stats.maxQueryMetrics",
 		Value: "42",
 	}})
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	v.MaxQueryMetrics = 256
 	ctx = context.Background()
 	c2, err := NewClient(ctx, s.URL, v)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatal(err)
+	}
 	require.Equal(t, 42, v.MaxQueryMetrics)
 	c.close()
 	c2.close()
@@ -269,10 +295,6 @@ func testLookupVM(ctx context.Context, t *testing.T, f *Finder, path string, exp
 }
 
 func TestFinder(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping long test in short mode")
-	}
-
 	// Don't run test on 32-bit machines due to bug in simulator.
 	// https://github.com/vmware/govmomi/issues/1330
 	var i int
@@ -281,7 +303,9 @@ func TestFinder(t *testing.T) {
 	}
 
 	m, s, err := createSim(0)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer m.Remove()
 	defer s.Close()
 
@@ -307,12 +331,6 @@ func TestFinder(t *testing.T) {
 
 	host = []mo.HostSystem{}
 	err = f.Find(ctx, "HostSystem", "/DC0/host/DC0_C0/DC0_C0_H0", &host)
-	require.NoError(t, err)
-	require.Equal(t, 1, len(host))
-	require.Equal(t, "DC0_C0_H0", host[0].Name)
-
-	var resourcepool = []mo.ResourcePool{}
-	err = f.Find(ctx, "ResourcePool", "/DC0/host/DC0_C0/Resources/DC0_C0_RP0", &resourcepool)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(host))
 	require.Equal(t, "DC0_C0_H0", host[0].Name)
@@ -393,10 +411,6 @@ func TestFinder(t *testing.T) {
 }
 
 func TestFolders(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping long test in short mode")
-	}
-
 	// Don't run test on 32-bit machines due to bug in simulator.
 	// https://github.com/vmware/govmomi/issues/1330
 	var i int
@@ -405,7 +419,9 @@ func TestFolders(t *testing.T) {
 	}
 
 	m, s, err := createSim(1)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer m.Remove()
 	defer s.Close()
 
@@ -436,35 +452,11 @@ func TestFolders(t *testing.T) {
 }
 
 func TestCollectionWithClusterMetrics(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping long test in short mode")
-	}
-
 	testCollection(t, false)
 }
 
 func TestCollectionNoClusterMetrics(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping long test in short mode")
-	}
-
 	testCollection(t, true)
-}
-
-func TestDisconnectedServerBehavior(t *testing.T) {
-	u, err := url.Parse("https://definitely.not.a.valid.host")
-	require.NoError(t, err)
-	v := defaultVSphere()
-	v.DisconnectedServersBehavior = "error"
-	_, err = NewEndpoint(context.Background(), v, u, v.Log)
-	require.Error(t, err)
-	v.DisconnectedServersBehavior = "ignore"
-	_, err = NewEndpoint(context.Background(), v, u, v.Log)
-	require.NoError(t, err)
-	v.DisconnectedServersBehavior = "something else"
-	_, err = NewEndpoint(context.Background(), v, u, v.Log)
-	require.Error(t, err)
-	require.Equal(t, err.Error(), `"something else" is not a valid value for disconnected_servers_behavior`)
 }
 
 func testCollection(t *testing.T, excludeClusters bool) {
@@ -483,8 +475,8 @@ func testCollection(t *testing.T, excludeClusters bool) {
 	v := defaultVSphere()
 	if vCenter != "" {
 		v.Vcenters = []string{vCenter}
-		v.Username = config.NewSecret([]byte(username))
-		v.Password = config.NewSecret([]byte(password))
+		v.Username = username
+		v.Password = password
 	} else {
 		// Don't run test on 32-bit machines due to bug in simulator.
 		// https://github.com/vmware/govmomi/issues/1330
@@ -494,7 +486,9 @@ func testCollection(t *testing.T, excludeClusters bool) {
 		}
 
 		m, s, err := createSim(0)
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatal(err)
+		}
 		defer m.Remove()
 		defer s.Close()
 		v.Vcenters = []string{s.URL.String()}

@@ -9,10 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/influxdata/wlog"
-
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/internal/rotate"
+	"github.com/influxdata/wlog"
 )
 
 var prefixRegex = regexp.MustCompile("^[DIWE]!")
@@ -32,7 +31,7 @@ type LogConfig struct {
 	LogTarget string
 	// will direct the logging output to a file. Empty string is
 	// interpreted as stderr. If there is an error opening the file the
-	// logger will fall back to stderr
+	// logger will fallback to stderr
 	Logfile string
 	// will rotate when current file at the specified time interval
 	RotationInterval config.Duration
@@ -44,15 +43,15 @@ type LogConfig struct {
 	LogWithTimezone string
 }
 
-type creator interface {
-	CreateLogger(cfg LogConfig) (io.Writer, error)
+type LoggerCreator interface {
+	CreateLogger(config LogConfig) (io.Writer, error)
 }
 
-var loggerRegistry map[string]creator
+var loggerRegistry map[string]LoggerCreator
 
-func registerLogger(name string, loggerCreator creator) {
+func registerLogger(name string, loggerCreator LoggerCreator) {
 	if loggerRegistry == nil {
-		loggerRegistry = make(map[string]creator)
+		loggerRegistry = make(map[string]LoggerCreator)
 	}
 	loggerRegistry[name] = loggerCreator
 }
@@ -111,25 +110,23 @@ func newTelegrafWriter(w io.Writer, c LogConfig) (io.Writer, error) {
 }
 
 // SetupLogging configures the logging output.
-func SetupLogging(cfg LogConfig) error {
-	_, err := newLogWriter(cfg)
-	return err
+func SetupLogging(config LogConfig) {
+	newLogWriter(config)
 }
 
 type telegrafLogCreator struct {
 }
 
-func (t *telegrafLogCreator) CreateLogger(cfg LogConfig) (io.Writer, error) {
+func (t *telegrafLogCreator) CreateLogger(config LogConfig) (io.Writer, error) {
 	var writer, defaultWriter io.Writer
 	defaultWriter = os.Stderr
 
-	switch cfg.LogTarget {
+	switch config.LogTarget {
 	case LogTargetFile:
-		if cfg.Logfile != "" {
+		if config.Logfile != "" {
 			var err error
-			if writer, err =
-				rotate.NewFileWriter(cfg.Logfile, time.Duration(cfg.RotationInterval), int64(cfg.RotationMaxSize), cfg.RotationMaxArchives); err != nil {
-				log.Printf("E! Unable to open %s (%s), using stderr", cfg.Logfile, err)
+			if writer, err = rotate.NewFileWriter(config.Logfile, time.Duration(config.RotationInterval), int64(config.RotationMaxSize), config.RotationMaxArchives); err != nil {
+				log.Printf("E! Unable to open %s (%s), using stderr", config.Logfile, err)
 				writer = defaultWriter
 			}
 		} else {
@@ -138,46 +135,43 @@ func (t *telegrafLogCreator) CreateLogger(cfg LogConfig) (io.Writer, error) {
 	case LogTargetStderr, "":
 		writer = defaultWriter
 	default:
-		log.Printf("E! Unsupported logtarget: %s, using stderr", cfg.LogTarget)
+		log.Printf("E! Unsupported logtarget: %s, using stderr", config.LogTarget)
 		writer = defaultWriter
 	}
 
-	return newTelegrafWriter(writer, cfg)
+	return newTelegrafWriter(writer, config)
 }
 
 // Keep track what is actually set as a log output, because log package doesn't provide a getter.
 // It allows closing previous writer if re-set and have possibility to test what is actually set
 var actualLogger io.Writer
 
-func newLogWriter(cfg LogConfig) (io.Writer, error) {
+func newLogWriter(config LogConfig) io.Writer {
 	log.SetFlags(0)
-	if cfg.Debug {
+	if config.Debug {
 		wlog.SetLevel(wlog.DEBUG)
 	}
-	if cfg.Quiet {
+	if config.Quiet {
 		wlog.SetLevel(wlog.ERROR)
 	}
-	if !cfg.Debug && !cfg.Quiet {
+	if !config.Debug && !config.Quiet {
 		wlog.SetLevel(wlog.INFO)
 	}
 	var logWriter io.Writer
-	if logCreator, ok := loggerRegistry[cfg.LogTarget]; ok {
-		logWriter, _ = logCreator.CreateLogger(cfg)
+	if logCreator, ok := loggerRegistry[config.LogTarget]; ok {
+		logWriter, _ = logCreator.CreateLogger(config)
 	}
 	if logWriter == nil {
-		logWriter, _ = (&telegrafLogCreator{}).CreateLogger(cfg)
+		logWriter, _ = (&telegrafLogCreator{}).CreateLogger(config)
 	}
 
 	if closer, isCloser := actualLogger.(io.Closer); isCloser {
-		if err := closer.Close(); err != nil {
-			return nil, err
-		}
+		closer.Close()
 	}
-
 	log.SetOutput(logWriter)
 	actualLogger = logWriter
 
-	return logWriter, nil
+	return logWriter
 }
 
 func init() {

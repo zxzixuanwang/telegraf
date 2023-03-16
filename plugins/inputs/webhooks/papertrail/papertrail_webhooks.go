@@ -9,14 +9,12 @@ import (
 	"github.com/gorilla/mux"
 
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/plugins/common/auth"
 )
 
 type PapertrailWebhook struct {
 	Path string
 	acc  telegraf.Accumulator
 	log  telegraf.Logger
-	auth.BasicAuth
 }
 
 func (pt *PapertrailWebhook) Register(router *mux.Router, acc telegraf.Accumulator, log telegraf.Logger) {
@@ -29,11 +27,6 @@ func (pt *PapertrailWebhook) Register(router *mux.Router, acc telegraf.Accumulat
 func (pt *PapertrailWebhook) eventHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Content-Type") != "application/x-www-form-urlencoded" {
 		http.Error(w, "Unsupported Media Type", http.StatusUnsupportedMediaType)
-		return
-	}
-
-	if !pt.Verify(r) {
-		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
@@ -73,7 +66,7 @@ func (pt *PapertrailWebhook) eventHandler(w http.ResponseWriter, r *http.Request
 			}
 			pt.acc.AddFields("papertrail", fields, tags, e.ReceivedAt)
 		}
-	} else if payload.Counts != nil {
+	} else if payload.Counts != nil { //nolint:revive // Not simplifying here to stay in the structure for better understanding the code
 		// Handle count-based payload
 		for _, c := range payload.Counts {
 			for ts, count := range *c.TimeSeries {

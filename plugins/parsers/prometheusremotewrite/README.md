@@ -1,8 +1,6 @@
-# Prometheus Remote Write Parser Plugin
+# Prometheus remote write
 
-Converts prometheus remote write samples directly into Telegraf metrics. It can
-be used with [http_listener_v2](/plugins/inputs/http_listener_v2). There are no
-additional configuration options for Prometheus Remote Write Samples.
+Converts prometheus remote write samples directly into Telegraf metrics. It can be used with [http_listener_v2](/plugins/inputs/http_listener_v2). There are no additional configuration options for Prometheus Remote Write Samples.
 
 ## Configuration
 

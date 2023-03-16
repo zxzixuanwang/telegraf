@@ -2,38 +2,29 @@
 
 This plugin sends metrics to Logz.io over HTTPs.
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
-## Secret-store support
-
-This plugin supports secrets from secret-stores for the `token` option.
-See the [secret-store documentation][SECRETSTORE] for more details on how
-to use them.
-
-[SECRETSTORE]: ../../../docs/CONFIGURATION.md#secret-store-secrets
-
 ## Configuration
 
-```toml @sample.conf
+```toml
 # A plugin that can send metrics over HTTPs to Logz.io
 [[outputs.logzio]]
-  ## Connection timeout, defaults to "5s" if not set.
-  # timeout = "5s"
+  ## Set to true if Logz.io sender checks the disk space before adding metrics to the disk queue.
+  # check_disk_space = true
 
-  ## Optional TLS Config
-  # tls_ca = "/etc/telegraf/ca.pem"
-  # tls_cert = "/etc/telegraf/cert.pem"
-  # tls_key = "/etc/telegraf/key.pem"
+  ## The percent of used file system space at which the sender will stop queueing.
+  ## When we will reach that percentage, the file system in which the queue is stored will drop
+  ## all new logs until the percentage of used space drops below that threshold.
+  # disk_threshold = 98
+
+  ## How often Logz.io sender should drain the queue.
+  ## Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+  # drain_duration = "3s"
+
+  ## Where Logz.io sender should store the queue
+  ## queue_dir = Sprintf("%s%s%s%s%d", os.TempDir(), string(os.PathSeparator),
+  ##                     "logzio-buffer", string(os.PathSeparator), time.Now().UnixNano())
 
   ## Logz.io account token
-  token = "your logz.io token" # required
+  token = "your Logz.io token" # required
 
   ## Use your listener URL for your Logz.io account region.
   # url = "https://listener.logz.io:8071"

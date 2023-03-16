@@ -1,19 +1,8 @@
 # StatsD Input Plugin
 
-The StatsD input plugin gathers metrics from a Statsd server.
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
+```toml
 # Statsd Server
 [[inputs.statsd]]
   ## Protocol, must be "tcp", "udp4", "udp6" or "udp" (default=udp)
@@ -75,9 +64,6 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   ## the statsd server will start dropping packets
   allowed_pending_messages = 10000
 
-  ## Number of worker threads used to parse the incoming messages.
-  # number_workers_threads = 5
-
   ## Number of timing/histogram values to track per-measurement in the
   ## calculation of percentiles. Raising this limit increases the accuracy
   ## of percentiles but also increases the memory usage and cpu time.
@@ -89,14 +75,6 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
 
   ## Max duration (TTL) for each metric to stay cached/reported without being updated.
   # max_ttl = "10h"
-
-  ## Sanitize name method
-  ## By default, telegraf will pass names directly as they are received.
-  ## However, upstream statsd now does sanitization of names which can be
-  ## enabled by using the "upstream" method option. This option will a) replace
-  ## white space with '_', replace '/' with '-', and remove charachters not
-  ## matching 'a-zA-Z_\-0-9\.;='.
-  #sanitize_name_method = ""
 ```
 
 ## Description
@@ -105,8 +83,7 @@ The statsd plugin is a special type of plugin which runs a backgrounded statsd
 listener service while telegraf is running.
 
 The format of the statsd messages was based on the format described in the
-original [etsy
-statsd](https://github.com/etsy/statsd/blob/master/docs/metric_types.md)
+original [etsy statsd](https://github.com/etsy/statsd/blob/master/docs/metric_types.md)
 implementation. In short, the telegraf statsd listener will accept:
 
 - Gauges
@@ -159,11 +136,9 @@ users.current,service=payroll,region=us-west:32|g
 
 ```
 current.users,service=payroll,server=host01:west=10,east=10,central=2,south=10|g
-```
+``` -->
 
--->
-
-## Metrics
+## Measurements
 
 Meta:
 
@@ -194,8 +169,6 @@ metric type:
     - `statsd_<name>_upper`: The upper bound is the highest value statsd saw
         for that stat during that interval.
     - `statsd_<name>_mean`: The mean is the average of all values statsd saw
-        for that stat during that interval.
-    - `statsd_<name>_median`: The median is the middle of all values statsd saw
         for that stat during that interval.
     - `statsd_<name>_stddev`: The stddev is the sample standard deviation
         of all values statsd saw for that stat during that interval.
@@ -241,8 +214,8 @@ measurements and tags.
 The plugin supports specifying templates for transforming statsd buckets into
 InfluxDB measurement names and tags. The templates have a _measurement_ keyword,
 which can be used to specify parts of the bucket that are to be used in the
-measurement name. Other words in the template are used as tag names. For
-example, the following template:
+measurement name. Other words in the template are used as tag names. For example,
+the following template:
 
 ```toml
 templates = [
@@ -279,5 +252,3 @@ mem.cached.localhost:256|g
 
 Consult the [Template Patterns](/docs/TEMPLATE_PATTERN.md) documentation for
 additional details.
-
-## Example Output

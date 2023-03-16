@@ -52,22 +52,19 @@ func (ep *ValueParser) parse(p *PointParser, pt *Point) error {
 
 	p.writeBuf.Reset()
 	if tok == MinusSign {
-		if _, err := p.writeBuf.WriteString(lit); err != nil {
-			return fmt.Errorf("unable to write: %w", err)
-		}
+		p.writeBuf.WriteString(lit)
 		tok, lit = p.scan()
 	}
 
 	for tok != EOF && (tok == Letter || tok == Number || tok == Dot || tok == MinusSign) {
-		if _, err := p.writeBuf.WriteString(lit); err != nil {
-			return fmt.Errorf("unable to write: %w", err)
-		}
+		p.writeBuf.WriteString(lit)
 		tok, lit = p.scan()
 	}
 	p.unscan()
 
 	pt.Value = p.writeBuf.String()
-	if _, err := strconv.ParseFloat(pt.Value, 64); err != nil {
+	_, err := strconv.ParseFloat(pt.Value, 64)
+	if err != nil {
 		return fmt.Errorf("invalid metric value %s", pt.Value)
 	}
 	return nil
@@ -92,10 +89,8 @@ func (ep *TimestampParser) parse(p *PointParser, pt *Point) error {
 	}
 
 	p.writeBuf.Reset()
-	for tok == Number {
-		if _, err := p.writeBuf.WriteString(lit); err != nil {
-			return fmt.Errorf("unable to write: %w", err)
-		}
+	for tok != EOF && tok == Number {
+		p.writeBuf.WriteString(lit)
 		tok, lit = p.scan()
 	}
 	p.unscan()
@@ -136,7 +131,7 @@ func (ep *LoopedParser) parse(p *PointParser, pt *Point) error {
 			return err
 		}
 		err = ep.wsParser.parse(p, pt)
-		if errors.Is(err, ErrEOF) {
+		if err == ErrEOF {
 			break
 		}
 	}
@@ -170,7 +165,7 @@ func (ep *TagParser) parse(p *PointParser, pt *Point) error {
 
 func (ep *WhiteSpaceParser) parse(p *PointParser, _ *Point) error {
 	tok := Ws
-	for tok == Ws {
+	for tok != EOF && tok == Ws {
 		tok, _ = p.scan()
 	}
 
@@ -192,9 +187,7 @@ func parseQuotedLiteral(p *PointParser) (string, error) {
 	for tok != EOF && (tok != Quotes || (tok == Quotes && escaped)) {
 		// let everything through
 		escaped = tok == Backslash
-		if _, err := p.writeBuf.WriteString(lit); err != nil {
-			return "", fmt.Errorf("unable to write: %w", err)
-		}
+		p.writeBuf.WriteString(lit)
 		tok, lit = p.scan()
 	}
 	if tok == EOF {
@@ -215,9 +208,7 @@ func parseLiteral(p *PointParser) (string, error) {
 
 	p.writeBuf.Reset()
 	for tok != EOF && tok > literalBeg && tok < literalEnd {
-		if _, err := p.writeBuf.WriteString(lit); err != nil {
-			return "", fmt.Errorf("unable to write: %w", err)
-		}
+		p.writeBuf.WriteString(lit)
 		tok, lit = p.scan()
 		if tok == Delta {
 			return "", errors.New("found delta inside metric name")

@@ -34,7 +34,9 @@ func fakePassengerStatus(stat string) (string, error) {
 }
 
 func teardown(tempFilePath string) {
-	os.Remove(tempFilePath) //nolint:revive // ignore the returned error as we want to remove the file and ignore missing file errors
+	// Ignore the returned error as we want to remove the file and ignore missing file errors
+	//nolint:errcheck,revive
+	os.Remove(tempFilePath)
 }
 
 func Test_Invalid_Passenger_Status_Cli(t *testing.T) {

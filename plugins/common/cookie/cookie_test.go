@@ -18,17 +18,14 @@ import (
 )
 
 const (
-	reqUser      = "testUser"
-	reqPasswd    = "testPassword"
-	reqBody      = "a body"
-	reqHeaderKey = "hello"
-	reqHeaderVal = "world"
+	reqUser   = "testUser"
+	reqPasswd = "testPassword"
+	reqBody   = "a body"
 
 	authEndpointNoCreds                   = "/auth"
 	authEndpointWithBasicAuth             = "/authWithCreds"
 	authEndpointWithBasicAuthOnlyUsername = "/authWithCredsUser"
 	authEndpointWithBody                  = "/authWithBody"
-	authEndpointWithHeader                = "/authWithHeader"
 )
 
 var fakeCookie = &http.Cookie{
@@ -51,12 +48,6 @@ func newFakeServer(t *testing.T) fakeServer {
 			}
 			switch r.URL.Path {
 			case authEndpointNoCreds:
-				authed()
-			case authEndpointWithHeader:
-				if !cmp.Equal(r.Header.Get(reqHeaderKey), reqHeaderVal) {
-					w.WriteHeader(http.StatusUnauthorized)
-					return
-				}
 				authed()
 			case authEndpointWithBody:
 				body, err := io.ReadAll(r.Body)
@@ -121,7 +112,6 @@ func TestAuthConfig_Start(t *testing.T) {
 		Username string
 		Password string
 		Body     string
-		Headers  map[string]string
 	}
 	type args struct {
 		renewal  time.Duration
@@ -142,20 +132,6 @@ func TestAuthConfig_Start(t *testing.T) {
 			args: args{
 				renewal:  renewal,
 				endpoint: authEndpointNoCreds,
-			},
-			firstAuthCount:    1,
-			lastAuthCount:     3,
-			firstHTTPResponse: http.StatusOK,
-			lastHTTPResponse:  http.StatusOK,
-		},
-		{
-			name: "success no creds, no body, default method, header set",
-			args: args{
-				renewal:  renewal,
-				endpoint: authEndpointWithHeader,
-			},
-			fields: fields{
-				Headers: map[string]string{reqHeaderKey: reqHeaderVal},
 			},
 			firstAuthCount:    1,
 			lastAuthCount:     3,
@@ -189,7 +165,7 @@ func TestAuthConfig_Start(t *testing.T) {
 				renewal:  renewal,
 				endpoint: authEndpointWithBasicAuth,
 			},
-			wantErr:           fmt.Errorf("cookie auth renewal received status code: 401 (Unauthorized) []"),
+			wantErr:           fmt.Errorf("cookie auth renewal received status code: 401 (Unauthorized)"),
 			firstAuthCount:    0,
 			lastAuthCount:     0,
 			firstHTTPResponse: http.StatusForbidden,
@@ -220,7 +196,7 @@ func TestAuthConfig_Start(t *testing.T) {
 				renewal:  renewal,
 				endpoint: authEndpointWithBody,
 			},
-			wantErr:           fmt.Errorf("cookie auth renewal received status code: 401 (Unauthorized) []"),
+			wantErr:           fmt.Errorf("cookie auth renewal received status code: 401 (Unauthorized)"),
 			firstAuthCount:    0,
 			lastAuthCount:     0,
 			firstHTTPResponse: http.StatusForbidden,
@@ -237,7 +213,6 @@ func TestAuthConfig_Start(t *testing.T) {
 				Username: tt.fields.Username,
 				Password: tt.fields.Password,
 				Body:     tt.fields.Body,
-				Headers:  tt.fields.Headers,
 				Renewal:  config.Duration(tt.args.renewal),
 			}
 			if err := c.initializeClient(srv.Client()); tt.wantErr != nil {

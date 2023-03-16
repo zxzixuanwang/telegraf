@@ -1,39 +1,87 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package http
 
 import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/sha256"
-	_ "embed"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
-	"time"
-
-	awsV2 "github.com/aws/aws-sdk-go-v2/aws"
-	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
-	"golang.org/x/oauth2"
-	"google.golang.org/api/idtoken"
 
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/internal"
-	internalaws "github.com/influxdata/telegraf/plugins/common/aws"
 	httpconfig "github.com/influxdata/telegraf/plugins/common/http"
 	"github.com/influxdata/telegraf/plugins/outputs"
 	"github.com/influxdata/telegraf/plugins/serializers"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 const (
 	maxErrMsgLen = 1024
 	defaultURL   = "http://127.0.0.1:8080/telegraf"
 )
+
+var sampleConfig = `
+  ## URL is the address to send metrics to
+  url = "http://127.0.0.1:8080/telegraf"
+
+  ## Timeout for HTTP message
+  # timeout = "5s"
+
+  ## HTTP method, one of: "POST" or "PUT"
+  # method = "POST"
+
+  ## HTTP Basic Auth credentials
+  # username = "username"
+  # password = "pa$$word"
+
+  ## OAuth2 Client Credentials Grant
+  # client_id = "clientid"
+  # client_secret = "secret"
+  # token_url = "https://indentityprovider/oauth2/v1/token"
+  # scopes = ["urn:opc:idm:__myscopes__"]
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+
+  ## Optional Cookie authentication
+  # cookie_auth_url = "https://localhost/authMe"
+  # cookie_auth_method = "POST"
+  # cookie_auth_username = "username"
+  # cookie_auth_password = "pa$$word"
+  # cookie_auth_body = '{"username": "user", "password": "pa$$word", "authenticate": "me"}'
+  ## cookie_auth_renewal not set or set to "0" will auth once and never renew the cookie
+  # cookie_auth_renewal = "5m"
+
+  ## Data format to output.
+  ## Each data format has it's own unique set of configuration options, read
+  ## more about them here:
+  ## https://github.com/influxdata/telegraf/blob/master/docs/DATA_FORMATS_OUTPUT.md
+  # data_format = "influx"
+
+  ## Use batch serialization format (default) instead of line based format.
+  ## Batch format is more efficient and should be used unless line based
+  ## format is really needed.
+  # use_batch_format = true
+
+  ## HTTP Content-Encoding for write request body, can be set to "gzip" to
+  ## compress body or "identity" to apply no encoding.
+  # content_encoding = "identity"
+
+  ## Additional HTTP headers
+  # [outputs.http.headers]
+  #   # Should be set manually to "application/json" for json data_format
+  #   Content-Type = "text/plain; charset=utf-8"
+
+  ## Idle (keep-alive) connection timeout.
+  ## Maximum amount of time before idle connection is closed.
+  ## Zero means no limit.
+  # idle_conn_timeout = 0
+`
 
 const (
 	defaultContentType    = "text/plain; charset=utf-8"
@@ -42,31 +90,18 @@ const (
 )
 
 type HTTP struct {
-	URL                     string            `toml:"url"`
-	Method                  string            `toml:"method"`
-	Username                config.Secret     `toml:"username"`
-	Password                config.Secret     `toml:"password"`
-	Headers                 map[string]string `toml:"headers"`
-	ContentEncoding         string            `toml:"content_encoding"`
-	UseBatchFormat          bool              `toml:"use_batch_format"`
-	AwsService              string            `toml:"aws_service"`
-	NonRetryableStatusCodes []int             `toml:"non_retryable_statuscodes"`
+	URL             string            `toml:"url"`
+	Method          string            `toml:"method"`
+	Username        string            `toml:"username"`
+	Password        string            `toml:"password"`
+	Headers         map[string]string `toml:"headers"`
+	ContentEncoding string            `toml:"content_encoding"`
+	UseBatchFormat  bool              `toml:"use_batch_format"`
 	httpconfig.HTTPClientConfig
 	Log telegraf.Logger `toml:"-"`
 
 	client     *http.Client
 	serializer serializers.Serializer
-
-	awsCfg *awsV2.Config
-	internalaws.CredentialConfig
-
-	// Google API Auth
-	CredentialsFile string `toml:"google_application_credentials"`
-	oauth2Token     *oauth2.Token
-}
-
-func (*HTTP) SampleConfig() string {
-	return sampleConfig
 }
 
 func (h *HTTP) SetSerializer(serializer serializers.Serializer) {
@@ -74,13 +109,6 @@ func (h *HTTP) SetSerializer(serializer serializers.Serializer) {
 }
 
 func (h *HTTP) Connect() error {
-	if h.AwsService != "" {
-		cfg, err := h.CredentialConfig.Credentials()
-		if err == nil {
-			h.awsCfg = &cfg
-		}
-	}
-
 	if h.Method == "" {
 		h.Method = http.MethodPost
 	}
@@ -102,6 +130,14 @@ func (h *HTTP) Connect() error {
 
 func (h *HTTP) Close() error {
 	return nil
+}
+
+func (h *HTTP) Description() string {
+	return "A plugin that can transmit metrics over HTTP"
+}
+
+func (h *HTTP) SampleConfig() string {
+	return sampleConfig
 }
 
 func (h *HTTP) Write(metrics []telegraf.Metric) error {
@@ -136,26 +172,12 @@ func (h *HTTP) writeMetric(reqBody []byte) error {
 
 	var err error
 	if h.ContentEncoding == "gzip" {
-		rc := internal.CompressWithGzip(reqBodyBuffer)
-		defer rc.Close()
-		reqBodyBuffer = rc
-	}
-
-	var payloadHash *string
-	if h.awsCfg != nil {
-		// We need a local copy of the full buffer, the signature scheme requires a sha256 of the request body.
-		buf := new(bytes.Buffer)
-		_, err = io.Copy(buf, reqBodyBuffer)
+		rc, err := internal.CompressWithGzip(reqBodyBuffer)
 		if err != nil {
 			return err
 		}
-
-		sum := sha256.Sum256(buf.Bytes())
-		reqBodyBuffer = buf
-
-		// sha256 is hex encoded
-		hash := fmt.Sprintf("%x", sum)
-		payloadHash = &hash
+		defer rc.Close()
+		reqBodyBuffer = rc
 	}
 
 	req, err := http.NewRequest(h.Method, h.URL, reqBodyBuffer)
@@ -163,43 +185,8 @@ func (h *HTTP) writeMetric(reqBody []byte) error {
 		return err
 	}
 
-	if h.awsCfg != nil {
-		signer := v4.NewSigner()
-		ctx := context.Background()
-
-		credentials, err := h.awsCfg.Credentials.Retrieve(ctx)
-		if err != nil {
-			return err
-		}
-
-		err = signer.SignHTTP(ctx, credentials, req, *payloadHash, h.AwsService, h.Region, time.Now().UTC())
-		if err != nil {
-			return err
-		}
-	}
-
-	if !h.Username.Empty() || !h.Password.Empty() {
-		username, err := h.Username.Get()
-		if err != nil {
-			return fmt.Errorf("getting username failed: %w", err)
-		}
-		defer config.ReleaseSecret(username)
-		password, err := h.Password.Get()
-		if err != nil {
-			return fmt.Errorf("getting password failed: %w", err)
-		}
-		defer config.ReleaseSecret(password)
-
-		req.SetBasicAuth(string(username), string(password))
-	}
-
-	// google api auth
-	if h.CredentialsFile != "" {
-		token, err := h.getAccessToken(context.Background(), h.URL)
-		if err != nil {
-			return err
-		}
-		token.SetAuthHeader(req)
+	if h.Username != "" || h.Password != "" {
+		req.SetBasicAuth(h.Username, h.Password)
 	}
 
 	req.Header.Set("User-Agent", internal.ProductToken())
@@ -221,13 +208,6 @@ func (h *HTTP) writeMetric(reqBody []byte) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		for _, nonRetryableStatusCode := range h.NonRetryableStatusCodes {
-			if resp.StatusCode == nonRetryableStatusCode {
-				h.Log.Errorf("Received non-retryable status %v. Metrics are lost.", resp.StatusCode)
-				return nil
-			}
-		}
-
 		errorLine := ""
 		scanner := bufio.NewScanner(io.LimitReader(resp.Body, maxErrMsgLen))
 		if scanner.Scan() {
@@ -239,7 +219,7 @@ func (h *HTTP) writeMetric(reqBody []byte) error {
 
 	_, err = io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("when writing to [%s] received error: %w", h.URL, err)
+		return fmt.Errorf("when writing to [%s] received error: %v", h.URL, err)
 	}
 
 	return nil
@@ -253,24 +233,4 @@ func init() {
 			UseBatchFormat: defaultUseBatchFormat,
 		}
 	})
-}
-
-func (h *HTTP) getAccessToken(ctx context.Context, audience string) (*oauth2.Token, error) {
-	if h.oauth2Token.Valid() {
-		return h.oauth2Token, nil
-	}
-
-	ts, err := idtoken.NewTokenSource(ctx, audience, idtoken.WithCredentialsFile(h.CredentialsFile))
-	if err != nil {
-		return nil, fmt.Errorf("error creating oauth2 token source: %w", err)
-	}
-
-	token, err := ts.Token()
-	if err != nil {
-		return nil, fmt.Errorf("error fetching oauth2 token: %w", err)
-	}
-
-	h.oauth2Token = token
-
-	return token, nil
 }

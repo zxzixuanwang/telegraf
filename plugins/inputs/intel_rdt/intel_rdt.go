@@ -1,13 +1,11 @@
-//go:generate ../../../tools/readme_config_includer/generator
 //go:build !windows
+// +build !windows
 
 package intel_rdt
 
 import (
 	"bufio"
 	"context"
-	_ "embed"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -25,9 +23,6 @@ import (
 	"github.com/influxdata/telegraf/internal/choice"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 const (
 	timestampFormat           = "2006-01-02 15:04:05"
@@ -77,13 +72,44 @@ type splitCSVLine struct {
 	coreOrPIDsValues []string
 }
 
-func (*IntelRDT) SampleConfig() string {
-	return sampleConfig
-}
-
 // All gathering is done in the Start function
 func (r *IntelRDT) Gather(_ telegraf.Accumulator) error {
 	return nil
+}
+
+func (r *IntelRDT) Description() string {
+	return "Intel Resource Director Technology plugin"
+}
+
+func (r *IntelRDT) SampleConfig() string {
+	return `
+	## Optionally set sampling interval to Nx100ms. 
+	## This value is propagated to pqos tool. Interval format is defined by pqos itself.
+	## If not provided or provided 0, will be set to 10 = 10x100ms = 1s.
+	# sampling_interval = "10"
+	
+	## Optionally specify the path to pqos executable. 
+	## If not provided, auto discovery will be performed.
+	# pqos_path = "/usr/local/bin/pqos"
+
+	## Optionally specify if IPC and LLC_Misses metrics shouldn't be propagated.
+	## If not provided, default value is false.
+	# shortened_metrics = false
+	
+	## Specify the list of groups of CPU core(s) to be provided as pqos input. 
+	## Mandatory if processes aren't set and forbidden if processes are specified.
+	## e.g. ["0-3", "4,5,6"] or ["1-3,4"]
+	# cores = ["0-3"]
+	
+	## Specify the list of processes for which Metrics will be collected.
+	## Mandatory if cores aren't set and forbidden if cores are specified.
+	## e.g. ["qemu", "pmd"]
+	# processes = ["process"]
+
+	## Specify if the pqos process should be called with sudo.
+	## Mandatory if the telegraf process does not run as root.
+	# use_sudo = false
+`
 }
 
 func (r *IntelRDT) Start(acc telegraf.Accumulator) error {
@@ -242,7 +268,7 @@ func (r *IntelRDT) readData(ctx context.Context, args []string, processesPIDsAss
 
 	if r.UseSudo {
 		// run pqos with `/bin/sh -c "sudo /path/to/pqos ..."`
-		args = []string{"-c", fmt.Sprintf("sudo %s %s", r.PqosPath, strings.ReplaceAll(strings.Join(args, " "), ";", "\\;"))}
+		args = []string{"-c", fmt.Sprintf("sudo %s %s", r.PqosPath, strings.Replace(strings.Join(args, " "), ";", "\\;", -1))}
 		cmd = exec.Command("/bin/sh", args...)
 	}
 
@@ -336,7 +362,7 @@ func shutDownPqos(pqos *exec.Cmd) error {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		for {
-			if err := pqos.Process.Signal(syscall.Signal(0)); errors.Is(err, os.ErrProcessDone) {
+			if err := pqos.Process.Signal(syscall.Signal(0)); err == os.ErrProcessDone {
 				return nil
 			} else if ctx.Err() != nil {
 				break
@@ -348,7 +374,7 @@ func shutDownPqos(pqos *exec.Cmd) error {
 		// fixed in https://github.com/intel/intel-cmt-cat/issues/197
 		err := pqos.Process.Kill()
 		if err != nil {
-			return fmt.Errorf("failed to shut down pqos: %w", err)
+			return fmt.Errorf("failed to shut down pqos: %v", err)
 		}
 	}
 	return nil
@@ -401,9 +427,10 @@ func validatePqosPath(pqosPath string) error {
 }
 
 func parseCoresConfig(cores []string) ([]string, error) {
+	var parsedCores []string
 	var allCores []int
+	configError := fmt.Errorf("wrong cores input config data format")
 
-	parsedCores := make([]string, 0, len(cores))
 	for _, singleCoreGroup := range cores {
 		var actualGroupOfCores []int
 		separatedCores := strings.Split(singleCoreGroup, ",")
@@ -411,17 +438,16 @@ func parseCoresConfig(cores []string) ([]string, error) {
 		for _, coreStr := range separatedCores {
 			actualCores, err := validateAndParseCores(coreStr)
 			if err != nil {
-				return nil, fmt.Errorf("wrong cores input config data format: %w", err)
+				return nil, fmt.Errorf("%v: %v", configError, err)
 			}
 			if checkForDuplicates(allCores, actualCores) {
-				return nil, errors.New("wrong cores input config data format: core value cannot be duplicated")
+				return nil, fmt.Errorf("%v: %v", configError, "core value cannot be duplicated")
 			}
 			actualGroupOfCores = append(actualGroupOfCores, actualCores...)
 			allCores = append(allCores, actualGroupOfCores...)
 		}
 		parsedCores = append(parsedCores, arrayToString(actualGroupOfCores))
 	}
-
 	return parsedCores, nil
 }
 

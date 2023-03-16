@@ -18,19 +18,9 @@ receive a 200 OK response with message body `{"results":[]}` but they are not
 relayed. The output configuration of the Telegraf instance which ultimately
 submits data to InfluxDB determines the destination database.
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
-# Accept metrics over InfluxDB 1.x HTTP API
+```toml
 [[inputs.influxdb_listener]]
   ## Address and port to host HTTP listener on
   service_address = ":8186"
@@ -72,11 +62,6 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   ## You probably want to make sure you have TLS configured above for this.
   # basic_username = "foobar"
   # basic_password = "barfoo"
-
-  ## Influx line protocol parser
-  ## 'internal' is the default. 'upstream' is a newer parser that is faster
-  ## and more memory efficient.
-  # parser_type = "internal"
 ```
 
 ## Metrics
@@ -93,5 +78,3 @@ curl -i -XPOST 'http://localhost:8186/write' --data-binary 'cpu_load_short,host=
 
 [influxdb_http_api]: https://docs.influxdata.com/influxdb/v1.8/guides/write_data/
 [http_listener_v2]: /plugins/inputs/http_listener_v2/README.md
-
-## Example Output

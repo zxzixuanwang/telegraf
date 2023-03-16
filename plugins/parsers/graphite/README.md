@@ -1,4 +1,4 @@
-# Graphite Parser Plugin
+# Graphite
 
 The Graphite data format translates graphite *dot* buckets directly into
 telegraf measurement names, with a single value field, and optional tags.

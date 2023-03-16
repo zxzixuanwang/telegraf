@@ -1,24 +1,28 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package trig
 
 import (
-	_ "embed"
 	"math"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 type Trig struct {
 	x         float64
 	Amplitude float64
 }
 
-func (*Trig) SampleConfig() string {
-	return sampleConfig
+var TrigConfig = `
+  ## Set the amplitude
+  amplitude = 10.0
+`
+
+func (s *Trig) SampleConfig() string {
+	return TrigConfig
+}
+
+func (s *Trig) Description() string {
+	return "Inserts sine and cosine waves for demonstration purposes"
 }
 
 func (s *Trig) Gather(acc telegraf.Accumulator) error {

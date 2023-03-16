@@ -1,9 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package mqtt_consumer
 
 import (
 	"context"
-	_ "embed"
 	"errors"
 	"fmt"
 	"strconv"
@@ -12,18 +10,13 @@ import (
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/internal"
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 	"github.com/influxdata/telegraf/plugins/parsers"
-	"github.com/influxdata/telegraf/selfstat"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 var (
 	// 30 Seconds is the default used by paho.mqtt.golang
@@ -65,19 +58,17 @@ type MQTTConsumer struct {
 	Topics                 []string             `toml:"topics"`
 	TopicTag               *string              `toml:"topic_tag"`
 	TopicParsing           []TopicParsingConfig `toml:"topic_parsing"`
-	Username               config.Secret        `toml:"username"`
-	Password               config.Secret        `toml:"password"`
+	Username               string               `toml:"username"`
+	Password               string               `toml:"password"`
 	QoS                    int                  `toml:"qos"`
 	ConnectionTimeout      config.Duration      `toml:"connection_timeout"`
 	MaxUndeliveredMessages int                  `toml:"max_undelivered_messages"`
 	parser                 parsers.Parser
-
-	MetricBuffer      int `toml:"metric_buffer" deprecated:"0.10.3;2.0.0;option is ignored"`
+	// Legacy metric buffer support; deprecated in v0.10.3
+	MetricBuffer      int
 	PersistentSession bool
 	ClientID          string `toml:"client_id"`
-
 	tls.ClientConfig
-
 	Log           telegraf.Logger
 	clientFactory ClientFactory
 	client        Client
@@ -90,14 +81,83 @@ type MQTTConsumer struct {
 	topicTagParse string
 	ctx           context.Context
 	cancel        context.CancelFunc
-	payloadSize   selfstat.Stat
-	messagesRecv  selfstat.Stat
 }
 
-func (*MQTTConsumer) SampleConfig() string {
+var sampleConfig = `
+  ## Broker URLs for the MQTT server or cluster.  To connect to multiple
+  ## clusters or standalone servers, use a separate plugin instance.
+  ##   example: servers = ["tcp://localhost:1883"]
+  ##            servers = ["ssl://localhost:1883"]
+  ##            servers = ["ws://localhost:1883"]
+  servers = ["tcp://127.0.0.1:1883"]
+  ## Topics that will be subscribed to.
+  topics = [
+    "telegraf/host01/cpu",
+    "telegraf/+/mem",
+    "sensors/#",
+  ]
+  # topic_fields = "_/_/_/temperature" 
+  ## The message topic will be stored in a tag specified by this value.  If set
+  ## to the empty string no topic tag will be created.
+  # topic_tag = "topic"
+  ## QoS policy for messages
+  ##   0 = at most once
+  ##   1 = at least once
+  ##   2 = exactly once
+  ##
+  ## When using a QoS of 1 or 2, you should enable persistent_session to allow
+  ## resuming unacknowledged messages.
+  # qos = 0
+  ## Connection timeout for initial connection in seconds
+  # connection_timeout = "30s"
+  ## Maximum messages to read from the broker that have not been written by an
+  ## output.  For best throughput set based on the number of metrics within
+  ## each message and the size of the output's metric_batch_size.
+  ##
+  ## For example, if each message from the queue contains 10 metrics and the
+  ## output metric_batch_size is 1000, setting this to 100 will ensure that a
+  ## full batch is collected and the write is triggered immediately without
+  ## waiting until the next flush_interval.
+  # max_undelivered_messages = 1000
+  ## Persistent session disables clearing of the client session on connection.
+  ## In order for this option to work you must also set client_id to identify
+  ## the client.  To receive messages that arrived while the client is offline,
+  ## also set the qos option to 1 or 2 and don't forget to also set the QoS when
+  ## publishing.
+  # persistent_session = false
+  ## If unset, a random client ID will be generated.
+  # client_id = ""
+  ## Username and password to connect MQTT server.
+  # username = "telegraf"
+  # password = "metricsmetricsmetricsmetrics"
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+  ## Data format to consume.
+  ## Each data format has its own unique set of configuration options, read
+  ## more about them here:
+  ## https://github.com/influxdata/telegraf/blob/master/docs/DATA_FORMATS_INPUT.md
+  data_format = "influx"
+  ## Enable extracting tag values from MQTT topics
+  ## _ denotes an ignored entry in the topic path 
+  ## [[inputs.mqtt_consumer.topic_parsing]]
+  ##  topic = ""
+  ##  measurement = ""
+  ##  tags = ""
+  ##  fields = ""
+  ## [inputs.mqtt_consumer.topic_parsing.types]
+  ##    
+`
+
+func (m *MQTTConsumer) SampleConfig() string {
 	return sampleConfig
 }
-
+func (m *MQTTConsumer) Description() string {
+	return "Read metrics from MQTT topic(s)"
+}
 func (m *MQTTConsumer) SetParser(parser parsers.Parser) {
 	m.parser = parser
 }
@@ -126,7 +186,7 @@ func (m *MQTTConsumer) Init() error {
 	for i, p := range m.TopicParsing {
 		splitMeasurement := strings.Split(p.Measurement, "/")
 		for j := range splitMeasurement {
-			if splitMeasurement[j] != "_" && splitMeasurement[j] != "" {
+			if splitMeasurement[j] != "_" {
 				m.TopicParsing[i].MeasurementIndex = j
 				break
 			}
@@ -148,8 +208,6 @@ func (m *MQTTConsumer) Init() error {
 		}
 	}
 
-	m.payloadSize = selfstat.Register("mqtt_consumer", "payload_size", map[string]string{})
-	m.messagesRecv = selfstat.Register("mqtt_consumer", "messages_received", map[string]string{})
 	return nil
 }
 func (m *MQTTConsumer) Start(acc telegraf.Accumulator) error {
@@ -157,10 +215,6 @@ func (m *MQTTConsumer) Start(acc telegraf.Accumulator) error {
 	m.acc = acc.WithTracking(m.MaxUndeliveredMessages)
 	m.sem = make(semaphore, m.MaxUndeliveredMessages)
 	m.ctx, m.cancel = context.WithCancel(context.Background())
-	return m.connect()
-}
-func (m *MQTTConsumer) connect() error {
-	m.state = Connecting
 	m.client = m.clientFactory(m.opts)
 	// AddRoute sets up the function for handling messages.  These need to be
 	// added in case we find a persistent session containing subscriptions so we
@@ -169,6 +223,10 @@ func (m *MQTTConsumer) connect() error {
 	for _, topic := range m.Topics {
 		m.client.AddRoute(topic, m.recvMessage)
 	}
+	m.state = Connecting
+	return m.connect()
+}
+func (m *MQTTConsumer) connect() error {
 	token := m.client.Connect()
 	if token.Wait() && token.Error() != nil {
 		err := token.Error()
@@ -193,32 +251,30 @@ func (m *MQTTConsumer) connect() error {
 	subscribeToken := m.client.SubscribeMultiple(topics, m.recvMessage)
 	subscribeToken.Wait()
 	if subscribeToken.Error() != nil {
-		m.acc.AddError(fmt.Errorf("subscription error: topics %q: %w", strings.Join(m.Topics[:], ","), subscribeToken.Error()))
+		m.acc.AddError(fmt.Errorf("subscription error: topics: %s: %v",
+			strings.Join(m.Topics[:], ","), subscribeToken.Error()))
 	}
 	return nil
 }
 func (m *MQTTConsumer) onConnectionLost(_ mqtt.Client, err error) {
-	// Should already be disconnected, but make doubly sure
-	m.client.Disconnect(5)
-	m.acc.AddError(fmt.Errorf("connection lost: %w", err))
+	m.acc.AddError(fmt.Errorf("connection lost: %v", err))
 	m.Log.Debugf("Disconnected %v", m.Servers)
 	m.state = Disconnected
 }
 func (m *MQTTConsumer) recvMessage(_ mqtt.Client, msg mqtt.Message) {
 	for {
-		// Drain anything that's been delivered
 		select {
 		case track := <-m.acc.Delivered():
-			m.onDelivered(track)
-			continue
-		default:
-		}
-
-		// Wait for room to accumulate metric, but make delivery progress if possible
-		// (Note that select will randomly pick a case if both are available)
-		select {
-		case track := <-m.acc.Delivered():
-			m.onDelivered(track)
+			<-m.sem
+			m.messagesMutex.Lock()
+			_, ok := m.messages[track.ID()]
+			if !ok {
+				// Added by a previous connection
+				continue
+			}
+			// No ack, MQTT does not support durable handling
+			delete(m.messages, track.ID())
+			m.messagesMutex.Unlock()
 		case m.sem <- empty{}:
 			err := m.onMessage(m.acc, msg)
 			if err != nil {
@@ -245,22 +301,7 @@ func compareTopics(expected []string, incoming []string) bool {
 	return true
 }
 
-func (m *MQTTConsumer) onDelivered(track telegraf.DeliveryInfo) {
-	<-m.sem
-	m.messagesMutex.Lock()
-	_, ok := m.messages[track.ID()]
-	if ok {
-		// No ack, MQTT does not support durable handling
-		delete(m.messages, track.ID())
-	}
-	m.messagesMutex.Unlock()
-}
-
 func (m *MQTTConsumer) onMessage(acc telegraf.TrackingAccumulator, msg mqtt.Message) error {
-	payloadBytes := len(msg.Payload())
-	m.payloadSize.Incr(int64(payloadBytes))
-	m.messagesRecv.Incr(1)
-
 	metrics, err := m.parser.Parse(msg.Payload())
 	if err != nil {
 		return err
@@ -310,6 +351,7 @@ func (m *MQTTConsumer) Stop() {
 }
 func (m *MQTTConsumer) Gather(_ telegraf.Accumulator) error {
 	if m.state == Disconnected {
+		m.state = Connecting
 		m.Log.Debugf("Connecting %v", m.Servers)
 		return m.connect()
 	}
@@ -319,11 +361,7 @@ func (m *MQTTConsumer) createOpts() (*mqtt.ClientOptions, error) {
 	opts := mqtt.NewClientOptions()
 	opts.ConnectTimeout = time.Duration(m.ConnectionTimeout)
 	if m.ClientID == "" {
-		randomString, err := internal.RandomString(5)
-		if err != nil {
-			return nil, fmt.Errorf("generating random string for client ID failed: %w", err)
-		}
-		opts.SetClientID("Telegraf-Consumer-" + randomString)
+		opts.SetClientID("Telegraf-Consumer-" + internal.RandomString(5))
 	} else {
 		opts.SetClientID(m.ClientID)
 	}
@@ -334,25 +372,16 @@ func (m *MQTTConsumer) createOpts() (*mqtt.ClientOptions, error) {
 	if tlsCfg != nil {
 		opts.SetTLSConfig(tlsCfg)
 	}
-	if !m.Username.Empty() {
-		user, err := m.Username.Get()
-		if err != nil {
-			return nil, fmt.Errorf("getting username failed: %w", err)
-		}
-		opts.SetUsername(string(user))
-		config.ReleaseSecret(user)
+	user := m.Username
+	if user != "" {
+		opts.SetUsername(user)
 	}
-
-	if !m.Password.Empty() {
-		password, err := m.Password.Get()
-		if err != nil {
-			return nil, fmt.Errorf("getting password failed: %w", err)
-		}
-		opts.SetPassword(string(password))
-		config.ReleaseSecret(password)
+	password := m.Password
+	if password != "" {
+		opts.SetPassword(password)
 	}
 	if len(m.Servers) == 0 {
-		return opts, fmt.Errorf("could not get host information")
+		return opts, fmt.Errorf("could not get host informations")
 	}
 	for _, server := range m.Servers {
 		// Preserve support for host:port style servers; deprecated in Telegraf 1.4.4
@@ -376,7 +405,7 @@ func (m *MQTTConsumer) createOpts() (*mqtt.ClientOptions, error) {
 // parseFields gets multiple fields from the topic based on the user configuration (TopicParsing.Fields)
 func parseMetric(keys []string, values []string, types map[string]string, isTag bool, metric telegraf.Metric) error {
 	for i, k := range keys {
-		if k == "_" || k == "" {
+		if k == "_" {
 			continue
 		}
 
@@ -402,17 +431,17 @@ func typeConvert(types map[string]string, topicValue string, key string) (interf
 		case "uint":
 			newType, err = strconv.ParseUint(topicValue, 10, 64)
 			if err != nil {
-				return nil, fmt.Errorf("unable to convert field %q to type uint: %w", topicValue, err)
+				return nil, fmt.Errorf("unable to convert field '%s' to type uint: %v", topicValue, err)
 			}
 		case "int":
 			newType, err = strconv.ParseInt(topicValue, 10, 64)
 			if err != nil {
-				return nil, fmt.Errorf("unable to convert field %q to type int: %w", topicValue, err)
+				return nil, fmt.Errorf("unable to convert field '%s' to type int: %v", topicValue, err)
 			}
 		case "float":
 			newType, err = strconv.ParseFloat(topicValue, 64)
 			if err != nil {
-				return nil, fmt.Errorf("unable to convert field %q to type float: %w", topicValue, err)
+				return nil, fmt.Errorf("unable to convert field '%s' to type float: %v", topicValue, err)
 			}
 		default:
 			return nil, fmt.Errorf("converting to the type %s is not supported: use int, uint, or float", desiredType)

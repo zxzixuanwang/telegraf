@@ -1,29 +1,15 @@
 # Solr Input Plugin
 
-The [solr](http://lucene.apache.org/solr/) plugin collects stats via the [MBean
-Request Handler][1].
+The [solr](http://lucene.apache.org/solr/) plugin collects stats via the
+[MBean Request Handler](https://cwiki.apache.org/confluence/display/solr/MBean+Request+Handler)
 
-More about [performance statistics][2].
+More about [performance statistics](https://cwiki.apache.org/confluence/display/solr/Performance+Statistics+Reference)
 
 Tested from 3.5 to 7.*
 
-[1]: https://cwiki.apache.org/confluence/display/solr/MBean+Request+Handler
-
-[2]: https://cwiki.apache.org/confluence/display/solr/Performance+Statistics+Reference
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
-# Read stats from one or more Solr servers or cores
+```toml
 [[inputs.solr]]
   ## specify a list of one or more Solr servers
   servers = ["http://localhost:8983"]
@@ -36,9 +22,7 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   # password = "pa$$word"
 ```
 
-## Metrics
-
-## Example Output
+## Example output of gathered metrics
 
 ```shell
 ➜  ~ telegraf -config telegraf.conf -input-filter solr -test

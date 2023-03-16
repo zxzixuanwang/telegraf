@@ -12,25 +12,25 @@ import (
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/metric"
-	"github.com/influxdata/telegraf/plugins/parsers/influx"
+	"github.com/influxdata/telegraf/plugins/parsers"
 	"github.com/influxdata/telegraf/plugins/serializers"
 )
 
 func TestProcessorShim(t *testing.T) {
-	testSendAndReceive(t, "f1", "fv1")
+	testSendAndRecieve(t, "f1", "fv1")
 }
 
 func TestProcessorShimWithLargerThanDefaultScannerBufferSize(t *testing.T) {
 	letters := []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-	b := make([]rune, 0, bufio.MaxScanTokenSize*2)
-	for i := 0; i < bufio.MaxScanTokenSize*2; i++ {
-		b = append(b, letters[rand.Intn(len(letters))])
+	b := make([]rune, bufio.MaxScanTokenSize*2)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
 	}
 
-	testSendAndReceive(t, "f1", string(b))
+	testSendAndRecieve(t, "f1", string(b))
 }
 
-func testSendAndReceive(t *testing.T, fieldKey string, fieldValue string) {
+func testSendAndRecieve(t *testing.T, fieldKey string, fieldValue string) {
 	p := &testProcessor{"hi", "mom"}
 
 	stdinReader, stdinWriter := io.Pipe()
@@ -52,9 +52,8 @@ func testSendAndReceive(t *testing.T, fieldKey string, fieldValue string) {
 		wg.Done()
 	}()
 
-	serializer := serializers.NewInfluxSerializer()
-	parser := influx.Parser{}
-	require.NoError(t, parser.Init())
+	serializer, _ := serializers.NewInfluxSerializer()
+	parser, _ := parsers.NewInfluxParser()
 
 	m := metric.New("thing",
 		map[string]string{

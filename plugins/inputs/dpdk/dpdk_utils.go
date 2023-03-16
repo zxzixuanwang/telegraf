@@ -1,4 +1,5 @@
 //go:build linux
+// +build linux
 
 package dpdk
 
@@ -43,15 +44,15 @@ func getParams(command string) string {
 func isSocket(path string) error {
 	pathInfo, err := os.Lstat(path)
 	if os.IsNotExist(err) {
-		return fmt.Errorf("provided path does not exist: %q", path)
+		return fmt.Errorf("provided path does not exist: '%v'", path)
 	}
 
 	if err != nil {
-		return fmt.Errorf("cannot get system information of %q file: %w", path, err)
+		return fmt.Errorf("cannot get system information of '%v' file: %v", path, err)
 	}
 
 	if pathInfo.Mode()&os.ModeSocket != os.ModeSocket {
-		return fmt.Errorf("provided path does not point to a socket file: %q", path)
+		return fmt.Errorf("provided path does not point to a socket file: '%v'", path)
 	}
 
 	return nil
@@ -70,12 +71,12 @@ func jsonToArray(input []byte, command string) ([]string, error) {
 	}
 
 	var intArray []int64
+	var stringArray []string
 	err = json.Unmarshal(rawMessage[command], &intArray)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshall json response: %w", err)
+		return nil, fmt.Errorf("failed to unmarshall json response - %v", err)
 	}
 
-	stringArray := make([]string, 0, len(intArray))
 	for _, value := range intArray {
 		stringArray = append(stringArray, strconv.FormatInt(value, 10))
 	}

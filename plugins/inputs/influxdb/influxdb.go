@@ -1,9 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package influxdb
 
 import (
 	"bytes"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"io"
@@ -17,9 +15,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 const (
 	maxErrorResponseBodyLength = 1024
@@ -48,8 +43,36 @@ type InfluxDB struct {
 	client *http.Client
 }
 
+func (*InfluxDB) Description() string {
+	return "Read InfluxDB-formatted JSON metrics from one or more HTTP endpoints"
+}
+
 func (*InfluxDB) SampleConfig() string {
-	return sampleConfig
+	return `
+  ## Works with InfluxDB debug endpoints out of the box,
+  ## but other services can use this format too.
+  ## See the influxdb plugin's README for more details.
+
+  ## Multiple URLs from which to read InfluxDB-formatted JSON
+  ## Default is "http://localhost:8086/debug/vars".
+  urls = [
+    "http://localhost:8086/debug/vars"
+  ]
+
+  ## Username and password to send using HTTP Basic Authentication.
+  # username = ""
+  # password = ""
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+
+  ## http request & header timeout
+  timeout = "5s"
+`
 }
 
 func (i *InfluxDB) Gather(acc telegraf.Accumulator) error {
@@ -123,21 +146,13 @@ type memstats struct {
 	GCCPUFraction float64    `json:"GCCPUFraction"`
 }
 
-type system struct {
-	CurrentTime string `json:"currentTime"`
-	Started     string `json:"started"`
-	Uptime      uint64 `json:"uptime"`
-}
-
 // Gathers data from a particular URL
 // Parameters:
-//
-//	acc    : The telegraf Accumulator to use
-//	url    : endpoint to send request to
+//     acc    : The telegraf Accumulator to use
+//     url    : endpoint to send request to
 //
 // Returns:
-//
-//	error: Any error that may have occurred
+//     error: Any error that may have occurred
 func (i *InfluxDB) gatherURL(
 	acc telegraf.Accumulator,
 	url string,
@@ -154,7 +169,7 @@ func (i *InfluxDB) gatherURL(
 		req.SetBasicAuth(i.Username, i.Password)
 	}
 
-	req.Header.Set("User-Agent", "Telegraf/"+internal.Version)
+	req.Header.Set("User-Agent", "Telegraf/"+internal.Version())
 
 	resp, err := i.client.Do(req)
 	if err != nil {
@@ -195,24 +210,6 @@ func (i *InfluxDB) gatherURL(
 		}
 
 		if keyStr, ok := key.(string); ok {
-			if keyStr == "system" {
-				var p system
-				if err := dec.Decode(&p); err != nil {
-					continue
-				}
-
-				acc.AddFields("influxdb_system",
-					map[string]interface{}{
-						"current_time": p.CurrentTime,
-						"started":      p.Started,
-						"uptime":       p.Uptime,
-					},
-					map[string]string{
-						"url": url,
-					},
-				)
-			}
-
 			if keyStr == "memstats" {
 				var m memstats
 				if err := dec.Decode(&m); err != nil {

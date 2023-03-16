@@ -1,28 +1,28 @@
 package xpath
 
 import (
-	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 
-	path "github.com/antchfx/xpath"
-	"github.com/doclambda/protobufquery"
-	"github.com/jhump/protoreflect/desc"
-	"github.com/jhump/protoreflect/desc/protoparse"
+	"github.com/influxdata/telegraf"
+
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/dynamicpb"
 
-	"github.com/influxdata/telegraf"
+	"github.com/jhump/protoreflect/desc/protoparse"
+
+	path "github.com/antchfx/xpath"
+	"github.com/doclambda/protobufquery"
 )
 
 type protobufDocument struct {
 	MessageDefinition string
 	MessageType       string
-	ImportPaths       []string
-	SkipBytes         int64
 	Log               telegraf.Logger
 	msg               *dynamicpb.Message
 }
@@ -37,32 +37,45 @@ func (d *protobufDocument) Init() error {
 	}
 
 	// Load the file descriptors from the given protocol-buffer definition
-	parser := protoparse.Parser{
-		ImportPaths:      d.ImportPaths,
-		InferImportPaths: true,
-	}
+	parser := protoparse.Parser{}
 	fds, err := parser.ParseFiles(d.MessageDefinition)
 	if err != nil {
-		return fmt.Errorf("parsing protocol-buffer definition in %q failed: %w", d.MessageDefinition, err)
+		return fmt.Errorf("parsing protocol-buffer definition in %q failed: %v", d.MessageDefinition, err)
 	}
 	if len(fds) < 1 {
 		return fmt.Errorf("file %q does not contain file descriptors", d.MessageDefinition)
 	}
 
 	// Register all definitions in the file in the global registry
-	registry, err := protodesc.NewFiles(desc.ToFileDescriptorSet(fds...))
-	if err != nil {
-		return fmt.Errorf("constructing registry failed: %w", err)
+	for _, fd := range fds {
+		if fd == nil {
+			continue
+		}
+		fileDescProto := fd.AsFileDescriptorProto()
+		fileDesc, err := protodesc.NewFile(fileDescProto, nil)
+		if err != nil {
+			return fmt.Errorf("creating file descriptor from proto failed: %v", err)
+		}
+		if _, err := protoregistry.GlobalFiles.FindFileByPath(fileDesc.Path()); !errors.Is(err, protoregistry.NotFound) {
+			if err != nil {
+				return fmt.Errorf("searching for file %q in registry failed: %v", fileDesc.Path(), err)
+			}
+			d.Log.Warnf("Protocol buffer with path %q already registered. Skipping...", fileDesc.Path())
+			continue
+		}
+		if err := protoregistry.GlobalFiles.RegisterFile(fileDesc); err != nil {
+			return fmt.Errorf("registering file descriptor %q failed: %v", fileDesc.Package(), err)
+		}
 	}
 
 	// Lookup given type in the loaded file descriptors
 	msgFullName := protoreflect.FullName(d.MessageType)
-	descriptor, err := registry.FindDescriptorByName(msgFullName)
+	desc, err := protoregistry.GlobalFiles.FindDescriptorByName(msgFullName)
 	if err != nil {
 		d.Log.Infof("Could not find %q... Known messages:", msgFullName)
 
 		var known []string
-		registry.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
+		protoregistry.GlobalFiles.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
 			name := strings.TrimSpace(string(fd.FullName()))
 			if name != "" {
 				known = append(known, name)
@@ -77,9 +90,9 @@ func (d *protobufDocument) Init() error {
 	}
 
 	// Get a prototypical message for later use
-	msgDesc, ok := descriptor.(protoreflect.MessageDescriptor)
+	msgDesc, ok := desc.(protoreflect.MessageDescriptor)
 	if !ok {
-		return fmt.Errorf("%q is not a message descriptor (%T)", msgFullName, descriptor)
+		return fmt.Errorf("%q is not a message descriptor (%T)", msgFullName, desc)
 	}
 
 	d.msg = dynamicpb.NewMessage(msgDesc)
@@ -94,9 +107,7 @@ func (d *protobufDocument) Parse(buf []byte) (dataNode, error) {
 	msg := d.msg.New()
 
 	// Unmarshal the received buffer
-	if err := proto.Unmarshal(buf[d.SkipBytes:], msg.Interface()); err != nil {
-		hexbuf := hex.EncodeToString(buf)
-		d.Log.Debugf("raw data (hex): %q (skip %d bytes)", hexbuf, d.SkipBytes)
+	if err := proto.Unmarshal(buf, msg.Interface()); err != nil {
 		return nil, err
 	}
 
@@ -110,9 +121,9 @@ func (d *protobufDocument) QueryAll(node dataNode, expr string) ([]dataNode, err
 		return nil, err
 	}
 
-	nodes := make([]dataNode, 0, len(native))
-	for _, n := range native {
-		nodes = append(nodes, n)
+	nodes := make([]dataNode, len(native))
+	for i, n := range native {
+		nodes[i] = n
 	}
 	return nodes, nil
 }

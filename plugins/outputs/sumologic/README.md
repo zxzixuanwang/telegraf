@@ -1,7 +1,7 @@
 # Sumo Logic Output Plugin
 
-This plugin sends metrics to [Sumo Logic HTTP Source][http-source] in HTTP
-messages, encoded using one of the output data formats.
+This plugin sends metrics to [Sumo Logic HTTP Source](https://help.sumologic.com/03Send-Data/Sources/02Sources-for-Hosted-Collectors/HTTP-Source/Upload-Metrics-to-an-HTTP-Source)
+in HTTP messages, encoded using one of the output data formats.
 
 Telegraf minimum version: Telegraf 1.16.0
 
@@ -12,20 +12,9 @@ by Sumologic HTTP Source:
 * `carbon2` - for Content-Type of `application/vnd.sumologic.carbon2`
 * `prometheus` - for Content-Type of `application/vnd.sumologic.prometheus`
 
-[http-source]: https://help.sumologic.com/03Send-Data/Sources/02Sources-for-Hosted-Collectors/HTTP-Source/Upload-Metrics-to-an-HTTP-Source
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
+```toml
 # A plugin that can send metrics to Sumo Logic HTTP metric collector.
 [[outputs.sumologic]]
   ## Unique URL generated for your HTTP Metrics Source.

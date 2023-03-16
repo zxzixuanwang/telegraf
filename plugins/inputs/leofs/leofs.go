@@ -1,9 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package leofs
 
 import (
 	"bufio"
-	_ "embed"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -15,9 +13,6 @@ import (
 	"github.com/influxdata/telegraf/internal"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 const oid = ".1.3.6.1.4.1.35450"
 
@@ -151,8 +146,18 @@ var serverTypeMapping = map[string]ServerType{
 	"4001": ServerTypeGateway,
 }
 
-func (*LeoFS) SampleConfig() string {
+var sampleConfig = `
+  ## An array of URLs of the form:
+  ##   host [ ":" port]
+  servers = ["127.0.0.1:4020"]
+`
+
+func (l *LeoFS) SampleConfig() string {
 	return sampleConfig
+}
+
+func (l *LeoFS) Description() string {
+	return "Read metrics from a LeoFS Server via SNMP"
 }
 
 func (l *LeoFS) Gather(acc telegraf.Accumulator) error {
@@ -165,15 +170,15 @@ func (l *LeoFS) Gather(acc telegraf.Accumulator) error {
 
 		port := "4020"
 		if len(results) > 2 {
-			acc.AddError(fmt.Errorf("unable to parse address %q", endpoint))
+			acc.AddError(fmt.Errorf("Unable to parse address %q", endpoint))
 			continue
 		} else if len(results) == 2 {
-			_, err := strconv.Atoi(results[1])
-			if err != nil {
-				acc.AddError(fmt.Errorf("unable to parse port from %q", endpoint))
+			if _, err := strconv.Atoi(results[1]); err == nil {
+				port = results[1]
+			} else {
+				acc.AddError(fmt.Errorf("Unable to parse port from %q", endpoint))
 				continue
 			}
-			port = results[1]
 		}
 
 		st, ok := serverTypeMapping[port]
@@ -203,10 +208,12 @@ func (l *LeoFS) gatherServer(
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	defer internal.WaitTimeout(cmd, time.Second*5) //nolint:errcheck // ignore the returned error as we cannot do anything about it anyway
+	// Ignore the returned error as we cannot do anything about it anyway
+	//nolint:errcheck,revive
+	defer internal.WaitTimeout(cmd, time.Second*5)
 	scanner := bufio.NewScanner(stdout)
 	if !scanner.Scan() {
-		return fmt.Errorf("unable to retrieve the node name")
+		return fmt.Errorf("Unable to retrieve the node name")
 	}
 	nodeName, err := retrieveTokenAfterColon(scanner.Text())
 	if err != nil {
@@ -227,7 +234,7 @@ func (l *LeoFS) gatherServer(
 		}
 		fVal, err := strconv.ParseFloat(val, 64)
 		if err != nil {
-			return fmt.Errorf("unable to parse the value %q: %w", val, err)
+			return fmt.Errorf("Unable to parse the value:%s, err:%s", val, err)
 		}
 		fields[key] = fVal
 		i++

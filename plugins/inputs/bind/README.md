@@ -4,50 +4,26 @@ This plugin decodes the JSON or XML statistics provided by BIND 9 nameservers.
 
 ## XML Statistics Channel
 
-Version 2 statistics (BIND 9.6 - 9.9) and version 3 statistics (BIND 9.9+) are
-supported. Note that for BIND 9.9 to support version 3 statistics, it must be
-built with the `--enable-newstats` compile flag, and it must be specifically
-requested via the correct URL. Version 3 statistics are the default (and only)
-XML format in BIND 9.10+.
+Version 2 statistics (BIND 9.6 - 9.9) and version 3 statistics (BIND 9.9+) are supported. Note that
+for BIND 9.9 to support version 3 statistics, it must be built with the `--enable-newstats` compile
+flag, and it must be specifically requested via the correct URL. Version 3 statistics are the
+default (and only) XML format in BIND 9.10+.
 
 ## JSON Statistics Channel
 
-JSON statistics schema version 1 (BIND 9.10+) is supported. As of writing, some
-distros still do not enable support for JSON statistics in their BIND packages.
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+JSON statistics schema version 1 (BIND 9.10+) is supported. As of writing, some distros still do
+not enable support for JSON statistics in their BIND packages.
 
 ## Configuration
 
-```toml @sample.conf
-# Read BIND nameserver XML statistics
-[[inputs.bind]]
-  ## An array of BIND XML statistics URI to gather stats.
-  ## Default is "http://localhost:8053/xml/v3".
-  # urls = ["http://localhost:8053/xml/v3"]
-  # gather_memory_contexts = false
-  # gather_views = false
-
-  ## Timeout for http requests made by bind nameserver
-  # timeout = "4s"
-```
-
-- **urls** []string: List of BIND statistics channel URLs to collect from.
-  Do not include a trailing slash in the URL.
-  Default is "http://localhost:8053/xml/v3".
+- **urls** []string: List of BIND statistics channel URLs to collect from. Do not include a
+  trailing slash in the URL. Default is "http://localhost:8053/xml/v3".
 - **gather_memory_contexts** bool: Report per-context memory statistics.
 - **gather_views** bool: Report per-view query statistics.
-- **timeout** Timeout for http requests made by bind (example: "4s").
+- **timeout** Timeout for http requests made by bind nameserver (example: "4s").
 
-The following table summarizes the URL formats which should be used,
-depending on your BIND version and configured statistics channel.
+The following table summarizes the URL formats which should be used, depending on your BIND
+version and configured statistics channel.
 
 | BIND Version | Statistics Format | Example URL                   |
 | ------------ | ----------------- | ----------------------------- |
@@ -58,8 +34,7 @@ depending on your BIND version and configured statistics channel.
 
 ### Configuration of BIND Daemon
 
-Add the following to your named.conf if running Telegraf on the same host
-as the BIND daemon:
+Add the following to your named.conf if running Telegraf on the same host as the BIND daemon:
 
 ```json
 statistics-channels {
@@ -67,13 +42,12 @@ statistics-channels {
 };
 ```
 
-Alternatively, specify a wildcard address (e.g., 0.0.0.0) or specific
-IP address of an interface to configure the BIND daemon to listen on that
-address. Note that you should secure the statistics channel with an ACL if
-it is publicly reachable. Consult the BIND Administrator Reference Manual
+Alternatively, specify a wildcard address (e.g., 0.0.0.0) or specific IP address of an interface to
+configure the BIND daemon to listen on that address. Note that you should secure the statistics
+channel with an ACL if it is publicly reachable. Consult the BIND Administrator Reference Manual
 for more information.
 
-## Metrics
+## Measurements & Fields
 
 - bind_counter
   - name=value (multiple)
@@ -102,8 +76,8 @@ for more information.
 
 ## Sample Queries
 
-These are some useful queries (to generate dashboards or other) to run against
-data from this plugin:
+These are some useful queries (to generate dashboards or other) to run against data from this
+plugin:
 
 ```sql
 SELECT non_negative_derivative(mean(/^A$|^PTR$/), 5m) FROM bind_counter \

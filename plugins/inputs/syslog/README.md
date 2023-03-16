@@ -1,27 +1,17 @@
 # Syslog Input Plugin
 
-The syslog plugin listens for syslog messages transmitted over a Unix Domain
-socket, [UDP](https://tools.ietf.org/html/rfc5426),
+The syslog plugin listens for syslog messages transmitted over
+a Unix Domain socket,
+[UDP](https://tools.ietf.org/html/rfc5426),
 [TCP](https://tools.ietf.org/html/rfc6587), or
-[TLS](https://tools.ietf.org/html/rfc5425); with or without the octet counting
-framing.
+[TLS](https://tools.ietf.org/html/rfc5425); with or without the octet counting framing.
 
 Syslog messages should be formatted according to
-[RFC 5424](https://tools.ietf.org/html/rfc5424) (syslog protocol) or
-[RFC 3164](https://tools.ietf.org/html/rfc3164) (BSD syslog protocol).
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+[RFC 5424](https://tools.ietf.org/html/rfc5424).
 
 ## Configuration
 
-```toml @sample.conf
+```toml
 [[inputs.syslog]]
   ## Protocol, address and port to host the syslog receiver.
   ## If no host is specified, then localhost is used.
@@ -29,9 +19,6 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   ##   ex: server = "tcp://localhost:6514"
   ##       server = "udp://:6514"
   ##       server = "unix:///var/run/telegraf-syslog.sock"
-  ## When using tcp, consider using 'tcp4' or 'tcp6' to force the usage of IPv4
-  ## or IPV6 respectively. There are cases, where when not specified, a system
-  ## may force an IPv4 mapped IPv6 address.
   server = "tcp://:6514"
 
   ## TLS Config
@@ -83,17 +70,10 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
 
 ### Message transport
 
-The `framing` option only applies to streams. It governs the way we expect to
-receive messages within the stream.  Namely, with the [`"octet counting"`][1]
-technique (default) or with the [`"non-transparent"`][2] framing.
+The `framing` option only applies to streams. It governs the way we expect to receive messages within the stream.
+Namely, with the [`"octet counting"`](https://tools.ietf.org/html/rfc5425#section-4.3) technique (default) or with the [`"non-transparent"`](https://tools.ietf.org/html/rfc6587#section-3.4.2) framing.
 
-The `trailer` option only applies when `framing` option is
-`"non-transparent"`. It must have one of the following values: `"LF"` (default),
-or `"NUL"`.
-
-[1]: https://tools.ietf.org/html/rfc5425#section-4.3
-
-[2]: https://tools.ietf.org/html/rfc6587#section-3.4.2
+The `trailer` option only applies when `framing` option is `"non-transparent"`. It must have one of the following values: `"LF"` (default), or `"NUL"`.
 
 ### Best effort
 
@@ -104,7 +84,7 @@ messages. If unset only full messages will be collected.
 ### Rsyslog Integration
 
 Rsyslog can be configured to forward logging messages to Telegraf by configuring
-[remote logging][3].
+[remote logging](https://www.rsyslog.com/doc/v8-stable/configuration/actions.html#remote-machine).
 
 Most system are setup with a configuration split between `/etc/rsyslog.conf`
 and the files in the `/etc/rsyslog.d/` directory, it is recommended to add the
@@ -137,11 +117,7 @@ action(type="omfwd" Protocol="tcp" TCP_Framing="octet-counted" Target="127.0.0.1
 #action(type="omfwd" Protocol="udp" Target="127.0.0.1" Port="6514" Template="RSYSLOG_SyslogProtocol23Format")
 ```
 
-To complete TLS setup please refer to [rsyslog docs][4].
-
-[3]: https://www.rsyslog.com/doc/v8-stable/configuration/actions.html#remote-machine
-
-[4]: https://www.rsyslog.com/doc/v8-stable/tutorials/tls.html
+To complete TLS setup please refer to [rsyslog docs](https://www.rsyslog.com/doc/v8-stable/tutorials/tls.html).
 
 ## Metrics
 
@@ -151,7 +127,6 @@ To complete TLS setup please refer to [rsyslog docs][4].
     - facility (string)
     - hostname (string)
     - appname (string)
-    - source (string)
   - fields
     - version (integer)
     - severity_code (integer)
@@ -165,8 +140,7 @@ To complete TLS setup please refer to [rsyslog docs][4].
 
 ### Structured Data
 
-Structured data produces field keys by combining the `SD_ID` with the
-`PARAM_NAME` combined using the `sdparam_separator` as in the following example:
+Structured data produces field keys by combining the `SD_ID` with the `PARAM_NAME` combined using the `sdparam_separator` as in the following example:
 
 ```shell
 170 <165>1 2018-10-01:14:15.000Z mymachine.example.com evntslog - ID47 [exampleSDID@32473 iut="3" eventSource="Application" eventID="1011"] An application event log entry...
@@ -178,6 +152,8 @@ syslog,appname=evntslog,facility=local4,hostname=mymachine.example.com,severity=
 
 ## Troubleshooting
 
+You can send debugging messages directly to the input plugin using netcat:
+
 ```sh
 # TCP with octet framing
 echo "57 <13>1 2018-10-01T12:00:00.0Z example.org root - - - test" | nc 127.0.0.1 6514
@@ -186,18 +162,9 @@ echo "57 <13>1 2018-10-01T12:00:00.0Z example.org root - - - test" | nc 127.0.0.
 echo "<13>1 2018-10-01T12:00:00.0Z example.org root - - - test" | nc -u 127.0.0.1 6514
 ```
 
-### Resolving Source IPs
-
-The `source` tag stores the remote IP address of the syslog sender.
-To resolve these IPs to DNS names, use the
-[`reverse_dns` processor](../../../plugins/processors/reverse_dns).
-
-You can send debugging messages directly to the input plugin using netcat:
-
 ### RFC3164
 
-RFC3164 encoded messages are supported for UDP only, but not all vendors output
-valid RFC3164 messages by default
+RFC3164 encoded messages are supported for UDP only, but not all vendors output valid RFC3164 messages by default
 
 - E.g. Cisco IOS
 
@@ -221,19 +188,3 @@ $UDPServerRun 514
 
 Make adjustments to the target address as needed and sent your RFC3164 messages
 to port 514.
-
-## Example Output
-
-Here is example output of this plugin:
-
-```shell
-syslog,appname=docker-compose,facility=daemon,host=bb8,hostname=droplet,location=home,severity=info,source=10.0.0.12 facility_code=3i,message="<redacted>",severity_code=6i,timestamp=1624643706396113000i,version=1i 1624643706400667198
-syslog,appname=tailscaled,facility=daemon,host=bb8,hostname=dev,location=home,severity=info,source=10.0.0.15 facility_code=3i,message="<redacted>",severity_code=6i,timestamp=1624643706403394000i,version=1i 1624643706407850408
-syslog,appname=docker-compose,facility=daemon,host=bb8,hostname=droplet,location=home,severity=info,source=10.0.0.12 facility_code=3i,message="<redacted>",severity_code=6i,timestamp=1624643706675853000i,version=1i 1624643706679251683
-syslog,appname=telegraf,facility=daemon,host=bb8,hostname=droplet,location=home,severity=info,source=10.0.0.12 facility_code=3i,message="<redacted>",severity_code=6i,timestamp=1624643710005006000i,version=1i 1624643710008285426
-syslog,appname=telegraf,facility=daemon,host=bb8,hostname=droplet,location=home,severity=info,source=10.0.0.12 facility_code=3i,message="<redacted>",severity_code=6i,timestamp=1624643710005696000i,version=1i 1624643710010754050
-syslog,appname=docker-compose,facility=daemon,host=bb8,hostname=droplet,location=home,severity=info,source=10.0.0.12 facility_code=3i,message="<redacted>",severity_code=6i,timestamp=1624643715777813000i,version=1i 1624643715782158154
-syslog,appname=docker-compose,facility=daemon,host=bb8,hostname=droplet,location=home,severity=info,source=10.0.0.12 facility_code=3i,message="<redacted>",severity_code=6i,timestamp=1624643716396547000i,version=1i 1624643716400395788
-syslog,appname=tailscaled,facility=daemon,host=bb8,hostname=dev,location=home,severity=info,source=10.0.0.15 facility_code=3i,message="<redacted>",severity_code=6i,timestamp=1624643716404931000i,version=1i 1624643716416947058
-syslog,appname=docker-compose,facility=daemon,host=bb8,hostname=droplet,location=home,severity=info,source=10.0.0.12 facility_code=3i,message="<redacted>",severity_code=6i,timestamp=1624643716676633000i,version=1i 1624643716680157558
-```

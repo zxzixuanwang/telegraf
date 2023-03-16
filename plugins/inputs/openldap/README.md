@@ -2,19 +2,11 @@
 
 This plugin gathers metrics from OpenLDAP's cn=Monitor backend.
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
-# OpenLDAP cn=Monitor plugin
+To use this plugin you must enable the [slapd monitoring](https://www.openldap.org/devel/admin/monitoringslapd.html) backend.
+
+```toml
 [[inputs.openldap]]
   host = "localhost"
   port = 389
@@ -33,31 +25,23 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   # dn/password to bind with. If bind_dn is empty, an anonymous bind is performed.
   bind_dn = ""
   bind_password = ""
-
+  
   # reverse metric names so they sort more naturally
   # Defaults to false if unset, but is set to true when generating a new config
   reverse_metric_names = true
 ```
 
-To use this plugin you must enable the [slapd
-monitoring](https://www.openldap.org/devel/admin/monitoringslapd.html) backend.
+## Measurements & Fields
 
-## Metrics
-
-All **monitorCounter**, **monitoredInfo**, **monitorOpInitiated**, and
-**monitorOpCompleted** attributes are gathered based on this LDAP query:
+All **monitorCounter**, **monitoredInfo**, **monitorOpInitiated**, and **monitorOpCompleted** attributes are gathered based on this LDAP query:
 
 ```sh
 (|(objectClass=monitorCounterObject)(objectClass=monitorOperation)(objectClass=monitoredObject))
 ```
 
-Metric names are based on their entry DN with the cn=Monitor base removed. If
-`reverse_metric_names` is not set, metrics are based on their DN. If
-`reverse_metric_names` is set to `true`, the names are reversed. This is
-recommended as it allows the names to sort more naturally.
+Metric names are based on their entry DN with the cn=Monitor base removed. If `reverse_metric_names` is not set, metrics are based on their DN. If `reverse_metric_names` is set to `true`, the names are reversed. This is recommended as it allows the names to sort more naturally.
 
-Metrics for the **monitorOp*** attributes have **_initiated** and **_completed**
-added to the base name as appropriate.
+Metrics for the **monitorOp*** attributes have **_initiated** and **_completed** added to the base name as appropriate.
 
 An OpenLDAP 2.4 server will provide these metrics:
 
@@ -100,7 +84,7 @@ An OpenLDAP 2.4 server will provide these metrics:
   - waiters_read
   - waiters_write
 
-### Tags
+## Tags
 
 - server= # value from config
 - port= # value from config

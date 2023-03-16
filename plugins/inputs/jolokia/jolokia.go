@@ -1,9 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package jolokia
 
 import (
 	"bytes"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,9 +13,6 @@ import (
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 // Default http timeouts
 var DefaultResponseHeaderTimeout = config.Duration(3 * time.Second)
@@ -64,6 +59,81 @@ type Jolokia struct {
 	Log                   telegraf.Logger `toml:"-"`
 }
 
+const sampleConfig = `
+  # DEPRECATED: the jolokia plugin has been deprecated in favor of the
+  # jolokia2 plugin
+  # see https://github.com/influxdata/telegraf/tree/master/plugins/inputs/jolokia2
+
+  ## This is the context root used to compose the jolokia url
+  ## NOTE that Jolokia requires a trailing slash at the end of the context root
+  ## NOTE that your jolokia security policy must allow for POST requests.
+  context = "/jolokia/"
+
+  ## This specifies the mode used
+  # mode = "proxy"
+  #
+  ## When in proxy mode this section is used to specify further
+  ## proxy address configurations.
+  ## Remember to change host address to fit your environment.
+  # [inputs.jolokia.proxy]
+  #   host = "127.0.0.1"
+  #   port = "8080"
+
+  ## Optional http timeouts
+  ##
+  ## response_header_timeout, if non-zero, specifies the amount of time to wait
+  ## for a server's response headers after fully writing the request.
+  # response_header_timeout = "3s"
+  ##
+  ## client_timeout specifies a time limit for requests made by this client.
+  ## Includes connection time, any redirects, and reading the response body.
+  # client_timeout = "4s"
+
+  ## Attribute delimiter
+  ##
+  ## When multiple attributes are returned for a single
+  ## [inputs.jolokia.metrics], the field name is a concatenation of the metric
+  ## name, and the attribute name, separated by the given delimiter.
+  # delimiter = "_"
+
+  ## List of servers exposing jolokia read service
+  [[inputs.jolokia.servers]]
+    name = "as-server-01"
+    host = "127.0.0.1"
+    port = "8080"
+    # username = "myuser"
+    # password = "mypassword"
+
+  ## List of metrics collected on above servers
+  ## Each metric consists in a name, a jmx path and either
+  ## a pass or drop slice attribute.
+  ## This collect all heap memory usage metrics.
+  [[inputs.jolokia.metrics]]
+    name = "heap_memory_usage"
+    mbean  = "java.lang:type=Memory"
+    attribute = "HeapMemoryUsage"
+
+  ## This collect thread counts metrics.
+  [[inputs.jolokia.metrics]]
+    name = "thread_count"
+    mbean  = "java.lang:type=Threading"
+    attribute = "TotalStartedThreadCount,ThreadCount,DaemonThreadCount,PeakThreadCount"
+
+  ## This collect number of class loaded/unloaded counts metrics.
+  [[inputs.jolokia.metrics]]
+    name = "class_count"
+    mbean  = "java.lang:type=ClassLoading"
+    attribute = "LoadedClassCount,UnloadedClassCount,TotalLoadedClassCount"
+`
+
+func (j *Jolokia) SampleConfig() string {
+	return sampleConfig
+}
+
+func (j *Jolokia) Description() string {
+	return "Read JMX metrics through Jolokia"
+}
+
 func (j *Jolokia) doRequest(req *http.Request) ([]map[string]interface{}, error) {
 	resp, err := j.jClient.MakeRequest(req)
 	if err != nil {
@@ -73,7 +143,7 @@ func (j *Jolokia) doRequest(req *http.Request) ([]map[string]interface{}, error)
 
 	// Process response
 	if resp.StatusCode != http.StatusOK {
-		err = fmt.Errorf("response from url %q has status code %d (%s), expected %d (%s)",
+		err = fmt.Errorf("response from url \"%s\" has status code %d (%s), expected %d (%s)",
 			req.RequestURI,
 			resp.StatusCode,
 			http.StatusText(resp.StatusCode),
@@ -91,7 +161,7 @@ func (j *Jolokia) doRequest(req *http.Request) ([]map[string]interface{}, error)
 	// Unmarshal json
 	var jsonOut []map[string]interface{}
 	if err = json.Unmarshal(body, &jsonOut); err != nil {
-		return nil, fmt.Errorf("error decoding JSON response %q: %w", body, err)
+		return nil, fmt.Errorf("error decoding JSON response: %s: %s", err, body)
 	}
 
 	return jsonOut, nil
@@ -101,7 +171,7 @@ func (j *Jolokia) prepareRequest(server Server, metrics []Metric) (*http.Request
 	var jolokiaURL *url.URL
 	context := j.Context // Usually "/jolokia/"
 
-	bulkBodyContent := make([]map[string]interface{}, 0, len(metrics))
+	var bulkBodyContent []map[string]interface{}
 	for _, metric := range metrics {
 		// Create bodyContent
 		bodyContent := map[string]interface{}{
@@ -187,10 +257,6 @@ func (j *Jolokia) extractValues(measurement string, value interface{}, fields ma
 	}
 }
 
-func (*Jolokia) SampleConfig() string {
-	return sampleConfig
-}
-
 func (j *Jolokia) Gather(acc telegraf.Accumulator) error {
 	if j.jClient == nil {
 		j.Log.Warn("DEPRECATED: the jolokia plugin has been deprecated " +
@@ -216,12 +282,12 @@ func (j *Jolokia) Gather(acc telegraf.Accumulator) error {
 
 		req, err := j.prepareRequest(server, metrics)
 		if err != nil {
-			acc.AddError(fmt.Errorf("unable to create request: %w", err))
+			acc.AddError(fmt.Errorf("unable to create request: %s", err))
 			continue
 		}
 		out, err := j.doRequest(req)
 		if err != nil {
-			acc.AddError(fmt.Errorf("error performing request: %w", err))
+			acc.AddError(fmt.Errorf("error performing request: %s", err))
 			continue
 		}
 
@@ -231,7 +297,7 @@ func (j *Jolokia) Gather(acc telegraf.Accumulator) error {
 		}
 		for i, resp := range out {
 			if status, ok := resp["status"]; ok && status != float64(200) {
-				acc.AddError(fmt.Errorf("not expected status value in response body (%s:%s mbean=%q attribute=%q): %3.f",
+				acc.AddError(fmt.Errorf("not expected status value in response body (%s:%s mbean=\"%s\" attribute=\"%s\"): %3.f",
 					server.Host, server.Port, metrics[i].Mbean, metrics[i].Attribute, status))
 				continue
 			} else if !ok {

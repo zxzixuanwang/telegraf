@@ -1,10 +1,8 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package loki
 
 import (
 	"bytes"
 	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,20 +21,43 @@ import (
 	"github.com/influxdata/telegraf/plugins/outputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 const (
 	defaultEndpoint      = "/loki/api/v1/push"
 	defaultClientTimeout = 5 * time.Second
 )
 
+var sampleConfig = `
+  ## The domain of Loki
+  domain = "https://loki.domain.tld"
+
+  ## Endpoint to write api
+  # endpoint = "/loki/api/v1/push"
+
+  ## Connection timeout, defaults to "5s" if not set.
+  # timeout = "5s"
+
+  ## Basic auth credential
+  # username = "loki"
+  # password = "pass"
+
+  ## Additional HTTP headers
+  # http_headers = {"X-Scope-OrgID" = "1"}
+
+  ## If the request must be gzip encoded
+  # gzip_request = false
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+`
+
 type Loki struct {
 	Domain       string            `toml:"domain"`
 	Endpoint     string            `toml:"endpoint"`
 	Timeout      config.Duration   `toml:"timeout"`
-	Username     config.Secret     `toml:"username"`
-	Password     config.Secret     `toml:"password"`
+	Username     string            `toml:"username"`
+	Password     string            `toml:"password"`
 	Headers      map[string]string `toml:"http_headers"`
 	ClientID     string            `toml:"client_id"`
 	ClientSecret string            `toml:"client_secret"`
@@ -47,6 +68,14 @@ type Loki struct {
 	url    string
 	client *http.Client
 	tls.ClientConfig
+}
+
+func (l *Loki) SampleConfig() string {
+	return sampleConfig
+}
+
+func (l *Loki) Description() string {
+	return "Send logs to Loki"
 }
 
 func (l *Loki) createClient(ctx context.Context) (*http.Client, error) {
@@ -75,10 +104,6 @@ func (l *Loki) createClient(ctx context.Context) (*http.Client, error) {
 	}
 
 	return client, nil
-}
-
-func (*Loki) SampleConfig() string {
-	return sampleConfig
 }
 
 func (l *Loki) Connect() (err error) {
@@ -143,7 +168,10 @@ func (l *Loki) writeMetrics(s Streams) error {
 	var reqBodyBuffer io.Reader = bytes.NewBuffer(bs)
 
 	if l.GZipRequest {
-		rc := internal.CompressWithGzip(reqBodyBuffer)
+		rc, err := internal.CompressWithGzip(reqBodyBuffer)
+		if err != nil {
+			return err
+		}
 		defer rc.Close()
 		reqBodyBuffer = rc
 	}
@@ -153,19 +181,8 @@ func (l *Loki) writeMetrics(s Streams) error {
 		return err
 	}
 
-	if !l.Username.Empty() {
-		username, err := l.Username.Get()
-		if err != nil {
-			return fmt.Errorf("getting username failed: %w", err)
-		}
-		defer config.ReleaseSecret(username)
-		password, err := l.Password.Get()
-		if err != nil {
-			return fmt.Errorf("getting password failed: %w", err)
-		}
-		defer config.ReleaseSecret(password)
-
-		req.SetBasicAuth(string(username), string(password))
+	if l.Username != "" {
+		req.SetBasicAuth(l.Username, l.Password)
 	}
 
 	for k, v := range l.Headers {
@@ -188,8 +205,7 @@ func (l *Loki) writeMetrics(s Streams) error {
 	_ = resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("when writing to [%s] received status code, %d: %s", l.url, resp.StatusCode, body)
+		return fmt.Errorf("when writing to [%s] received status code: %d", l.url, resp.StatusCode)
 	}
 
 	return nil

@@ -24,51 +24,16 @@ the remote peer or server (RMS, milliseconds);
 - jitter – Mean deviation (jitter) in the time reported for that remote peer or
 server (RMS of difference of multiple time samples, milliseconds);
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
-# Get standard NTP query metrics, requires ntpq executable.
-[[inputs.ntpq]]
-  ## Servers to query with ntpq.
-  ## If no server is given, the local machine is queried.
-  # servers = []
-
-  ## If false, set the -n ntpq flag. Can reduce metric gather time.
-  ## DEPRECATED since 1.24.0: add '-n' to 'options' instead to skip DNS lookup
-  # dns_lookup = true
-
-  ## Options to pass to the ntpq command.
-  # options = "-p"
-
-  ## Output format for the 'reach' field.
-  ## Available values are
-  ##   octal   --  output as is in octal representation e.g. 377 (default)
-  ##   decimal --  convert value to decimal representation e.g. 371 -> 249
-  ##   count   --  count the number of bits in the value. This represents
-  ##               the number of successful reaches, e.g. 37 -> 5
-  ##   ratio   --  output the ratio of successful attempts e.g. 37 -> 5/8 = 0.625
-  # reach_format = "octal"
-```
-
-You can pass arbitrary options accepted by the `ntpq` command using the
-`options` setting. In case you want to skip DNS lookups use
-
 ```toml
-  options = "-p -n"
+# Get standard NTP query metrics, requires ntpq executable
+[[inputs.ntpq]]
+  ## If false, add -n for ntpq command. Can reduce metric gather times.
+  dns_lookup = true
 ```
 
-for example.
-
-## Metrics
+## Measurements & Fields
 
 - ntpq
   - delay (float, milliseconds)
@@ -78,17 +43,13 @@ for example.
   - reach (int)
   - when (int, seconds)
 
-### Tags
+## Tags
 
-All measurements have the following tags:
-
-- refid
-- remote
-- type
-- stratum
-
-In case you are specifying `servers`, the measurement has an
-additional `source` tag.
+- All measurements have the following tags:
+  - refid
+  - remote
+  - type
+  - stratum
 
 ## Example Output
 

@@ -1,4 +1,5 @@
 //go:build linux
+// +build linux
 
 package synproxy
 
@@ -79,7 +80,7 @@ func (k *Synproxy) getSynproxyStat() (map[string]interface{}, error) {
 			x, err := strconv.ParseUint(val, 16, 32)
 			// If field is not a valid hexstring
 			if err != nil {
-				return nil, fmt.Errorf("invalid value %q found", val)
+				return nil, fmt.Errorf("invalid value '%s' found", val)
 			}
 			if hname[i] != "" {
 				fields[hname[i]] = fields[hname[i]].(uint32) + uint32(x)

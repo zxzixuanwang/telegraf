@@ -1,4 +1,5 @@
 //go:build !windows
+// +build !windows
 
 package execd
 
@@ -31,11 +32,11 @@ func (e *Execd) Gather(_ telegraf.Accumulator) error {
 	case "STDIN":
 		if osStdin, ok := e.process.Stdin.(*os.File); ok {
 			if err := osStdin.SetWriteDeadline(time.Now().Add(1 * time.Second)); err != nil {
-				return fmt.Errorf("setting write deadline failed: %w", err)
+				return fmt.Errorf("setting write deadline failed: %s", err)
 			}
 		}
 		if _, err := io.WriteString(e.process.Stdin, "\n"); err != nil {
-			return fmt.Errorf("writing to stdin failed: %w", err)
+			return fmt.Errorf("writing to stdin failed: %s", err)
 		}
 	case "none":
 	default:

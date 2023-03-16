@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/newrelic/newrelic-telemetry-sdk-go/telemetry"
-	"github.com/stretchr/testify/require"
-
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/testutil"
+	"github.com/newrelic/newrelic-telemetry-sdk-go/telemetry"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBasic(t *testing.T) {
@@ -19,12 +19,15 @@ func TestBasic(t *testing.T) {
 		InsightsKey:  "12345",
 		Timeout:      config.Duration(time.Second * 5),
 	}
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
 
 	err := nr.Connect()
 	require.NoError(t, err)
 
 	err = nr.Write(testutil.MockMetrics())
-	require.Contains(t, err.Error(), "unable to harvest metrics")
+	assert.Contains(t, err.Error(), "unable to harvest metrics")
 }
 
 func TestNewRelic_Write(t *testing.T) {
@@ -85,9 +88,8 @@ func TestNewRelic_Write(t *testing.T) {
 			metrics: []telegraf.Metric{
 				testutil.TestMetric(math.MaxFloat64, "test_maxfloat64"),
 			},
-			wantErr: false,
-			auditMessage: `"metrics":[{"name":"test_maxfloat64.value","type":"gauge","value":1.7976931348623157e+308,` +
-				`"timestamp":1257894000000,"attributes":{"tag1":"value1"}}]`,
+			wantErr:      false,
+			auditMessage: `"metrics":[{"name":"test_maxfloat64.value","type":"gauge","value":1.7976931348623157e+308,"timestamp":1257894000000,"attributes":{"tag1":"value1"}}]`,
 		},
 		{
 			name: "Test: Test NAN ",
@@ -113,11 +115,11 @@ func TestNewRelic_Write(t *testing.T) {
 					}
 				})
 			err := nr.Write(tt.metrics)
-			require.NoError(t, err)
+			assert.NoError(t, err)
 			if auditLog["data"] != nil {
-				require.Contains(t, auditLog["data"], tt.auditMessage)
+				assert.Contains(t, auditLog["data"], tt.auditMessage)
 			} else {
-				require.Contains(t, "", tt.auditMessage)
+				assert.Contains(t, "", tt.auditMessage)
 			}
 
 			if (err != nil) != tt.wantErr {

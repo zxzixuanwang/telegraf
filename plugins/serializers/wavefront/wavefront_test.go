@@ -11,6 +11,7 @@ import (
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/metric"
+	"github.com/influxdata/telegraf/plugins/outputs/wavefront"
 )
 
 func TestBuildTags(t *testing.T) {
@@ -105,11 +106,11 @@ func TestBuildTagsHostTag(t *testing.T) {
 
 func TestFormatMetricPoint(t *testing.T) {
 	var pointTests = []struct {
-		ptIn *MetricPoint
+		ptIn *wavefront.MetricPoint
 		out  string
 	}{
 		{
-			&MetricPoint{
+			&wavefront.MetricPoint{
 				Metric:    "cpu.idle",
 				Value:     1,
 				Timestamp: 1554172967,
@@ -119,7 +120,7 @@ func TestFormatMetricPoint(t *testing.T) {
 			"\"cpu.idle\" 1.000000 1554172967 source=\"testHost\" \"aaa\"=\"bbb\"\n",
 		},
 		{
-			&MetricPoint{
+			&wavefront.MetricPoint{
 				Metric:    "cpu.idle",
 				Value:     1,
 				Timestamp: 1554172967,
@@ -143,11 +144,11 @@ func TestFormatMetricPoint(t *testing.T) {
 
 func TestUseStrict(t *testing.T) {
 	var pointTests = []struct {
-		ptIn *MetricPoint
+		ptIn *wavefront.MetricPoint
 		out  string
 	}{
 		{
-			&MetricPoint{
+			&wavefront.MetricPoint{
 				Metric:    "cpu.idle",
 				Value:     1,
 				Timestamp: 1554172967,

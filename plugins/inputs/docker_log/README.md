@@ -12,28 +12,17 @@ The docker plugin uses the [Official Docker Client][] to gather logs from the
 [Official Docker Client]: https://github.com/moby/moby/tree/master/client
 [Engine API]: https://docs.docker.com/engine/api/v1.24/
 
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
-
 ## Configuration
 
-```toml @sample.conf
-# Read logging output from the Docker engine
+```toml
 [[inputs.docker_log]]
   ## Docker Endpoint
   ##   To use TCP, set endpoint = "tcp://[ip]:[port]"
   ##   To use environment variables (ie, docker-machine), set endpoint = "ENV"
   # endpoint = "unix:///var/run/docker.sock"
 
-  ## When true, container logs are read from the beginning; otherwise reading
-  ## begins at the end of the log. If state-persistence is enabled for Telegraf,
-  ## the reading continues at the last previously processed timestamp.
+  ## When true, container logs are read from the beginning; otherwise
+  ## reading begins at the end of the log.
   # from_beginning = false
 
   ## Timeout for Docker API calls.
@@ -74,16 +63,14 @@ When using the `"ENV"` endpoint, the connection is configured using the
 
 ## source tag
 
-Selecting the containers can be tricky if you have many containers with the same
-name.  To alleviate this issue you can set the below value to `true`
+Selecting the containers can be tricky if you have many containers with the same name.
+To alleviate this issue you can set the below value to `true`
 
 ```toml
 source_tag = true
 ```
 
-This will cause all data points to have the `source` tag be set to the first 12
-characters of the container id. The first 12 characters is the common hostname
-for containers that have no explicit hostname set, as defined by docker.
+This will cause all data points to have the `source` tag be set to the first 12 characters of the container id. The first 12 characters is the common hostname for containers that have no explicit hostname set, as defined by docker.
 
 ## Metrics
 

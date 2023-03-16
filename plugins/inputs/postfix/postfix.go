@@ -1,12 +1,11 @@
-//go:generate ../../../tools/readme_config_includer/generator
 //go:build !windows
+// +build !windows
 
 // postfix doesn't aim for Windows
 
 package postfix
 
 import (
-	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
@@ -18,8 +17,13 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
+const sampleConfig = `
+  ## Postfix queue directory. If not provided, telegraf will try to use
+  ## 'postconf -h queue_directory' to determine it.
+  # queue_directory = "/var/spool/postfix"
+`
+
+const description = "Measure postfix queue statistics"
 
 func getQueueDirectory() (string, error) {
 	qd, err := exec.Command("postconf", "-h", "queue_directory").Output()
@@ -35,7 +39,7 @@ func qScan(path string, acc telegraf.Accumulator) (map[string]interface{}, error
 
 	err := filepath.Walk(path, func(_ string, finfo os.FileInfo, err error) error {
 		if err != nil {
-			acc.AddError(fmt.Errorf("error scanning %q: %w", path, err))
+			acc.AddError(fmt.Errorf("error scanning %s: %s", path, err))
 			return nil
 		}
 		if finfo.IsDir() {
@@ -79,23 +83,19 @@ type Postfix struct {
 	QueueDirectory string
 }
 
-func (*Postfix) SampleConfig() string {
-	return sampleConfig
-}
-
 func (p *Postfix) Gather(acc telegraf.Accumulator) error {
 	if p.QueueDirectory == "" {
 		var err error
 		p.QueueDirectory, err = getQueueDirectory()
 		if err != nil {
-			return fmt.Errorf("unable to determine queue directory: %w", err)
+			return fmt.Errorf("unable to determine queue directory: %s", err)
 		}
 	}
 
 	for _, q := range []string{"active", "hold", "incoming", "maildrop", "deferred"} {
 		fields, err := qScan(filepath.Join(p.QueueDirectory, q), acc)
 		if err != nil {
-			acc.AddError(fmt.Errorf("error scanning queue %q: %w", q, err))
+			acc.AddError(fmt.Errorf("error scanning queue %s: %s", q, err))
 			continue
 		}
 
@@ -103,6 +103,14 @@ func (p *Postfix) Gather(acc telegraf.Accumulator) error {
 	}
 
 	return nil
+}
+
+func (p *Postfix) SampleConfig() string {
+	return sampleConfig
+}
+
+func (p *Postfix) Description() string {
+	return description
 }
 
 func init() {

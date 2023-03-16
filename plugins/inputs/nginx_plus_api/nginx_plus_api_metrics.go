@@ -22,7 +22,6 @@ var (
 func (n *NginxPlusAPI) gatherMetrics(addr *url.URL, acc telegraf.Accumulator) {
 	addError(acc, n.gatherProcessesMetrics(addr, acc))
 	addError(acc, n.gatherConnectionsMetrics(addr, acc))
-	addError(acc, n.gatherSlabsMetrics(addr, acc))
 	addError(acc, n.gatherSslMetrics(addr, acc))
 	addError(acc, n.gatherHTTPRequestsMetrics(addr, acc))
 	addError(acc, n.gatherHTTPServerZonesMetrics(addr, acc))
@@ -35,9 +34,6 @@ func (n *NginxPlusAPI) gatherMetrics(addr *url.URL, acc telegraf.Accumulator) {
 		addError(acc, n.gatherHTTPLocationZonesMetrics(addr, acc))
 		addError(acc, n.gatherResolverZonesMetrics(addr, acc))
 	}
-	if n.APIVersion >= 6 {
-		addError(acc, n.gatherHTTPLimitReqsMetrics(addr, acc))
-	}
 }
 
 func addError(acc telegraf.Accumulator, err error) {
@@ -47,7 +43,7 @@ func addError(acc telegraf.Accumulator, err error) {
 	//
 	// The correct solution is to do a GET to /api to get the available paths
 	// on the server rather than simply ignore.
-	if !errors.Is(err, errNotFound) {
+	if err != errNotFound {
 		acc.AddError(err)
 	}
 }
@@ -57,7 +53,7 @@ func (n *NginxPlusAPI) gatherURL(addr *url.URL, path string) ([]byte, error) {
 	resp, err := n.client.Get(address)
 
 	if err != nil {
-		return nil, fmt.Errorf("error making HTTP request to %q: %w", address, err)
+		return nil, fmt.Errorf("error making HTTP request to %s: %s", address, err)
 	}
 	defer resp.Body.Close()
 
@@ -130,59 +126,6 @@ func (n *NginxPlusAPI) gatherConnectionsMetrics(addr *url.URL, acc telegraf.Accu
 		},
 		getTags(addr),
 	)
-
-	return nil
-}
-
-func (n *NginxPlusAPI) gatherSlabsMetrics(addr *url.URL, acc telegraf.Accumulator) error {
-	body, err := n.gatherURL(addr, slabsPath)
-	if err != nil {
-		return err
-	}
-
-	var slabs Slabs
-
-	if err := json.Unmarshal(body, &slabs); err != nil {
-		return err
-	}
-
-	tags := getTags(addr)
-
-	for zoneName, slab := range slabs {
-		slabTags := map[string]string{}
-		for k, v := range tags {
-			slabTags[k] = v
-		}
-		slabTags["zone"] = zoneName
-
-		acc.AddFields(
-			"nginx_plus_api_slabs_pages",
-			map[string]interface{}{
-				"used": slab.Pages.Used,
-				"free": slab.Pages.Free,
-			},
-			slabTags,
-		)
-
-		for slotID, slot := range slab.Slots {
-			slotTags := map[string]string{}
-			for k, v := range slabTags {
-				slotTags[k] = v
-			}
-			slotTags["slot"] = slotID
-
-			acc.AddFields(
-				"nginx_plus_api_slabs_slots",
-				map[string]interface{}{
-					"used":  slot.Used,
-					"free":  slot.Free,
-					"reqs":  slot.Reqs,
-					"fails": slot.Fails,
-				},
-				slotTags,
-			)
-		}
-	}
 
 	return nil
 }
@@ -611,43 +554,6 @@ func (n *NginxPlusAPI) gatherStreamUpstreamsMetrics(addr *url.URL, acc telegraf.
 
 			acc.AddFields("nginx_plus_api_stream_upstream_peers", peerFields, peerTags)
 		}
-	}
-
-	return nil
-}
-
-// Added in 6 API version
-func (n *NginxPlusAPI) gatherHTTPLimitReqsMetrics(addr *url.URL, acc telegraf.Accumulator) error {
-	body, err := n.gatherURL(addr, httpLimitReqsPath)
-	if err != nil {
-		return err
-	}
-
-	var httpLimitReqs HTTPLimitReqs
-
-	if err := json.Unmarshal(body, &httpLimitReqs); err != nil {
-		return err
-	}
-
-	tags := getTags(addr)
-
-	for limitReqName, limit := range httpLimitReqs {
-		limitReqsTags := map[string]string{}
-		for k, v := range tags {
-			limitReqsTags[k] = v
-		}
-		limitReqsTags["limit"] = limitReqName
-		acc.AddFields(
-			"nginx_plus_api_http_limit_reqs",
-			map[string]interface{}{
-				"passed":           limit.Passed,
-				"delayed":          limit.Delayed,
-				"rejected":         limit.Rejected,
-				"delayed_dry_run":  limit.DelayedDryRun,
-				"rejected_dry_run": limit.RejectedDryRun,
-			},
-			limitReqsTags,
-		)
 	}
 
 	return nil

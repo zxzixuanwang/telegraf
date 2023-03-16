@@ -2,7 +2,6 @@ package influx
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"log"
 
@@ -50,12 +49,11 @@ func (r *reader) Read(p []byte) (int, error) {
 	}
 
 	for _, metric := range r.metrics[r.offset:] {
-		err := r.serializer.Write(r.buf, metric)
+		_, err := r.serializer.Write(r.buf, metric)
 		r.offset++
 		if err != nil {
 			r.buf.Reset()
-			var mErr *MetricError
-			if errors.As(err, &mErr) {
+			if _, ok := err.(*MetricError); ok {
 				continue
 			}
 			// Since we are serializing multiple metrics, don't fail the

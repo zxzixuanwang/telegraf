@@ -7,30 +7,19 @@ Plugin currently support two type of end points:-
 - multiple  (e.g. `http://[graylog-server-ip]:9000/api/system/metrics/multiple`)
 - namespace (e.g. `http://[graylog-server-ip]:9000/api/system/metrics/namespace/{namespace}`)
 
-End Point can be a mix of one multiple end point and several namespaces end
-points
+End Point can be a mix of one  multiple end point  and several namespaces end points
 
-Note: if namespace end point specified metrics array will be ignored for that
-call.
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+Note: if namespace end point specified metrics array will be ignored for that call.
 
 ## Configuration
 
-```toml @sample.conf
+```toml
 # Read flattened metrics from one or more GrayLog HTTP endpoints
 [[inputs.graylog]]
   ## API endpoint, currently supported API:
   ##
-  ##   - multiple  (e.g. http://<host>:9000/api/system/metrics/multiple)
-  ##   - namespace (e.g. http://<host>:9000/api/system/metrics/namespace/{namespace})
+  ##   - multiple  (e.g. `http://<host>:9000/api/system/metrics/multiple`)
+  ##   - namespace (e.g. `http://<host>:9000/api/system/metrics/namespace/{namespace}`)
   ##
   ## For namespace endpoint, the metrics array will be ignored for that call.
   ## Endpoint can contain namespace and multiple type calls.
@@ -40,9 +29,6 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   servers = [
     "http://[graylog-server-ip]:9000/api/system/metrics/multiple",
   ]
-
-  ## Set timeout (default 5 seconds)
-  # timeout = "5s"
 
   ## Metrics list
   ## List of metrics can be found on Graylog webservice documentation.
@@ -67,7 +53,3 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
 
 Please refer to GrayLog metrics api browser for full metric end points:
 `http://host:9000/api/api-browser`
-
-## Metrics
-
-## Example Output

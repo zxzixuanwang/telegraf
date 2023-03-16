@@ -83,23 +83,23 @@ func BenchmarkInfluxDBListener_serveWrite(b *testing.B) {
 }
 
 func lines(lines, numTags, numFields int) string {
-	lp := make([]string, 0, lines)
+	lp := make([]string, lines)
 	for i := 0; i < lines; i++ {
-		tags := make([]string, 0, numTags)
+		tags := make([]string, numTags)
 		for j := 0; j < numTags; j++ {
-			tags = append(tags, fmt.Sprintf("t%d=v%d", j, j))
+			tags[j] = fmt.Sprintf("t%d=v%d", j, j)
 		}
 
-		fields := make([]string, 0, numFields)
+		fields := make([]string, numFields)
 		for k := 0; k < numFields; k++ {
-			fields = append(fields, fmt.Sprintf("f%d=%d", k, k))
+			fields[k] = fmt.Sprintf("f%d=%d", k, k)
 		}
 
-		lp = append(lp, fmt.Sprintf("m%d,%s %s",
+		lp[i] = fmt.Sprintf("m%d,%s %s",
 			i,
 			strings.Join(tags, ","),
 			strings.Join(fields, ","),
-		))
+		)
 	}
 
 	return strings.Join(lp, "\n")

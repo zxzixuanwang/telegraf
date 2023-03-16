@@ -2,7 +2,6 @@ package internal
 
 import (
 	"crypto/subtle"
-	"errors"
 	"net"
 	"net/http"
 	"net/url"
@@ -87,24 +86,24 @@ type ErrorFunc func(rw http.ResponseWriter, code int)
 
 // IPRangeHandler returns a http handler that requires the remote address to be
 // in the specified network.
-func IPRangeHandler(networks []*net.IPNet, onError ErrorFunc) func(h http.Handler) http.Handler {
+func IPRangeHandler(network []*net.IPNet, onError ErrorFunc) func(h http.Handler) http.Handler {
 	return func(h http.Handler) http.Handler {
 		return &ipRangeHandler{
-			networks: networks,
-			onError:  onError,
-			next:     h,
+			network: network,
+			onError: onError,
+			next:    h,
 		}
 	}
 }
 
 type ipRangeHandler struct {
-	networks []*net.IPNet
-	onError  ErrorFunc
-	next     http.Handler
+	network []*net.IPNet
+	onError ErrorFunc
+	next    http.Handler
 }
 
 func (h *ipRangeHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	if len(h.networks) == 0 {
+	if len(h.network) == 0 {
 		h.next.ServeHTTP(rw, req)
 		return
 	}
@@ -121,8 +120,8 @@ func (h *ipRangeHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	for _, network := range h.networks {
-		if network.Contains(remoteIP) {
+	for _, net := range h.network {
+		if net.Contains(remoteIP) {
 			h.next.ServeHTTP(rw, req)
 			return
 		}
@@ -136,8 +135,7 @@ func OnClientError(client *http.Client, err error) {
 	// connection this ensures that next interval a new connection will be
 	// used and name lookup will be performed.
 	//   https://github.com/golang/go/issues/36026
-	var urlErr *url.Error
-	if errors.As(err, &urlErr) && urlErr.Timeout() {
+	if err, ok := err.(*url.Error); ok && err.Timeout() {
 		client.CloseIdleConnections()
 	}
 }

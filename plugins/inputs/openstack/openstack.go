@@ -6,13 +6,10 @@
 //
 // No aggregation is performed by the input plugin, instead queries to InfluxDB should
 // be used to gather global totals of things such as tag frequency.
-//
-//go:generate ../../../tools/readme_config_includer/generator
 package openstack
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
 	"regexp"
 	"sort"
@@ -24,7 +21,7 @@ import (
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/blockstorage/extensions/schedulerstats"
 	"github.com/gophercloud/gophercloud/openstack/blockstorage/extensions/volumetenants"
-	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/volumes"
+	"github.com/gophercloud/gophercloud/openstack/blockstorage/v2/volumes"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/aggregates"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/diagnostics"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/hypervisors"
@@ -38,15 +35,11 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/networking/v2/ports"
 	"github.com/gophercloud/gophercloud/openstack/networking/v2/subnets"
 	"github.com/gophercloud/gophercloud/openstack/orchestration/v1/stacks"
-
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/internal/choice"
 	httpconfig "github.com/influxdata/telegraf/plugins/common/http"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 var (
 	typePort    = regexp.MustCompile(`_rx$|_rx_drop$|_rx_errors$|_rx_packets$|_tx$|_tx_drop$|_tx_errors$|_tx_packets$`)
@@ -112,7 +105,68 @@ func (o *OpenStack) convertTimeFormat(t time.Time) interface{} {
 	return t.UnixNano()
 }
 
-func (*OpenStack) SampleConfig() string {
+// Description returns a description string of the input plugin and implements
+// the Input interface.
+func (o *OpenStack) Description() string {
+	return "Collects performance metrics from OpenStack services"
+}
+
+// sampleConfig is a sample configuration file entry.
+var sampleConfig = `
+  ## The recommended interval to poll is '30m'
+
+  ## The identity endpoint to authenticate against and get the service catalog from.
+  authentication_endpoint = "https://my.openstack.cloud:5000"
+
+  ## The domain to authenticate against when using a V3 identity endpoint.
+  # domain = "default"
+
+  ## The project to authenticate as.
+  # project = "admin"
+
+  ## User authentication credentials. Must have admin rights.
+  username = "admin"
+  password = "password"
+
+  ## Available services are: 
+  ## "agents", "aggregates", "flavors", "hypervisors", "networks", "nova_services",
+  ## "ports", "projects", "servers", "services", "stacks", "storage_pools", "subnets", "volumes"
+  # enabled_services = ["services", "projects", "hypervisors", "flavors", "networks", "volumes"]
+
+  ## Collect Server Diagnostics
+  # server_diagnotics = false
+
+  ## output secrets (such as adminPass(for server) and UserID(for volume)).
+  # output_secrets = false
+
+  ## Amount of time allowed to complete the HTTP(s) request.
+  # timeout = "5s"
+
+  ## HTTP Proxy support
+  # http_proxy_url = ""
+
+  ## Optional TLS Config
+  # tls_ca = /path/to/cafile
+  # tls_cert = /path/to/certfile
+  # tls_key = /path/to/keyfile
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+
+  ## Options for tags received from Openstack 
+  # tag_prefix = "openstack_tag_"
+  # tag_value = "true"
+
+  ## Timestamp format for timestamp data recieved from Openstack.
+  ## If false format is unix nanoseconds.
+  # human_readable_timestamps = false
+
+  ## Measure Openstack call duration
+  # measure_openstack_requests = false 
+`
+
+// SampleConfig return a sample configuration file for auto-generation and
+// implements the Input interface.
+func (o *OpenStack) SampleConfig() string {
 	return sampleConfig
 }
 
@@ -141,11 +195,10 @@ func (o *OpenStack) Init() error {
 		TenantName:       o.Project,
 		Username:         o.Username,
 		Password:         o.Password,
-		AllowReauth:      true,
 	}
 	provider, err := openstack.NewClient(authOption.IdentityEndpoint)
 	if err != nil {
-		return fmt.Errorf("unable to create client for OpenStack endpoint: %w", err)
+		return fmt.Errorf("unable to create client for OpenStack endpoint %v", err)
 	}
 
 	ctx := context.Background()
@@ -157,38 +210,38 @@ func (o *OpenStack) Init() error {
 	provider.HTTPClient = *client
 
 	if err := openstack.Authenticate(provider, authOption); err != nil {
-		return fmt.Errorf("unable to authenticate OpenStack user: %w", err)
+		return fmt.Errorf("unable to authenticate OpenStack user %v", err)
 	}
 
 	// Create required clients and attach to the OpenStack struct
 	if o.identity, err = openstack.NewIdentityV3(provider, gophercloud.EndpointOpts{}); err != nil {
-		return fmt.Errorf("unable to create V3 identity client: %w", err)
+		return fmt.Errorf("unable to create V3 identity client %v", err)
 	}
 
 	if err := o.gatherServices(); err != nil {
-		return fmt.Errorf("failed to get resource openstack services: %w", err)
+		return fmt.Errorf("failed to get resource openstack services %v", err)
 	}
 
 	if o.compute, err = openstack.NewComputeV2(provider, gophercloud.EndpointOpts{}); err != nil {
-		return fmt.Errorf("unable to create V2 compute client: %w", err)
+		return fmt.Errorf("unable to create V2 compute client %v", err)
 	}
 
 	// Create required clients and attach to the OpenStack struct
 	if o.network, err = openstack.NewNetworkV2(provider, gophercloud.EndpointOpts{}); err != nil {
-		return fmt.Errorf("unable to create V2 network client: %w", err)
+		return fmt.Errorf("unable to create V2 network client %v", err)
 	}
 
 	// The Orchestration service is optional
 	if o.containsService("orchestration") {
 		if o.stack, err = openstack.NewOrchestrationV1(provider, gophercloud.EndpointOpts{}); err != nil {
-			return fmt.Errorf("unable to create V1 stack client: %w", err)
+			return fmt.Errorf("unable to create V1 stack client %v", err)
 		}
 	}
 
 	// The Cinder volume storage service is optional
-	if o.containsService("volumev3") {
-		if o.volume, err = openstack.NewBlockStorageV3(provider, gophercloud.EndpointOpts{}); err != nil {
-			return fmt.Errorf("unable to create V3 volume client: %w", err)
+	if o.containsService("volumev2") {
+		if o.volume, err = openstack.NewBlockStorageV2(provider, gophercloud.EndpointOpts{}); err != nil {
+			return fmt.Errorf("unable to create V2 volume client %v", err)
 		}
 	}
 
@@ -226,7 +279,7 @@ func (o *OpenStack) Gather(acc telegraf.Accumulator) error {
 		start := time.Now()
 		gatherer := gatherers[service]
 		if err := gatherer(acc); err != nil {
-			acc.AddError(fmt.Errorf("failed to get resource %q: %w", service, err))
+			acc.AddError(fmt.Errorf("failed to get resource %q %v", service, err))
 		}
 		callDuration[service] = time.Since(start).Nanoseconds()
 	}
@@ -240,7 +293,7 @@ func (o *OpenStack) Gather(acc telegraf.Accumulator) error {
 	if o.ServerDiagnotics {
 		if !choice.Contains("servers", o.EnabledServices) {
 			if err := o.gatherServers(acc); err != nil {
-				acc.AddError(fmt.Errorf("failed to get resource server diagnostics: %w", err))
+				acc.AddError(fmt.Errorf("failed to get resource server diagnostics %v", err))
 				return nil
 			}
 		}
@@ -254,11 +307,11 @@ func (o *OpenStack) Gather(acc telegraf.Accumulator) error {
 func (o *OpenStack) gatherServices() error {
 	page, err := services.List(o.identity, &services.ListOpts{}).AllPages()
 	if err != nil {
-		return fmt.Errorf("unable to list services: %w", err)
+		return fmt.Errorf("unable to list services %v", err)
 	}
 	extractedServices, err := services.ExtractServices(page)
 	if err != nil {
-		return fmt.Errorf("unable to extract services: %w", err)
+		return fmt.Errorf("unable to extract services %v", err)
 	}
 	for _, service := range extractedServices {
 		o.openstackServices[service.ID] = service
@@ -271,11 +324,11 @@ func (o *OpenStack) gatherServices() error {
 func (o *OpenStack) gatherStacks(acc telegraf.Accumulator) error {
 	page, err := stacks.List(o.stack, &stacks.ListOpts{}).AllPages()
 	if err != nil {
-		return fmt.Errorf("unable to list stacks: %w", err)
+		return fmt.Errorf("unable to list stacks %v", err)
 	}
 	extractedStacks, err := stacks.ExtractStacks(page)
 	if err != nil {
-		return fmt.Errorf("unable to extract stacks: %w", err)
+		return fmt.Errorf("unable to extract stacks %v", err)
 	}
 	for _, stack := range extractedStacks {
 		tags := map[string]string{
@@ -302,11 +355,11 @@ func (o *OpenStack) gatherStacks(acc telegraf.Accumulator) error {
 func (o *OpenStack) gatherNovaServices(acc telegraf.Accumulator) error {
 	page, err := nova_services.List(o.compute, &nova_services.ListOpts{}).AllPages()
 	if err != nil {
-		return fmt.Errorf("unable to list nova_services: %w", err)
+		return fmt.Errorf("unable to list nova_services %v", err)
 	}
 	novaServices, err := nova_services.ExtractServices(page)
 	if err != nil {
-		return fmt.Errorf("unable to extract nova_services: %w", err)
+		return fmt.Errorf("unable to extract nova_services %v", err)
 	}
 	for _, novaService := range novaServices {
 		tags := map[string]string{
@@ -332,11 +385,11 @@ func (o *OpenStack) gatherNovaServices(acc telegraf.Accumulator) error {
 func (o *OpenStack) gatherSubnets(acc telegraf.Accumulator) error {
 	page, err := subnets.List(o.network, &subnets.ListOpts{}).AllPages()
 	if err != nil {
-		return fmt.Errorf("unable to list subnets: %w", err)
+		return fmt.Errorf("unable to list subnets %v", err)
 	}
 	extractedSubnets, err := subnets.ExtractSubnets(page)
 	if err != nil {
-		return fmt.Errorf("unable to extract subnets: %w", err)
+		return fmt.Errorf("unable to extract subnets %v", err)
 	}
 	for _, subnet := range extractedSubnets {
 		var allocationPools []string
@@ -374,11 +427,11 @@ func (o *OpenStack) gatherSubnets(acc telegraf.Accumulator) error {
 func (o *OpenStack) gatherPorts(acc telegraf.Accumulator) error {
 	page, err := ports.List(o.network, &ports.ListOpts{}).AllPages()
 	if err != nil {
-		return fmt.Errorf("unable to list ports: %w", err)
+		return fmt.Errorf("unable to list ports %v", err)
 	}
 	extractedPorts, err := ports.ExtractPorts(page)
 	if err != nil {
-		return fmt.Errorf("unable to extract ports: %w", err)
+		return fmt.Errorf("unable to extract ports %v", err)
 	}
 	for _, port := range extractedPorts {
 		tags := map[string]string{
@@ -419,11 +472,11 @@ func (o *OpenStack) gatherPorts(acc telegraf.Accumulator) error {
 func (o *OpenStack) gatherNetworks(acc telegraf.Accumulator) error {
 	page, err := networks.List(o.network, &networks.ListOpts{}).AllPages()
 	if err != nil {
-		return fmt.Errorf("unable to list networks: %w", err)
+		return fmt.Errorf("unable to list networks %v", err)
 	}
 	extractedNetworks, err := networks.ExtractNetworks(page)
 	if err != nil {
-		return fmt.Errorf("unable to extract networks: %w", err)
+		return fmt.Errorf("unable to extract networks %v", err)
 	}
 	for _, network := range extractedNetworks {
 		tags := map[string]string{
@@ -461,11 +514,11 @@ func (o *OpenStack) gatherNetworks(acc telegraf.Accumulator) error {
 func (o *OpenStack) gatherAgents(acc telegraf.Accumulator) error {
 	page, err := agents.List(o.network, &agents.ListOpts{}).AllPages()
 	if err != nil {
-		return fmt.Errorf("unable to list neutron agents: %w", err)
+		return fmt.Errorf("unable to list neutron agents %v", err)
 	}
 	extractedAgents, err := agents.ExtractAgents(page)
 	if err != nil {
-		return fmt.Errorf("unable to extract neutron agents: %w", err)
+		return fmt.Errorf("unable to extract neutron agents %v", err)
 	}
 	for _, agent := range extractedAgents {
 		tags := map[string]string{
@@ -494,11 +547,11 @@ func (o *OpenStack) gatherAgents(acc telegraf.Accumulator) error {
 func (o *OpenStack) gatherAggregates(acc telegraf.Accumulator) error {
 	page, err := aggregates.List(o.compute).AllPages()
 	if err != nil {
-		return fmt.Errorf("unable to list aggregates: %w", err)
+		return fmt.Errorf("unable to list aggregates %v", err)
 	}
 	extractedAggregates, err := aggregates.ExtractAggregates(page)
 	if err != nil {
-		return fmt.Errorf("unable to extract aggregates: %w", err)
+		return fmt.Errorf("unable to extract aggregates %v", err)
 	}
 	for _, aggregate := range extractedAggregates {
 		tags := map[string]string{
@@ -529,11 +582,11 @@ func (o *OpenStack) gatherAggregates(acc telegraf.Accumulator) error {
 func (o *OpenStack) gatherProjects(acc telegraf.Accumulator) error {
 	page, err := projects.List(o.identity, &projects.ListOpts{}).AllPages()
 	if err != nil {
-		return fmt.Errorf("unable to list projects: %w", err)
+		return fmt.Errorf("unable to list projects %v", err)
 	}
 	extractedProjects, err := projects.ExtractProjects(page)
 	if err != nil {
-		return fmt.Errorf("unable to extract projects: %w", err)
+		return fmt.Errorf("unable to extract projects %v", err)
 	}
 	for _, project := range extractedProjects {
 		o.openstackProjects[project.ID] = project
@@ -559,13 +612,13 @@ func (o *OpenStack) gatherProjects(acc telegraf.Accumulator) error {
 
 // gatherHypervisors collects and accumulates hypervisors data from the OpenStack API.
 func (o *OpenStack) gatherHypervisors(acc telegraf.Accumulator) error {
-	page, err := hypervisors.List(o.compute, hypervisors.ListOpts{}).AllPages()
+	page, err := hypervisors.List(o.compute).AllPages()
 	if err != nil {
-		return fmt.Errorf("unable to list hypervisors: %w", err)
+		return fmt.Errorf("unable to list hypervisors %v", err)
 	}
 	extractedHypervisors, err := hypervisors.ExtractHypervisors(page)
 	if err != nil {
-		return fmt.Errorf("unable to extract hypervisors: %w", err)
+		return fmt.Errorf("unable to extract hypervisors %v", err)
 	}
 	o.openstackHypervisors = extractedHypervisors
 	if choice.Contains("hypervisors", o.EnabledServices) {
@@ -614,11 +667,11 @@ func (o *OpenStack) gatherHypervisors(acc telegraf.Accumulator) error {
 func (o *OpenStack) gatherFlavors(acc telegraf.Accumulator) error {
 	page, err := flavors.ListDetail(o.compute, &flavors.ListOpts{}).AllPages()
 	if err != nil {
-		return fmt.Errorf("unable to list flavors: %w", err)
+		return fmt.Errorf("unable to list flavors %v", err)
 	}
 	extractedflavors, err := flavors.ExtractFlavors(page)
 	if err != nil {
-		return fmt.Errorf("unable to extract flavors: %w", err)
+		return fmt.Errorf("unable to extract flavors %v", err)
 	}
 	for _, flavor := range extractedflavors {
 		o.openstackFlavors[flavor.ID] = flavor
@@ -644,11 +697,11 @@ func (o *OpenStack) gatherFlavors(acc telegraf.Accumulator) error {
 func (o *OpenStack) gatherVolumes(acc telegraf.Accumulator) error {
 	page, err := volumes.List(o.volume, &volumes.ListOpts{AllTenants: true}).AllPages()
 	if err != nil {
-		return fmt.Errorf("unable to list volumes: %w", err)
+		return fmt.Errorf("unable to list volumes %v", err)
 	}
 	v := []volume{}
 	if err := volumes.ExtractVolumesInto(page, &v); err != nil {
-		return fmt.Errorf("unable to extract volumes: %w", err)
+		return fmt.Errorf("unable to extract volumes %v", err)
 	}
 	for _, volume := range v {
 		tags := map[string]string{
@@ -699,11 +752,11 @@ func (o *OpenStack) gatherVolumes(acc telegraf.Accumulator) error {
 func (o *OpenStack) gatherStoragePools(acc telegraf.Accumulator) error {
 	results, err := schedulerstats.List(o.volume, &schedulerstats.ListOpts{Detail: true}).AllPages()
 	if err != nil {
-		return fmt.Errorf("unable to list storage pools: %w", err)
+		return fmt.Errorf("unable to list storage pools %v", err)
 	}
 	storagePools, err := schedulerstats.ExtractStoragePools(results)
 	if err != nil {
-		return fmt.Errorf("unable to extract storage pools: %w", err)
+		return fmt.Errorf("unable to extract storage pools %v", err)
 	}
 	for _, storagePool := range storagePools {
 		tags := map[string]string{
@@ -726,18 +779,18 @@ func (o *OpenStack) gatherStoragePools(acc telegraf.Accumulator) error {
 func (o *OpenStack) gatherServers(acc telegraf.Accumulator) error {
 	if !choice.Contains("hypervisors", o.EnabledServices) {
 		if err := o.gatherHypervisors(acc); err != nil {
-			acc.AddError(fmt.Errorf("failed to get resource hypervisors: %w", err))
+			acc.AddError(fmt.Errorf("failed to get resource hypervisors %v", err))
 		}
 	}
 	serverGather := choice.Contains("servers", o.EnabledServices)
 	for _, hypervisor := range o.openstackHypervisors {
 		page, err := servers.List(o.compute, &servers.ListOpts{AllTenants: true, Host: hypervisor.HypervisorHostname}).AllPages()
 		if err != nil {
-			return fmt.Errorf("unable to list servers: %w", err)
+			return fmt.Errorf("unable to list servers %v", err)
 		}
 		extractedServers, err := servers.ExtractServers(page)
 		if err != nil {
-			return fmt.Errorf("unable to extract servers: %w", err)
+			return fmt.Errorf("unable to extract servers %v", err)
 		}
 		for _, server := range extractedServers {
 			if serverGather {
@@ -748,7 +801,7 @@ func (o *OpenStack) gatherServers(acc telegraf.Accumulator) error {
 			}
 			diagnostic, err := diagnostics.Get(o.compute, server.ID).Extract()
 			if err != nil {
-				acc.AddError(fmt.Errorf("unable to get diagnostics for server %q: %w", server.ID, err))
+				acc.AddError(fmt.Errorf("unable to get diagnostics for server(%v) %v", server.ID, err))
 				continue
 			}
 			o.diag[server.ID] = diagnostic

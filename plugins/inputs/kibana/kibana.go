@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package kibana
 
 import (
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,9 +15,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 const statusPath = "/api/status"
 
@@ -82,8 +77,26 @@ type memory struct {
 type heap struct {
 	TotalInBytes int64 `json:"total_in_bytes"`
 	UsedInBytes  int64 `json:"used_in_bytes"`
-	SizeLimit    int64 `json:"size_limit"`
 }
+
+const sampleConfig = `
+  ## Specify a list of one or more Kibana servers
+  servers = ["http://localhost:5601"]
+
+  ## Timeout for HTTP requests
+  timeout = "5s"
+
+  ## HTTP Basic Auth credentials
+  # username = "username"
+  # password = "pa$$word"
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+`
 
 type Kibana struct {
 	Local    bool
@@ -115,8 +128,14 @@ func mapHealthStatusToCode(s string) int {
 	return 0
 }
 
-func (*Kibana) SampleConfig() string {
+// SampleConfig returns sample configuration for this plugin.
+func (k *Kibana) SampleConfig() string {
 	return sampleConfig
+}
+
+// Description returns the plugin description.
+func (k *Kibana) Description() string {
+	return "Read status information from one or more Kibana servers"
 }
 
 func (k *Kibana) Gather(acc telegraf.Accumulator) error {
@@ -136,7 +155,7 @@ func (k *Kibana) Gather(acc telegraf.Accumulator) error {
 		go func(baseUrl string, acc telegraf.Accumulator) {
 			defer wg.Done()
 			if err := k.gatherKibanaStatus(baseUrl, acc); err != nil {
-				acc.AddError(fmt.Errorf("[url=%s]: %w", baseUrl, err))
+				acc.AddError(fmt.Errorf("[url=%s]: %s", baseUrl, err))
 				return
 			}
 		}(serv, acc)
@@ -203,7 +222,6 @@ func (k *Kibana) gatherKibanaStatus(baseURL string, acc telegraf.Accumulator) er
 		fields["heap_max_bytes"] = kibanaStatus.Metrics.Process.Memory.Heap.TotalInBytes
 		fields["heap_total_bytes"] = kibanaStatus.Metrics.Process.Memory.Heap.TotalInBytes
 		fields["heap_used_bytes"] = kibanaStatus.Metrics.Process.Memory.Heap.UsedInBytes
-		fields["heap_size_limit"] = kibanaStatus.Metrics.Process.Memory.Heap.SizeLimit
 	} else {
 		fields["uptime_ms"] = int64(kibanaStatus.Metrics.UptimeInMillis)
 		fields["heap_max_bytes"] = kibanaStatus.Metrics.Process.Mem.HeapMaxInBytes
@@ -218,7 +236,7 @@ func (k *Kibana) gatherKibanaStatus(baseURL string, acc telegraf.Accumulator) er
 func (k *Kibana) gatherJSONData(url string, v interface{}) (host string, err error) {
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return "", fmt.Errorf("unable to create new request %q: %w", url, err)
+		return "", fmt.Errorf("unable to create new request '%s': %v", url, err)
 	}
 
 	if (k.Username != "") || (k.Password != "") {

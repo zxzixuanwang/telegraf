@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package opentsdb
 
 import (
-	_ "embed"
 	"fmt"
 	"math"
 	"net"
@@ -15,9 +13,6 @@ import (
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/outputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 var (
 	allowedChars = regexp.MustCompile(`[^a-zA-Z0-9-_./\p{L}]`)
@@ -37,7 +32,7 @@ type OpenTSDB struct {
 	Host string `toml:"host"`
 	Port int    `toml:"port"`
 
-	HTTPBatchSize int    `toml:"http_batch_size"`
+	HTTPBatchSize int    `toml:"http_batch_size"` // deprecated httpBatchSize form in 1.8
 	HTTPPath      string `toml:"http_path"`
 
 	Debug bool `toml:"debug"`
@@ -47,17 +42,42 @@ type OpenTSDB struct {
 	Log telegraf.Logger `toml:"-"`
 }
 
+var sampleConfig = `
+  ## prefix for metrics keys
+  prefix = "my.specific.prefix."
+
+  ## DNS name of the OpenTSDB server
+  ## Using "opentsdb.example.com" or "tcp://opentsdb.example.com" will use the
+  ## telnet API. "http://opentsdb.example.com" will use the Http API.
+  host = "opentsdb.example.com"
+
+  ## Port of the OpenTSDB server
+  port = 4242
+
+  ## Number of data points to send to OpenTSDB in Http requests.
+  ## Not used with telnet API.
+  http_batch_size = 50
+
+  ## URI Path for Http requests to OpenTSDB.
+  ## Used in cases where OpenTSDB is located behind a reverse proxy.
+  http_path = "/api/put"
+
+  ## Debug true - Prints OpenTSDB communication
+  debug = false
+
+  ## Separator separates measurement name from field
+  separator = "_"
+`
+
 func ToLineFormat(tags map[string]string) string {
-	tagsArray := make([]string, 0, len(tags))
+	tagsArray := make([]string, len(tags))
+	index := 0
 	for k, v := range tags {
-		tagsArray = append(tagsArray, fmt.Sprintf("%s=%s", k, v))
+		tagsArray[index] = fmt.Sprintf("%s=%s", k, v)
+		index++
 	}
 	sort.Strings(tagsArray)
 	return strings.Join(tagsArray, " ")
-}
-
-func (*OpenTSDB) SampleConfig() string {
-	return sampleConfig
 }
 
 func (o *OpenTSDB) Connect() error {
@@ -67,17 +87,17 @@ func (o *OpenTSDB) Connect() error {
 	// Test Connection to OpenTSDB Server
 	u, err := url.Parse(o.Host)
 	if err != nil {
-		return fmt.Errorf("error in parsing host url: %w", err)
+		return fmt.Errorf("error in parsing host url: %s", err.Error())
 	}
 
 	uri := fmt.Sprintf("%s:%d", u.Host, o.Port)
 	tcpAddr, err := net.ResolveTCPAddr("tcp", uri)
 	if err != nil {
-		return fmt.Errorf("OpenTSDB TCP address cannot be resolved: %w", err)
+		return fmt.Errorf("OpenTSDB TCP address cannot be resolved: %s", err)
 	}
 	connection, err := net.DialTCP("tcp", nil, tcpAddr)
 	if err != nil {
-		return fmt.Errorf("OpenTSDB Telnet connect fail: %w", err)
+		return fmt.Errorf("OpenTSDB Telnet connect fail: %s", err)
 	}
 	defer connection.Close()
 	return nil
@@ -90,7 +110,7 @@ func (o *OpenTSDB) Write(metrics []telegraf.Metric) error {
 
 	u, err := url.Parse(o.Host)
 	if err != nil {
-		return fmt.Errorf("error in parsing host url: %w", err)
+		return fmt.Errorf("error in parsing host url: %s", err.Error())
 	}
 
 	if u.Scheme == "" || u.Scheme == "tcp" {
@@ -111,7 +131,6 @@ func (o *OpenTSDB) WriteHTTP(metrics []telegraf.Metric, u *url.URL) error {
 		BatchSize: o.HTTPBatchSize,
 		Path:      o.HTTPPath,
 		Debug:     o.Debug,
-		log:       o.Log,
 	}
 
 	for _, m := range metrics {
@@ -187,9 +206,9 @@ func (o *OpenTSDB) WriteTelnet(metrics []telegraf.Metric, u *url.URL) error {
 				sanitize(fmt.Sprintf("%s%s%s%s", o.Prefix, m.Name(), o.Separator, fieldName)),
 				now, metricValue, tags)
 
-			_, err = connection.Write([]byte(messageLine))
+			_, err := connection.Write([]byte(messageLine))
 			if err != nil {
-				return fmt.Errorf("telnet writing error: %w", err)
+				return fmt.Errorf("OpenTSDB: Telnet writing error %s", err.Error())
 			}
 		}
 	}
@@ -216,7 +235,7 @@ func buildValue(v interface{}) (string, error) {
 	case uint64:
 		retv = UIntToString(p)
 	case float64:
-		retv = FloatToString(p)
+		retv = FloatToString(float64(p))
 	default:
 		return retv, fmt.Errorf("unexpected type %T with value %v for OpenTSDB", v, v)
 	}
@@ -233,6 +252,14 @@ func UIntToString(inputNum uint64) string {
 
 func FloatToString(inputNum float64) string {
 	return strconv.FormatFloat(inputNum, 'f', 6, 64)
+}
+
+func (o *OpenTSDB) SampleConfig() string {
+	return sampleConfig
+}
+
+func (o *OpenTSDB) Description() string {
+	return "Configuration for OpenTSDB server to send metrics to"
 }
 
 func (o *OpenTSDB) Close() error {

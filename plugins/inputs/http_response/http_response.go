@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package http_response
 
 import (
-	_ "embed"
 	"errors"
 	"fmt"
 	"io"
@@ -18,13 +16,9 @@ import (
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
-	"github.com/influxdata/telegraf/internal"
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 const (
 	// defaultResponseBodyMaxSize is the default maximum response body size, in bytes.
@@ -51,8 +45,8 @@ type HTTPResponse struct {
 	ResponseStatusCode  int
 	Interface           string
 	// HTTP Basic Auth Credentials
-	Username config.Secret `toml:"username"`
-	Password config.Secret `toml:"password"`
+	Username string `toml:"username"`
+	Password string `toml:"password"`
 	tls.ClientConfig
 
 	Log telegraf.Logger
@@ -64,6 +58,92 @@ type HTTPResponse struct {
 type httpClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
+
+// Description returns the plugin Description
+func (h *HTTPResponse) Description() string {
+	return "HTTP/HTTPS request given an address a method and a timeout"
+}
+
+var sampleConfig = `
+  ## Deprecated in 1.12, use 'urls'
+  ## Server address (default http://localhost)
+  # address = "http://localhost"
+
+  ## List of urls to query.
+  # urls = ["http://localhost"]
+
+  ## Set http_proxy (telegraf uses the system wide proxy settings if it's is not set)
+  # http_proxy = "http://localhost:8888"
+
+  ## Set response_timeout (default 5 seconds)
+  # response_timeout = "5s"
+
+  ## HTTP Request Method
+  # method = "GET"
+
+  ## Whether to follow redirects from the server (defaults to false)
+  # follow_redirects = false
+
+  ## Optional file with Bearer token
+  ## file content is added as an Authorization header
+  # bearer_token = "/path/to/file"
+
+  ## Optional HTTP Basic Auth Credentials
+  # username = "username"
+  # password = "pa$$word"
+
+  ## Optional HTTP Request Body
+  # body = '''
+  # {'fake':'data'}
+  # '''
+
+  ## Optional name of the field that will contain the body of the response.
+  ## By default it is set to an empty String indicating that the body's content won't be added
+  # response_body_field = ''
+
+  ## Maximum allowed HTTP response body size in bytes.
+  ## 0 means to use the default of 32MiB.
+  ## If the response body size exceeds this limit a "body_read_error" will be raised
+  # response_body_max_size = "32MiB"
+
+  ## Optional substring or regex match in body of the response (case sensitive)
+  # response_string_match = "\"service_status\": \"up\""
+  # response_string_match = "ok"
+  # response_string_match = "\".*_status\".?:.?\"up\""
+
+  ## Expected response status code.
+  ## The status code of the response is compared to this value. If they match, the field
+  ## "response_status_code_match" will be 1, otherwise it will be 0. If the
+  ## expected status code is 0, the check is disabled and the field won't be added.
+  # response_status_code = 0
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+
+  ## HTTP Request Headers (all values must be strings)
+  # [inputs.http_response.headers]
+  #   Host = "github.com"
+
+  ## Optional setting to map response http headers into tags
+  ## If the http header is not present on the request, no corresponding tag will be added
+  ## If multiple instances of the http header are present, only the first value will be used
+  # http_header_tags = {"HTTP_HEADER" = "TAG_NAME"}
+
+  ## Interface to use when dialing an address
+  # interface = "eth0"
+`
+
+// SampleConfig returns the plugin SampleConfig
+func (h *HTTPResponse) SampleConfig() string {
+	return sampleConfig
+}
+
+// ErrRedirectAttempted indicates that a redirect occurred
+var ErrRedirectAttempted = errors.New("redirect")
 
 // Set the proxy. A configured proxy overwrites the system wide proxy.
 func getProxyFunc(httpProxy string) func(*http.Request) (*url.URL, error) {
@@ -154,30 +234,27 @@ func setResult(resultString string, fields map[string]interface{}, tags map[stri
 }
 
 func setError(err error, fields map[string]interface{}, tags map[string]string) error {
-	var timeoutError net.Error
-	if errors.As(err, &timeoutError) && timeoutError.Timeout() {
+	if timeoutError, ok := err.(net.Error); ok && timeoutError.Timeout() {
 		setResult("timeout", fields, tags)
 		return timeoutError
 	}
 
-	var urlErr *url.Error
-	if !errors.As(err, &urlErr) {
+	urlErr, isURLErr := err.(*url.Error)
+	if !isURLErr {
 		return nil
 	}
 
-	var opErr *net.OpError
-	if errors.As(urlErr, &opErr) {
-		var dnsErr *net.DNSError
-		var parseErr *net.ParseError
-
-		if errors.As(opErr, &dnsErr) {
+	opErr, isNetErr := (urlErr.Err).(*net.OpError)
+	if isNetErr {
+		switch e := (opErr.Err).(type) {
+		case *net.DNSError:
 			setResult("dns_error", fields, tags)
-			return dnsErr
-		} else if errors.As(opErr, &parseErr) {
+			return e
+		case *net.ParseError:
 			// Parse error has to do with parsing of IP addresses, so we
 			// group it with address errors
 			setResult("address_error", fields, tags)
-			return parseErr
+			return e
 		}
 	}
 
@@ -199,10 +276,6 @@ func (h *HTTPResponse) httpGather(u string) (map[string]interface{}, map[string]
 		return nil, nil, err
 	}
 
-	if _, uaPresent := h.Headers["User-Agent"]; !uaPresent {
-		request.Header.Set("User-Agent", internal.ProductToken())
-	}
-
 	if h.BearerToken != "" {
 		token, err := os.ReadFile(h.BearerToken)
 		if err != nil {
@@ -219,8 +292,8 @@ func (h *HTTPResponse) httpGather(u string) (map[string]interface{}, map[string]
 		}
 	}
 
-	if err := h.setRequestAuth(request); err != nil {
-		return nil, nil, err
+	if h.Username != "" || h.Password != "" {
+		request.SetBasicAuth(h.Username, h.Password)
 	}
 
 	// Start Timer
@@ -328,10 +401,6 @@ func (h *HTTPResponse) setBodyReadError(errorMsg string, bodyBytes []byte, field
 	}
 }
 
-func (*HTTPResponse) SampleConfig() string {
-	return sampleConfig
-}
-
 // Gather gets all metric fields and tags and returns any errors it encounters
 func (h *HTTPResponse) Gather(acc telegraf.Accumulator) error {
 	// Compile the body regex if it exist
@@ -339,7 +408,7 @@ func (h *HTTPResponse) Gather(acc telegraf.Accumulator) error {
 		var err error
 		h.compiledStringMatch, err = regexp.Compile(h.ResponseStringMatch)
 		if err != nil {
-			return fmt.Errorf("failed to compile regular expression %q: %w", h.ResponseStringMatch, err)
+			return fmt.Errorf("failed to compile regular expression %s : %s", h.ResponseStringMatch, err)
 		}
 	}
 
@@ -356,6 +425,7 @@ func (h *HTTPResponse) Gather(acc telegraf.Accumulator) error {
 		if h.Address == "" {
 			h.URLs = []string{"http://localhost"}
 		} else {
+			h.Log.Warn("'address' deprecated in telegraf 1.12, please use 'urls'")
 			h.URLs = []string{h.Address}
 		}
 	}
@@ -395,23 +465,6 @@ func (h *HTTPResponse) Gather(acc telegraf.Accumulator) error {
 		acc.AddFields("http_response", fields, tags)
 	}
 
-	return nil
-}
-
-func (h *HTTPResponse) setRequestAuth(request *http.Request) error {
-	username, err := h.Username.Get()
-	if err != nil {
-		return fmt.Errorf("getting username failed: %w", err)
-	}
-	defer config.ReleaseSecret(username)
-	password, err := h.Password.Get()
-	if err != nil {
-		return fmt.Errorf("getting password failed: %w", err)
-	}
-	defer config.ReleaseSecret(password)
-	if len(username) != 0 || len(password) != 0 {
-		request.SetBasicAuth(string(username), string(password))
-	}
 	return nil
 }
 

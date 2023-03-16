@@ -43,8 +43,9 @@ type Serializer struct {
 	config FormatConfig
 }
 
-func NewSerializer(config FormatConfig) *Serializer {
-	return &Serializer{config: config}
+func NewSerializer(config FormatConfig) (*Serializer, error) {
+	s := &Serializer{config: config}
+	return s, nil
 }
 
 func (s *Serializer) Serialize(metric telegraf.Metric) ([]byte, error) {
@@ -236,7 +237,7 @@ func (s *Serializer) SerializeBatch(metrics []telegraf.Metric) ([]byte, error) {
 	pb := &prompb.WriteRequest{Timeseries: promTS}
 	data, err := pb.Marshal()
 	if err != nil {
-		return nil, fmt.Errorf("unable to marshal protobuf: %w", err)
+		return nil, fmt.Errorf("unable to marshal protobuf: %v", err)
 	}
 	encoded := snappy.Encode(nil, data)
 	buf.Write(encoded) //nolint:revive // from buffer.go: "err is always nil"
@@ -338,11 +339,5 @@ func getPromTS(name string, labels []prompb.Label, value float64, ts time.Time) 
 		Name:  "__name__",
 		Value: name,
 	})
-
-	// we sort the labels since Prometheus TSDB does not like out of order labels
-	sort.Slice(labels, func(i, j int) bool {
-		return labels[i].Name < labels[j].Name
-	})
-
 	return MakeMetricKey(labels), prompb.TimeSeries{Labels: labels, Samples: sample}
 }

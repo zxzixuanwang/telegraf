@@ -1,9 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package execd
 
 import (
 	"bufio"
-	_ "embed"
 	"errors"
 	"fmt"
 	"io"
@@ -13,21 +11,28 @@ import (
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/internal/process"
+	"github.com/influxdata/telegraf/plugins/parsers"
 	"github.com/influxdata/telegraf/plugins/parsers/influx"
 	"github.com/influxdata/telegraf/plugins/processors"
 	"github.com/influxdata/telegraf/plugins/serializers"
 )
 
-//go:embed sample.conf
-var sampleConfig string
+const sampleConfig = `
+	## Program to run as daemon
+	## eg: command = ["/path/to/your_program", "arg1", "arg2"]
+	command = ["cat"]
+
+  ## Delay before the process is restarted after an unexpected termination
+  restart_delay = "10s"
+`
 
 type Execd struct {
 	Command      []string        `toml:"command"`
-	Environment  []string        `toml:"environment"`
 	RestartDelay config.Duration `toml:"restart_delay"`
 	Log          telegraf.Logger
 
-	parser           telegraf.Parser
+	parserConfig     *parsers.Config
+	parser           parsers.Parser
 	serializerConfig *serializers.Config
 	serializer       serializers.Serializer
 	acc              telegraf.Accumulator
@@ -37,29 +42,36 @@ type Execd struct {
 func New() *Execd {
 	return &Execd{
 		RestartDelay: config.Duration(10 * time.Second),
+		parserConfig: &parsers.Config{
+			DataFormat: "influx",
+		},
 		serializerConfig: &serializers.Config{
 			DataFormat: "influx",
 		},
 	}
 }
 
-func (e *Execd) SetParser(p telegraf.Parser) {
-	e.parser = p
+func (e *Execd) SampleConfig() string {
+	return sampleConfig
 }
 
-func (*Execd) SampleConfig() string {
-	return sampleConfig
+func (e *Execd) Description() string {
+	return "Run executable as long-running processor plugin"
 }
 
 func (e *Execd) Start(acc telegraf.Accumulator) error {
 	var err error
+	e.parser, err = parsers.NewParser(e.parserConfig)
+	if err != nil {
+		return fmt.Errorf("error creating parser: %w", err)
+	}
 	e.serializer, err = serializers.NewSerializer(e.serializerConfig)
 	if err != nil {
 		return fmt.Errorf("error creating serializer: %w", err)
 	}
 	e.acc = acc
 
-	e.process, err = process.New(e.Command, e.Environment)
+	e.process, err = process.New(e.Command)
 	if err != nil {
 		return fmt.Errorf("error creating new process: %w", err)
 	}
@@ -100,8 +112,9 @@ func (e *Execd) Add(m telegraf.Metric, _ telegraf.Accumulator) error {
 	return nil
 }
 
-func (e *Execd) Stop() {
+func (e *Execd) Stop() error {
 	e.process.Stop()
+	return nil
 }
 
 func (e *Execd) cmdReadOut(out io.Reader) {
@@ -139,12 +152,11 @@ func (e *Execd) cmdReadOutStream(out io.Reader) {
 
 		if err != nil {
 			// Stop parsing when we've reached the end.
-			if errors.Is(err, influx.EOF) {
+			if err == influx.EOF {
 				break
 			}
 
-			var parseErr *influx.ParseError
-			if errors.As(err, &parseErr) {
+			if parseErr, isParseError := err.(*influx.ParseError); isParseError {
 				// Continue past parse errors.
 				e.acc.AddError(parseErr)
 				continue

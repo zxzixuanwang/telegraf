@@ -1,10 +1,11 @@
-//go:generate ../../../tools/readme_config_includer/generator
-//go:build linux
+//go:build !windows
+// +build !windows
+
+// bcache doesn't aim for Windows
 
 package bcache
 
 import (
-	_ "embed"
 	"errors"
 	"fmt"
 	"os"
@@ -16,12 +17,28 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 type Bcache struct {
 	BcachePath string
 	BcacheDevs []string
+}
+
+var sampleConfig = `
+  ## Bcache sets path
+  ## If not specified, then default is:
+  bcachePath = "/sys/fs/bcache"
+
+  ## By default, Telegraf gather stats for all bcache devices
+  ## Setting devices will restrict the stats to the specified
+  ## bcache devices.
+  bcacheDevs = ["bcache0"]
+`
+
+func (b *Bcache) SampleConfig() string {
+	return sampleConfig
+}
+
+func (b *Bcache) Description() string {
+	return "Read metrics of bcache from stats_total and dirty_data"
 }
 
 func getTags(bdev string) map[string]string {
@@ -96,10 +113,6 @@ func (b *Bcache) gatherBcache(bdev string, acc telegraf.Accumulator) error {
 	return nil
 }
 
-func (*Bcache) SampleConfig() string {
-	return sampleConfig
-}
-
 func (b *Bcache) Gather(acc telegraf.Accumulator) error {
 	bcacheDevsChecked := make(map[string]bool)
 	var restrictDevs bool
@@ -126,7 +139,7 @@ func (b *Bcache) Gather(acc telegraf.Accumulator) error {
 			}
 		}
 		if err := b.gatherBcache(bdev, acc); err != nil {
-			return fmt.Errorf("gathering bcache failed: %w", err)
+			return fmt.Errorf("gathering bcache failed: %v", err)
 		}
 	}
 	return nil

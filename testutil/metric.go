@@ -9,7 +9,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/influxdata/telegraf"
-	telegrafMetric "github.com/influxdata/telegraf/metric"
+	"github.com/influxdata/telegraf/metric"
 )
 
 type metricDiff struct {
@@ -18,10 +18,6 @@ type metricDiff struct {
 	Fields      []*telegraf.Field
 	Type        telegraf.ValueType
 	Time        time.Time
-}
-
-type helper interface {
-	Helper()
 }
 
 func lessFunc(lhs, rhs *metricDiff) bool {
@@ -128,21 +124,6 @@ func IgnoreTime() cmp.Option {
 	return cmpopts.IgnoreFields(metricDiff{}, "Time")
 }
 
-// IgnoreFields disables comparison of the fields with the given names.
-// The field-names are case-sensitive!
-func IgnoreFields(names ...string) cmp.Option {
-	return cmpopts.IgnoreSliceElements(
-		func(f *telegraf.Field) bool {
-			for _, n := range names {
-				if f.Key == n {
-					return true
-				}
-			}
-			return false
-		},
-	)
-}
-
 // MetricEqual returns true if the metrics are equal.
 func MetricEqual(expected, actual telegraf.Metric, opts ...cmp.Option) bool {
 	var lhs, rhs *metricDiff
@@ -159,10 +140,8 @@ func MetricEqual(expected, actual telegraf.Metric, opts ...cmp.Option) bool {
 
 // RequireMetricEqual halts the test with an error if the metrics are not
 // equal.
-func RequireMetricEqual(t testing.TB, expected, actual telegraf.Metric, opts ...cmp.Option) {
-	if x, ok := t.(helper); ok {
-		x.Helper()
-	}
+func RequireMetricEqual(t *testing.T, expected, actual telegraf.Metric, opts ...cmp.Option) {
+	t.Helper()
 
 	var lhs, rhs *metricDiff
 	if expected != nil {
@@ -180,10 +159,8 @@ func RequireMetricEqual(t testing.TB, expected, actual telegraf.Metric, opts ...
 
 // RequireMetricsEqual halts the test with an error if the array of metrics
 // are not equal.
-func RequireMetricsEqual(t testing.TB, expected, actual []telegraf.Metric, opts ...cmp.Option) {
-	if x, ok := t.(helper); ok {
-		x.Helper()
-	}
+func RequireMetricsEqual(t *testing.T, expected, actual []telegraf.Metric, opts ...cmp.Option) {
+	t.Helper()
 
 	lhs := make([]*metricDiff, 0, len(expected))
 	for _, m := range expected {
@@ -200,7 +177,7 @@ func RequireMetricsEqual(t testing.TB, expected, actual []telegraf.Metric, opts 
 	}
 }
 
-// MustMetric creates a new metric.
+// Metric creates a new metric or panics on error.
 func MustMetric(
 	name string,
 	tags map[string]string,
@@ -208,11 +185,11 @@ func MustMetric(
 	tm time.Time,
 	tp ...telegraf.ValueType,
 ) telegraf.Metric {
-	m := telegrafMetric.New(name, tags, fields, tm, tp...)
+	m := metric.New(name, tags, fields, tm, tp...)
 	return m
 }
 
 func FromTestMetric(met *Metric) telegraf.Metric {
-	m := telegrafMetric.New(met.Measurement, met.Tags, met.Fields, met.Time, met.Type)
+	m := metric.New(met.Measurement, met.Tags, met.Fields, met.Time, met.Type)
 	return m
 }

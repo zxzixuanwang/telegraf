@@ -1,10 +1,10 @@
 package syslog
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync/atomic"
 	"testing"
@@ -16,7 +16,7 @@ import (
 	"github.com/influxdata/telegraf/testutil"
 )
 
-func getTestCasesForRFC5426(hasRemoteAddr bool) []testCasePacket {
+func getTestCasesForRFC5426() []testCasePacket {
 	testCases := []testCasePacket{
 		{
 			name: "complete",
@@ -84,10 +84,7 @@ func getTestCasesForRFC5426(hasRemoteAddr bool) []testCasePacket {
 		},
 		{
 			name: "average",
-			data: []byte(
-				`<29>1 2016-02-21T04:32:57+00:00 web1 someservice 2341 2 [origin][meta sequence="14125553" service="someservice"] ` +
-					`"GET /v1/ok HTTP/1.1" 200 145 "-" "hacheck 0.9.0" 24306 127.0.0.1:40124 575`,
-			),
+			data: []byte(`<29>1 2016-02-21T04:32:57+00:00 web1 someservice 2341 2 [origin][meta sequence="14125553" service="someservice"] "GET /v1/ok HTTP/1.1" 200 145 "-" "hacheck 0.9.0" 24306 127.0.0.1:40124 575`),
 			wantBestEffort: testutil.MustMetric(
 				"syslog",
 				map[string]string{
@@ -227,22 +224,11 @@ func getTestCasesForRFC5426(hasRemoteAddr bool) []testCasePacket {
 		},
 	}
 
-	if hasRemoteAddr {
-		for _, tc := range testCases {
-			if tc.wantStrict != nil {
-				tc.wantStrict.AddTag("source", "127.0.0.1")
-			}
-			if tc.wantBestEffort != nil {
-				tc.wantBestEffort.AddTag("source", "127.0.0.1")
-			}
-		}
-	}
-
 	return testCases
 }
 
 func testRFC5426(t *testing.T, protocol string, address string, bestEffort bool) {
-	for _, tc := range getTestCasesForRFC5426(protocol != "unixgram") {
+	for _, tc := range getTestCasesForRFC5426() {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create receiver
 			receiver := newUDPSyslogReceiver(protocol+"://"+address, bestEffort, syslogRFC5424)
@@ -259,9 +245,8 @@ func testRFC5426(t *testing.T, protocol string, address string, bestEffort bool)
 			_, err = conn.Write(tc.data)
 			conn.Close()
 			if err != nil {
-				var opErr *net.OpError
-				if errors.As(err, &opErr) {
-					if opErr.Err.Error() == "write: message too long" {
+				if err, ok := err.(*net.OpError); ok {
+					if err.Err.Error() == "write: message too long" {
 						return
 					}
 				}
@@ -304,11 +289,12 @@ func TestBestEffort_unixgram(t *testing.T) {
 		t.Skip("Skipping on Windows, as unixgram sockets are not supported")
 	}
 
-	sock := testutil.TempSocket(t)
-	f, err := os.Create(sock)
+	tmpdir, err := os.MkdirTemp("", "telegraf")
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, f.Close()) })
-
+	defer os.RemoveAll(tmpdir)
+	sock := filepath.Join(tmpdir, "syslog.TestBestEffort_unixgram.sock")
+	_, err = os.Create(sock)
+	require.NoError(t, err)
 	testRFC5426(t, "unixgram", sock, true)
 }
 
@@ -317,11 +303,12 @@ func TestStrict_unixgram(t *testing.T) {
 		t.Skip("Skipping on Windows, as unixgram sockets are not supported")
 	}
 
-	sock := testutil.TempSocket(t)
-	f, err := os.Create(sock)
+	tmpdir, err := os.MkdirTemp("", "telegraf")
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, f.Close()) })
-
+	defer os.RemoveAll(tmpdir)
+	sock := filepath.Join(tmpdir, "syslog.TestStrict_unixgram.sock")
+	_, err = os.Create(sock)
+	require.NoError(t, err)
 	testRFC5426(t, "unixgram", sock, false)
 }
 
@@ -366,7 +353,6 @@ func TestTimeIncrement_udp(t *testing.T) {
 			map[string]string{
 				"severity": "alert",
 				"facility": "kern",
-				"source":   "127.0.0.1",
 			},
 			map[string]interface{}{
 				"version":       uint16(1),
@@ -397,7 +383,6 @@ func TestTimeIncrement_udp(t *testing.T) {
 			map[string]string{
 				"severity": "alert",
 				"facility": "kern",
-				"source":   "127.0.0.1",
 			},
 			map[string]interface{}{
 				"version":       uint16(1),
@@ -427,7 +412,6 @@ func TestTimeIncrement_udp(t *testing.T) {
 			map[string]string{
 				"severity": "alert",
 				"facility": "kern",
-				"source":   "127.0.0.1",
 			},
 			map[string]interface{}{
 				"version":       uint16(1),

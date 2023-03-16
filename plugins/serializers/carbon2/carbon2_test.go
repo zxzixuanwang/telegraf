@@ -197,7 +197,7 @@ func TestSerializeMetricString(t *testing.T) {
 }
 
 func TestSerializeMetricBool(t *testing.T) {
-	requireMetric := func(tim time.Time, value bool) telegraf.Metric {
+	requireMetric := func(t *testing.T, tim time.Time, value bool) telegraf.Metric {
 		tags := map[string]string{
 			"tag_name": "tag_value",
 		}
@@ -218,22 +218,22 @@ func TestSerializeMetricBool(t *testing.T) {
 		expected string
 	}{
 		{
-			metric:   requireMetric(now, false),
+			metric:   requireMetric(t, now, false),
 			format:   Carbon2FormatFieldSeparate,
 			expected: fmt.Sprintf("metric=cpu field=java_lang_GarbageCollector_Valid tag_name=tag_value  0 %d\n", now.Unix()),
 		},
 		{
-			metric:   requireMetric(now, false),
+			metric:   requireMetric(t, now, false),
 			format:   Carbon2FormatMetricIncludesField,
 			expected: fmt.Sprintf("metric=cpu_java_lang_GarbageCollector_Valid tag_name=tag_value  0 %d\n", now.Unix()),
 		},
 		{
-			metric:   requireMetric(now, true),
+			metric:   requireMetric(t, now, true),
 			format:   Carbon2FormatFieldSeparate,
 			expected: fmt.Sprintf("metric=cpu field=java_lang_GarbageCollector_Valid tag_name=tag_value  1 %d\n", now.Unix()),
 		},
 		{
-			metric:   requireMetric(now, true),
+			metric:   requireMetric(t, now, true),
 			format:   Carbon2FormatMetricIncludesField,
 			expected: fmt.Sprintf("metric=cpu_java_lang_GarbageCollector_Valid tag_name=tag_value  1 %d\n", now.Unix()),
 		},

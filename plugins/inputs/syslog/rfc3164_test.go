@@ -1,16 +1,14 @@
 package syslog
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 func timeMustParse(value string) time.Time {
@@ -22,7 +20,7 @@ func timeMustParse(value string) time.Time {
 	return t
 }
 
-func getTestCasesForRFC3164(hasRemoteAddr bool) []testCasePacket {
+func getTestCasesForRFC3164() []testCasePacket {
 	currentYear := time.Now().Year()
 	ts := timeMustParse(fmt.Sprintf("Dec 2 16:31:03 %d", currentYear)).UnixNano()
 	testCases := []testCasePacket{
@@ -64,22 +62,11 @@ func getTestCasesForRFC3164(hasRemoteAddr bool) []testCasePacket {
 		},
 	}
 
-	if hasRemoteAddr {
-		for _, tc := range testCases {
-			if tc.wantStrict != nil {
-				tc.wantStrict.AddTag("source", "127.0.0.1")
-			}
-			if tc.wantBestEffort != nil {
-				tc.wantBestEffort.AddTag("source", "127.0.0.1")
-			}
-		}
-	}
-
 	return testCases
 }
 
 func testRFC3164(t *testing.T, protocol string, address string, bestEffort bool) {
-	for _, tc := range getTestCasesForRFC3164(protocol != "unix") {
+	for _, tc := range getTestCasesForRFC3164() {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create receiver
 			receiver := newUDPSyslogReceiver(protocol+"://"+address, bestEffort, syslogRFC3164)
@@ -96,9 +83,8 @@ func testRFC3164(t *testing.T, protocol string, address string, bestEffort bool)
 			_, err = conn.Write(tc.data)
 			conn.Close()
 			if err != nil {
-				var opErr *net.OpError
-				if errors.As(err, &opErr) {
-					if opErr.Err.Error() == "write: message too long" {
+				if err, ok := err.(*net.OpError); ok {
+					if err.Err.Error() == "write: message too long" {
 						return
 					}
 				}

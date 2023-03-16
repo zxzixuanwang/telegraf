@@ -9,9 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/influxdata/telegraf"
+	"github.com/stretchr/testify/assert"
 )
 
 var (
@@ -79,7 +78,7 @@ func (a *Accumulator) ClearMetrics() {
 	a.Metrics = make([]*Metric, 0)
 }
 
-func (a *Accumulator) addMeasurement(
+func (a *Accumulator) addFields(
 	measurement string,
 	tags map[string]string,
 	fields map[string]interface{},
@@ -114,6 +113,7 @@ func (a *Accumulator) addMeasurement(
 	if len(timestamp) > 0 {
 		t = timestamp[0]
 	} else {
+		t = time.Now()
 		if a.TimeFunc == nil {
 			t = time.Now()
 		} else {
@@ -147,7 +147,7 @@ func (a *Accumulator) AddFields(
 	tags map[string]string,
 	timestamp ...time.Time,
 ) {
-	a.addMeasurement(measurement, tags, fields, telegraf.Untyped, timestamp...)
+	a.addFields(measurement, tags, fields, telegraf.Untyped, timestamp...)
 }
 
 func (a *Accumulator) AddCounter(
@@ -156,7 +156,7 @@ func (a *Accumulator) AddCounter(
 	tags map[string]string,
 	timestamp ...time.Time,
 ) {
-	a.addMeasurement(measurement, tags, fields, telegraf.Counter, timestamp...)
+	a.addFields(measurement, tags, fields, telegraf.Counter, timestamp...)
 }
 
 func (a *Accumulator) AddGauge(
@@ -165,12 +165,12 @@ func (a *Accumulator) AddGauge(
 	tags map[string]string,
 	timestamp ...time.Time,
 ) {
-	a.addMeasurement(measurement, tags, fields, telegraf.Gauge, timestamp...)
+	a.addFields(measurement, tags, fields, telegraf.Gauge, timestamp...)
 }
 
 func (a *Accumulator) AddMetrics(metrics []telegraf.Metric) {
 	for _, m := range metrics {
-		a.addMeasurement(m.Name(), m.Tags(), m.Fields(), m.Type(), m.Time())
+		a.addFields(m.Name(), m.Tags(), m.Fields(), m.Type(), m.Time())
 	}
 }
 
@@ -180,7 +180,7 @@ func (a *Accumulator) AddSummary(
 	tags map[string]string,
 	timestamp ...time.Time,
 ) {
-	a.addMeasurement(measurement, tags, fields, telegraf.Summary, timestamp...)
+	a.addFields(measurement, tags, fields, telegraf.Summary, timestamp...)
 }
 
 func (a *Accumulator) AddHistogram(
@@ -189,11 +189,11 @@ func (a *Accumulator) AddHistogram(
 	tags map[string]string,
 	timestamp ...time.Time,
 ) {
-	a.addMeasurement(measurement, tags, fields, telegraf.Histogram, timestamp...)
+	a.addFields(measurement, tags, fields, telegraf.Histogram, timestamp...)
 }
 
 func (a *Accumulator) AddMetric(m telegraf.Metric) {
-	a.addMeasurement(m.Name(), m.Tags(), m.Fields(), m.Type(), m.Time())
+	a.addFields(m.Name(), m.Tags(), m.Fields(), m.Type(), m.Time())
 }
 
 func (a *Accumulator) WithTracking(_ int) telegraf.TrackingAccumulator {
@@ -296,7 +296,7 @@ func (a *Accumulator) TagValue(measurement string, key string) string {
 	return ""
 }
 
-// GatherError calls the given Gather function and returns the first error found.
+// Calls the given Gather function and returns the first error found.
 func (a *Accumulator) GatherError(gf func(telegraf.Accumulator) error) error {
 	if err := gf(a); err != nil {
 		return err
@@ -529,7 +529,7 @@ func (a *Accumulator) HasInt32Field(measurement string, field string) bool {
 	return false
 }
 
-// HasStringField returns true if the measurement has a String value
+// HasStringField returns true if the measurement has an String value
 func (a *Accumulator) HasStringField(measurement string, field string) bool {
 	a.Lock()
 	defer a.Unlock()
@@ -704,14 +704,14 @@ func (a *Accumulator) StringField(measurement string, field string) (string, boo
 }
 
 // BoolField returns the bool value of the given measurement and field or false.
-func (a *Accumulator) BoolField(measurement string, field string) (v bool, ok bool) {
+func (a *Accumulator) BoolField(measurement string, field string) (bool, bool) {
 	a.Lock()
 	defer a.Unlock()
 	for _, p := range a.Metrics {
 		if p.Measurement == measurement {
 			for fieldname, value := range p.Fields {
 				if fieldname == field {
-					v, ok = value.(bool)
+					v, ok := value.(bool)
 					return v, ok
 				}
 			}

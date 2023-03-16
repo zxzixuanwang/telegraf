@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/influxdata/telegraf"
-	internalaws "github.com/influxdata/telegraf/plugins/common/aws"
+	internalaws "github.com/influxdata/telegraf/config/aws"
 	"github.com/influxdata/telegraf/testutil"
 )
 
@@ -28,19 +28,11 @@ func (c *mockCloudWatchLogs) Init(lsName string) {
 	c.pushedLogEvents = make([]types.InputLogEvent, 0)
 }
 
-func (c *mockCloudWatchLogs) DescribeLogGroups(
-	context.Context,
-	*cloudwatchlogsV2.DescribeLogGroupsInput,
-	...func(options *cloudwatchlogsV2.Options),
-) (*cloudwatchlogsV2.DescribeLogGroupsOutput, error) {
+func (c *mockCloudWatchLogs) DescribeLogGroups(context.Context, *cloudwatchlogsV2.DescribeLogGroupsInput, ...func(options *cloudwatchlogsV2.Options)) (*cloudwatchlogsV2.DescribeLogGroupsOutput, error) {
 	return nil, nil
 }
 
-func (c *mockCloudWatchLogs) DescribeLogStreams(
-	context.Context,
-	*cloudwatchlogsV2.DescribeLogStreamsInput,
-	...func(options *cloudwatchlogsV2.Options),
-) (*cloudwatchlogsV2.DescribeLogStreamsOutput, error) {
+func (c *mockCloudWatchLogs) DescribeLogStreams(context.Context, *cloudwatchlogsV2.DescribeLogStreamsInput, ...func(options *cloudwatchlogsV2.Options)) (*cloudwatchlogsV2.DescribeLogStreamsOutput, error) {
 	arn := "arn"
 	creationTime := time.Now().Unix()
 	sequenceToken := "arbitraryToken"
@@ -59,20 +51,10 @@ func (c *mockCloudWatchLogs) DescribeLogStreams(
 	}
 	return output, nil
 }
-
-func (c *mockCloudWatchLogs) CreateLogStream(
-	context.Context,
-	*cloudwatchlogsV2.CreateLogStreamInput,
-	...func(options *cloudwatchlogsV2.Options),
-) (*cloudwatchlogsV2.CreateLogStreamOutput, error) {
+func (c *mockCloudWatchLogs) CreateLogStream(context.Context, *cloudwatchlogsV2.CreateLogStreamInput, ...func(options *cloudwatchlogsV2.Options)) (*cloudwatchlogsV2.CreateLogStreamOutput, error) {
 	return nil, nil
 }
-
-func (c *mockCloudWatchLogs) PutLogEvents(
-	_ context.Context,
-	input *cloudwatchlogsV2.PutLogEventsInput,
-	_ ...func(options *cloudwatchlogsV2.Options),
-) (*cloudwatchlogsV2.PutLogEventsOutput, error) {
+func (c *mockCloudWatchLogs) PutLogEvents(_ context.Context, input *cloudwatchlogsV2.PutLogEventsInput, _ ...func(options *cloudwatchlogsV2.Options)) (*cloudwatchlogsV2.PutLogEventsOutput, error) {
 	sequenceToken := "arbitraryToken"
 	output := &cloudwatchlogsV2.PutLogEventsOutput{NextSequenceToken: &sequenceToken}
 	//Saving messages
@@ -81,7 +63,7 @@ func (c *mockCloudWatchLogs) PutLogEvents(
 	return output, nil
 }
 
-// Ensure mockCloudWatchLogs implement cloudWatchLogs interface
+//Ensure mockCloudWatchLogs implement cloudWatchLogs interface
 var _ cloudWatchLogs = (*mockCloudWatchLogs)(nil)
 
 func RandStringBytes(n int) string {
@@ -225,24 +207,6 @@ func TestInit(t *testing.T) {
 				},
 			},
 		},
-		{
-			name: "valid config with EndpointURL",
-			plugin: &CloudWatchLogs{
-				CredentialConfig: internalaws.CredentialConfig{
-					Region:      "eu-central-1",
-					AccessKey:   "dummy",
-					SecretKey:   "dummy",
-					EndpointURL: "https://test.com",
-				},
-				LogGroup:     "TestLogGroup",
-				LogStream:    "tag:source",
-				LDMetricName: "docker_log",
-				LDSource:     "tag:location",
-				Log: testutil.Logger{
-					Name: "outputs.cloudwatch_logs",
-				},
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -259,10 +223,10 @@ func TestInit(t *testing.T) {
 func TestConnect(t *testing.T) {
 	//mock cloudwatch logs endpoint that is used only in plugin.Connect
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w,
+		_, _ = fmt.Fprintln(w,
 			`{
-				   "logGroups": [
-					  {
+				   "logGroups": [ 
+					  { 
 						 "arn": "string",
 						 "creationTime": 123456789,
 						 "kmsKeyId": "string",
@@ -299,10 +263,10 @@ func TestConnect(t *testing.T) {
 func TestWrite(t *testing.T) {
 	//mock cloudwatch logs endpoint that is used only in plugin.Connect
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w,
+		_, _ = fmt.Fprintln(w,
 			`{
-				   "logGroups": [
-					  {
+				   "logGroups": [ 
+					  { 
 						 "arn": "string",
 						 "creationTime": 123456789,
 						 "kmsKeyId": "string",

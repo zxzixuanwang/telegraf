@@ -1,12 +1,9 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package docker
 
 import (
 	"context"
 	"crypto/tls"
-	_ "embed"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -28,20 +25,17 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 // Docker object
 type Docker struct {
 	Endpoint       string
-	ContainerNames []string `toml:"container_names" deprecated:"1.4.0;use 'container_name_include' instead"`
+	ContainerNames []string // deprecated in 1.4; use container_name_include
 
 	GatherServices bool `toml:"gather_services"`
 
 	Timeout          config.Duration
-	PerDevice        bool     `toml:"perdevice" deprecated:"1.18.0;use 'perdevice_include' instead"`
+	PerDevice        bool     `toml:"perdevice"`
 	PerDeviceInclude []string `toml:"perdevice_include"`
-	Total            bool     `toml:"total" deprecated:"1.18.0;use 'total_include' instead"`
+	Total            bool     `toml:"total"`
 	TotalInclude     []string `toml:"total_include"`
 	TagEnvironment   []string `toml:"tag_env"`
 	LabelInclude     []string `toml:"docker_label_include"`
@@ -80,6 +74,14 @@ const (
 	PB = 1000 * TB
 
 	defaultEndpoint = "unix:///var/run/docker.sock"
+
+	perDeviceIncludeDeprecationWarning = "'perdevice' setting is set to 'true' so 'blkio' and 'network' metrics will " +
+		"be collected. Please set it to 'false' and use 'perdevice_include' instead to control this behaviour as " +
+		"'perdevice' will be deprecated"
+
+	totalIncludeDeprecationWarning = "'total' setting is set to 'false' so 'blkio' and 'network' metrics will not be " +
+		"collected. Please set it to 'true' and use 'total_include' instead to control this behaviour as 'total' " +
+		"will be deprecated"
 )
 
 var (
@@ -89,23 +91,98 @@ var (
 	now                    = time.Now
 )
 
-func (*Docker) SampleConfig() string {
-	return sampleConfig
+var sampleConfig = `
+  ## Docker Endpoint
+  ##   To use TCP, set endpoint = "tcp://[ip]:[port]"
+  ##   To use environment variables (ie, docker-machine), set endpoint = "ENV"
+  endpoint = "unix:///var/run/docker.sock"
+
+  ## Set to true to collect Swarm metrics(desired_replicas, running_replicas)
+  gather_services = false
+
+  ## Only collect metrics for these containers, collect all if empty
+  container_names = []
+
+  ## Set the source tag for the metrics to the container ID hostname, eg first 12 chars
+  source_tag = false
+
+  ## Containers to include and exclude. Globs accepted.
+  ## Note that an empty array for both will include all containers
+  container_name_include = []
+  container_name_exclude = []
+
+  ## Container states to include and exclude. Globs accepted.
+  ## When empty only containers in the "running" state will be captured.
+  ## example: container_state_include = ["created", "restarting", "running", "removing", "paused", "exited", "dead"]
+  ## example: container_state_exclude = ["created", "restarting", "running", "removing", "paused", "exited", "dead"]
+  # container_state_include = []
+  # container_state_exclude = []
+
+  ## Timeout for docker list, info, and stats commands
+  timeout = "5s"
+
+  ## Whether to report for each container per-device blkio (8:0, 8:1...),
+  ## network (eth0, eth1, ...) and cpu (cpu0, cpu1, ...) stats or not.
+  ## Usage of this setting is discouraged since it will be deprecated in favor of 'perdevice_include'.
+  ## Default value is 'true' for backwards compatibility, please set it to 'false' so that 'perdevice_include' setting
+  ## is honored.
+  perdevice = true
+
+  ## Specifies for which classes a per-device metric should be issued
+  ## Possible values are 'cpu' (cpu0, cpu1, ...), 'blkio' (8:0, 8:1, ...) and 'network' (eth0, eth1, ...)
+  ## Please note that this setting has no effect if 'perdevice' is set to 'true'
+  # perdevice_include = ["cpu"]
+
+  ## Whether to report for each container total blkio and network stats or not.
+  ## Usage of this setting is discouraged since it will be deprecated in favor of 'total_include'.
+  ## Default value is 'false' for backwards compatibility, please set it to 'true' so that 'total_include' setting
+  ## is honored.
+  total = false
+
+  ## Specifies for which classes a total metric should be issued. Total is an aggregated of the 'perdevice' values.
+  ## Possible values are 'cpu', 'blkio' and 'network'
+  ## Total 'cpu' is reported directly by Docker daemon, and 'network' and 'blkio' totals are aggregated by this plugin.
+  ## Please note that this setting has no effect if 'total' is set to 'false'
+  # total_include = ["cpu", "blkio", "network"]
+
+  ## Which environment variables should we use as a tag
+  ##tag_env = ["JAVA_HOME", "HEAP_SIZE"]
+
+  ## docker labels to include and exclude as tags.  Globs accepted.
+  ## Note that an empty array for both will include all labels as tags
+  docker_label_include = []
+  docker_label_exclude = []
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+`
+
+// SampleConfig returns the default Docker TOML configuration.
+func (d *Docker) SampleConfig() string { return sampleConfig }
+
+// Description the metrics returned.
+func (d *Docker) Description() string {
+	return "Read metrics about docker containers"
 }
 
 func (d *Docker) Init() error {
 	err := choice.CheckSlice(d.PerDeviceInclude, containerMetricClasses)
 	if err != nil {
-		return fmt.Errorf("error validating 'perdevice_include' setting: %w", err)
+		return fmt.Errorf("error validating 'perdevice_include' setting : %v", err)
 	}
 
 	err = choice.CheckSlice(d.TotalInclude, containerMetricClasses)
 	if err != nil {
-		return fmt.Errorf("error validating 'total_include' setting: %w", err)
+		return fmt.Errorf("error validating 'total_include' setting : %v", err)
 	}
 
 	// Temporary logic needed for backwards compatibility until 'perdevice' setting is removed.
 	if d.PerDevice {
+		d.Log.Warn(perDeviceIncludeDeprecationWarning)
 		if !choice.Contains("network", d.PerDeviceInclude) {
 			d.PerDeviceInclude = append(d.PerDeviceInclude, "network")
 		}
@@ -116,6 +193,7 @@ func (d *Docker) Init() error {
 
 	// Temporary logic needed for backwards compatibility until 'total' setting is removed.
 	if !d.Total {
+		d.Log.Warn(totalIncludeDeprecationWarning)
 		if choice.Contains("cpu", d.TotalInclude) {
 			d.TotalInclude = []string{"cpu"}
 		} else {
@@ -189,7 +267,7 @@ func (d *Docker) Gather(acc telegraf.Accumulator) error {
 	defer cancel()
 
 	containers, err := d.client.ContainerList(ctx, opts)
-	if errors.Is(err, context.DeadlineExceeded) {
+	if err == context.DeadlineExceeded {
 		return errListTimeout
 	}
 	if err != nil {
@@ -217,7 +295,7 @@ func (d *Docker) gatherSwarmInfo(acc telegraf.Accumulator) error {
 	defer cancel()
 
 	services, err := d.client.ServiceList(ctx, types.ServiceListOptions{})
-	if errors.Is(err, context.DeadlineExceeded) {
+	if err == context.DeadlineExceeded {
 		return errServiceTimeout
 	}
 	if err != nil {
@@ -236,7 +314,7 @@ func (d *Docker) gatherSwarmInfo(acc telegraf.Accumulator) error {
 		}
 
 		running := map[string]int{}
-		tasksNoShutdown := map[string]uint64{}
+		tasksNoShutdown := map[string]int{}
 
 		activeNodes := make(map[string]struct{})
 		for _, n := range nodes {
@@ -294,7 +372,7 @@ func (d *Docker) gatherInfo(acc telegraf.Accumulator) error {
 	defer cancel()
 
 	info, err := d.client.Info(ctx)
-	if errors.Is(err, context.DeadlineExceeded) {
+	if err == context.DeadlineExceeded {
 		return errInfoTimeout
 	}
 	if err != nil {
@@ -338,7 +416,7 @@ func (d *Docker) gatherInfo(acc telegraf.Accumulator) error {
 	)
 
 	for _, rawData := range info.DriverStatus {
-		name := strings.ToLower(strings.ReplaceAll(rawData[0], " ", "_"))
+		name := strings.ToLower(strings.Replace(rawData[0], " ", "_", -1))
 		if name == "pool_name" {
 			poolName = rawData[1]
 			continue
@@ -454,20 +532,20 @@ func (d *Docker) gatherContainer(
 	defer cancel()
 
 	r, err := d.client.ContainerStats(ctx, container.ID, false)
-	if errors.Is(err, context.DeadlineExceeded) {
+	if err == context.DeadlineExceeded {
 		return errStatsTimeout
 	}
 	if err != nil {
-		return fmt.Errorf("error getting docker stats: %w", err)
+		return fmt.Errorf("error getting docker stats: %v", err)
 	}
 
 	defer r.Body.Close()
 	dec := json.NewDecoder(r.Body)
 	if err = dec.Decode(&v); err != nil {
-		if errors.Is(err, io.EOF) {
+		if err == io.EOF {
 			return nil
 		}
-		return fmt.Errorf("error decoding: %w", err)
+		return fmt.Errorf("error decoding: %v", err)
 	}
 	daemonOSType := r.OSType
 
@@ -492,11 +570,11 @@ func (d *Docker) gatherContainerInspect(
 	defer cancel()
 
 	info, err := d.client.ContainerInspect(ctx, container.ID)
-	if errors.Is(err, context.DeadlineExceeded) {
+	if err == context.DeadlineExceeded {
 		return errInspectTimeout
 	}
 	if err != nil {
-		return fmt.Errorf("error inspecting docker container: %w", err)
+		return fmt.Errorf("error inspecting docker container: %v", err)
 	}
 
 	// Add whitelisted environment variables to tags

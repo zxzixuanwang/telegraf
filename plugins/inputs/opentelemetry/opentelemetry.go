@@ -1,27 +1,19 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package opentelemetry
 
 import (
-	_ "embed"
 	"fmt"
 	"net"
 	"sync"
 	"time"
 
-	"go.opentelemetry.io/collector/pdata/plog/plogotlp"
-	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
-	"go.opentelemetry.io/collector/pdata/ptrace/ptraceotlp"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
+	"go.opentelemetry.io/collector/model/otlpgrpc"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 type OpenTelemetry struct {
 	ServiceAddress string `toml:"service_address"`
@@ -38,8 +30,37 @@ type OpenTelemetry struct {
 	wg sync.WaitGroup
 }
 
-func (*OpenTelemetry) SampleConfig() string {
+const sampleConfig = `
+  ## Override the default (0.0.0.0:4317) destination OpenTelemetry gRPC service
+  ## address:port
+  # service_address = "0.0.0.0:4317"
+
+  ## Override the default (5s) new connection timeout
+  # timeout = "5s"
+
+  ## Override the default (prometheus-v1) metrics schema.
+  ## Supports: "prometheus-v1", "prometheus-v2"
+  ## For more information about the alternatives, read the Prometheus input
+  ## plugin notes.
+  # metrics_schema = "prometheus-v1"
+
+  ## Optional TLS Config.
+  ## For advanced options: https://github.com/influxdata/telegraf/blob/v1.18.3/docs/TLS.md
+  ##
+  ## Set one or more allowed client CA certificate file names to
+  ## enable mutually authenticated TLS connections.
+  # tls_allowed_cacerts = ["/etc/telegraf/clientca.pem"]
+  ## Add service certificate and key.
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+`
+
+func (o *OpenTelemetry) SampleConfig() string {
 	return sampleConfig
+}
+
+func (o *OpenTelemetry) Description() string {
+	return "Receive OpenTelemetry traces, metrics, and logs over gRPC"
 }
 
 func (o *OpenTelemetry) Gather(_ telegraf.Accumulator) error {
@@ -61,17 +82,13 @@ func (o *OpenTelemetry) Start(accumulator telegraf.Accumulator) error {
 	influxWriter := &writeToAccumulator{accumulator}
 	o.grpcServer = grpc.NewServer(grpcOptions...)
 
-	traceService, err := newTraceService(logger, influxWriter)
-	if err != nil {
-		return err
-	}
-	ptraceotlp.RegisterGRPCServer(o.grpcServer, traceService)
+	otlpgrpc.RegisterTracesServer(o.grpcServer, newTraceService(logger, influxWriter))
 	ms, err := newMetricsService(logger, influxWriter, o.MetricsSchema)
 	if err != nil {
 		return err
 	}
-	pmetricotlp.RegisterGRPCServer(o.grpcServer, ms)
-	plogotlp.RegisterGRPCServer(o.grpcServer, newLogsService(logger, influxWriter))
+	otlpgrpc.RegisterMetricsServer(o.grpcServer, ms)
+	otlpgrpc.RegisterLogsServer(o.grpcServer, newLogsService(logger, influxWriter))
 
 	if o.listener == nil {
 		o.listener, err = net.Listen("tcp", o.ServiceAddress)

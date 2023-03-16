@@ -1,9 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package apache
 
 import (
 	"bufio"
-	_ "embed"
 	"fmt"
 	"net"
 	"net/http"
@@ -19,9 +17,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-//go:embed sample.conf
-var sampleConfig string
-
 type Apache struct {
 	Urls            []string
 	Username        string
@@ -32,8 +27,33 @@ type Apache struct {
 	client *http.Client
 }
 
-func (*Apache) SampleConfig() string {
+var sampleConfig = `
+  ## An array of URLs to gather from, must be directed at the machine
+  ## readable version of the mod_status page including the auto query string.
+  ## Default is "http://localhost/server-status?auto".
+  urls = ["http://localhost/server-status?auto"]
+
+  ## Credentials for basic HTTP authentication.
+  # username = "myuser"
+  # password = "mypassword"
+
+  ## Maximum time to receive response.
+  # response_timeout = "5s"
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use TLS but skip chain & host verification
+  # insecure_skip_verify = false
+`
+
+func (n *Apache) SampleConfig() string {
 	return sampleConfig
+}
+
+func (n *Apache) Description() string {
+	return "Read Apache status information (mod_status)"
 }
 
 func (n *Apache) Gather(acc telegraf.Accumulator) error {
@@ -57,7 +77,7 @@ func (n *Apache) Gather(acc telegraf.Accumulator) error {
 	for _, u := range n.Urls {
 		addr, err := url.Parse(u)
 		if err != nil {
-			acc.AddError(fmt.Errorf("unable to parse address %q: %w", u, err))
+			acc.AddError(fmt.Errorf("unable to parse address '%s': %s", u, err))
 			continue
 		}
 
@@ -91,7 +111,7 @@ func (n *Apache) createHTTPClient() (*http.Client, error) {
 func (n *Apache) gatherURL(addr *url.URL, acc telegraf.Accumulator) error {
 	req, err := http.NewRequest("GET", addr.String(), nil)
 	if err != nil {
-		return fmt.Errorf("error on new request to %q: %w", addr.String(), err)
+		return fmt.Errorf("error on new request to %s : %s", addr.String(), err)
 	}
 
 	if len(n.Username) != 0 && len(n.Password) != 0 {
@@ -100,7 +120,7 @@ func (n *Apache) gatherURL(addr *url.URL, acc telegraf.Accumulator) error {
 
 	resp, err := n.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("error on request to %q: %w", addr.String(), err)
+		return fmt.Errorf("error on request to %s : %s", addr.String(), err)
 	}
 	defer resp.Body.Close()
 
@@ -116,7 +136,7 @@ func (n *Apache) gatherURL(addr *url.URL, acc telegraf.Accumulator) error {
 		line := sc.Text()
 		if strings.Contains(line, ":") {
 			parts := strings.SplitN(line, ":", 2)
-			key, part := strings.ReplaceAll(parts[0], " ", ""), strings.TrimSpace(parts[1])
+			key, part := strings.Replace(parts[0], " ", "", -1), strings.TrimSpace(parts[1])
 
 			switch key {
 			case "Scoreboard":

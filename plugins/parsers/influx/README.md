@@ -1,8 +1,9 @@
-# Influx Line Protocol Parser Plugin
+# InfluxDB Line Protocol
 
-Parses metrics using the [Influx Line Protocol][].
+There are no additional configuration options for InfluxDB [line protocol][]. The
+metrics are parsed directly into Telegraf metrics.
 
-[Influx Line Protocol]: https://docs.influxdata.com/influxdb/latest/reference/syntax/line-protocol/
+[line protocol]: https://docs.influxdata.com/influxdb/latest/reference/syntax/line-protocol/
 
 ## Configuration
 
@@ -15,9 +16,4 @@ Parses metrics using the [Influx Line Protocol][].
   ## more about them here:
   ##   https://github.com/influxdata/telegraf/blob/master/docs/DATA_FORMATS_INPUT.md
   data_format = "influx"
-
-  ## Influx line protocol parser
-  ## 'internal' is the default. 'upstream' is a newer parser that is faster
-  ## and more memory efficient.
-  ## influx_parser_type = "internal"
 ```

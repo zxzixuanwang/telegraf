@@ -8,7 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis/types"
-	"github.com/gofrs/uuid/v5"
+	"github.com/gofrs/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/influxdata/telegraf"
@@ -581,14 +581,14 @@ func createTestMetrics(
 	count uint32,
 	serializer serializers.Serializer,
 ) ([]telegraf.Metric, [][]byte) {
-	metrics := make([]telegraf.Metric, 0, count)
-	metricsData := make([][]byte, 0, count)
+	metrics := make([]telegraf.Metric, count)
+	metricsData := make([][]byte, count)
 
 	for i := uint32(0); i < count; i++ {
 		name := fmt.Sprintf("metric%d", i)
 		metric, data := createTestMetric(t, name, serializer)
-		metrics = append(metrics, metric)
-		metricsData = append(metricsData, data)
+		metrics[i] = metric
+		metricsData[i] = data
 	}
 
 	return metrics, metricsData
@@ -597,13 +597,14 @@ func createTestMetrics(
 func createPutRecordsRequestEntries(
 	metricsData [][]byte,
 ) []types.PutRecordsRequestEntry {
-	records := make([]types.PutRecordsRequestEntry, 0, len(metricsData))
+	count := len(metricsData)
+	records := make([]types.PutRecordsRequestEntry, count)
 
-	for _, data := range metricsData {
-		records = append(records, types.PutRecordsRequestEntry{
+	for i := 0; i < count; i++ {
+		records[i] = types.PutRecordsRequestEntry{
 			PartitionKey: aws.String(testPartitionKey),
-			Data:         data,
-		})
+			Data:         metricsData[i],
+		}
 	}
 
 	return records

@@ -1,4 +1,5 @@
 //go:build !windows
+// +build !windows
 
 package postfix
 
@@ -13,7 +14,9 @@ import (
 )
 
 func TestGather(t *testing.T) {
-	td := t.TempDir()
+	td, err := os.MkdirTemp("", "")
+	require.NoError(t, err)
+	defer os.RemoveAll(td)
 
 	for _, q := range []string{"active", "hold", "incoming", "maildrop", "deferred/0/0", "deferred/F/F"} {
 		require.NoError(t, os.MkdirAll(filepath.FromSlash(td+"/"+q), 0755))

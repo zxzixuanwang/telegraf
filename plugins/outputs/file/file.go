@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package file
 
 import (
-	_ "embed"
 	"fmt"
 	"io"
 	"os"
@@ -14,9 +12,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/outputs"
 	"github.com/influxdata/telegraf/plugins/serializers"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 type File struct {
 	Files               []string        `toml:"files"`
@@ -31,9 +26,33 @@ type File struct {
 	serializer serializers.Serializer
 }
 
-func (*File) SampleConfig() string {
-	return sampleConfig
-}
+var sampleConfig = `
+  ## Files to write to, "stdout" is a specially handled file.
+  files = ["stdout", "/tmp/metrics.out"]
+
+  ## Use batch serialization format instead of line based delimiting.  The
+  ## batch format allows for the production of non line based output formats and
+  ## may more efficiently encode metric groups.
+  # use_batch_format = false
+
+  ## The file will be rotated after the time interval specified.  When set
+  ## to 0 no time based rotation is performed.
+  # rotation_interval = "0d"
+
+  ## The logfile will be rotated when it becomes larger than the specified
+  ## size.  When set to 0 no size based rotation is performed.
+  # rotation_max_size = "0MB"
+
+  ## Maximum number of rotated archives to keep, any older logs are deleted.
+  ## If set to -1, no archives are removed.
+  # rotation_max_archives = 5
+
+  ## Data format to output.
+  ## Each data format has its own unique set of configuration options, read
+  ## more about them here:
+  ## https://github.com/influxdata/telegraf/blob/master/docs/DATA_FORMATS_OUTPUT.md
+  data_format = "influx"
+`
 
 func (f *File) SetSerializer(serializer serializers.Serializer) {
 	f.serializer = serializer
@@ -75,6 +94,14 @@ func (f *File) Close() error {
 	return err
 }
 
+func (f *File) SampleConfig() string {
+	return sampleConfig
+}
+
+func (f *File) Description() string {
+	return "Send telegraf metrics to file(s)"
+}
+
 func (f *File) Write(metrics []telegraf.Metric) error {
 	var writeErr error
 
@@ -97,7 +124,7 @@ func (f *File) Write(metrics []telegraf.Metric) error {
 
 			_, err = f.writer.Write(b)
 			if err != nil {
-				writeErr = fmt.Errorf("failed to write message: %w", err)
+				writeErr = fmt.Errorf("failed to write message: %v", err)
 			}
 		}
 	}

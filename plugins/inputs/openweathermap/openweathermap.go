@@ -1,8 +1,6 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package openweathermap
 
 import (
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,9 +16,6 @@ import (
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 const (
 	// https://openweathermap.org/current#severalid
@@ -47,8 +42,43 @@ type OpenWeatherMap struct {
 	baseParsedURL *url.URL
 }
 
-func (*OpenWeatherMap) SampleConfig() string {
+var sampleConfig = `
+  ## OpenWeatherMap API key.
+  app_id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+  ## City ID's to collect weather data from.
+  city_id = ["5391959"]
+
+  ## Language of the description field. Can be one of "ar", "bg",
+  ## "ca", "cz", "de", "el", "en", "fa", "fi", "fr", "gl", "hr", "hu",
+  ## "it", "ja", "kr", "la", "lt", "mk", "nl", "pl", "pt", "ro", "ru",
+  ## "se", "sk", "sl", "es", "tr", "ua", "vi", "zh_cn", "zh_tw"
+  # lang = "en"
+
+  ## APIs to fetch; can contain "weather" or "forecast".
+  fetch = ["weather", "forecast"]
+
+  ## OpenWeatherMap base URL
+  # base_url = "https://api.openweathermap.org/"
+
+  ## Timeout for HTTP response.
+  # response_timeout = "5s"
+
+  ## Preferred unit system for temperature and wind speed. Can be one of
+  ## "metric", "imperial", or "standard".
+  # units = "metric"
+
+  ## Query interval; OpenWeatherMap updates their weather data every 10
+  ## minutes.
+  interval = "10m"
+`
+
+func (n *OpenWeatherMap) SampleConfig() string {
 	return sampleConfig
+}
+
+func (n *OpenWeatherMap) Description() string {
+	return "Read current weather and forecasts data from openweathermap.org"
 }
 
 func (n *OpenWeatherMap) Gather(acc telegraf.Accumulator) error {
@@ -117,7 +147,7 @@ func (n *OpenWeatherMap) createHTTPClient() *http.Client {
 func (n *OpenWeatherMap) gatherURL(addr string) (*Status, error) {
 	resp, err := n.client.Get(addr)
 	if err != nil {
-		return nil, fmt.Errorf("error making HTTP request to %q: %w", addr, err)
+		return nil, fmt.Errorf("error making HTTP request to %s: %s", addr, err)
 	}
 	defer resp.Body.Close()
 
@@ -146,16 +176,11 @@ type WeatherEntry struct {
 		Humidity int64   `json:"humidity"`
 		Pressure float64 `json:"pressure"`
 		Temp     float64 `json:"temp"`
-		Feels    float64 `json:"feels_like"`
 	} `json:"main"`
 	Rain struct {
 		Rain1 float64 `json:"1h"`
 		Rain3 float64 `json:"3h"`
 	} `json:"rain"`
-	Snow struct {
-		Snow1 float64 `json:"1h"`
-		Snow3 float64 `json:"3h"`
-	} `json:"snow"`
 	Sys struct {
 		Country string `json:"country"`
 		Sunrise int64  `json:"sunrise"`
@@ -197,16 +222,9 @@ func gatherWeatherURL(r io.Reader) (*Status, error) {
 	dec := json.NewDecoder(r)
 	status := &Status{}
 	if err := dec.Decode(status); err != nil {
-		return nil, fmt.Errorf("error while decoding JSON response: %w", err)
+		return nil, fmt.Errorf("error while decoding JSON response: %s", err)
 	}
 	return status, nil
-}
-
-func gatherSnow(e WeatherEntry) float64 {
-	if e.Snow.Snow1 > 0 {
-		return e.Snow.Snow1
-	}
-	return e.Snow.Snow3
 }
 
 func gatherRain(e WeatherEntry) float64 {
@@ -225,11 +243,9 @@ func gatherWeather(acc telegraf.Accumulator, status *Status) {
 			"humidity":     e.Main.Humidity,
 			"pressure":     e.Main.Pressure,
 			"rain":         gatherRain(e),
-			"snow":         gatherSnow(e),
 			"sunrise":      time.Unix(e.Sys.Sunrise, 0).UnixNano(),
 			"sunset":       time.Unix(e.Sys.Sunset, 0).UnixNano(),
 			"temperature":  e.Main.Temp,
-			"feels_like":   e.Main.Feels,
 			"visibility":   e.Visibility,
 			"wind_degrees": e.Wind.Deg,
 			"wind_speed":   e.Wind.Speed,
@@ -266,9 +282,7 @@ func gatherForecast(acc telegraf.Accumulator, status *Status) {
 			"humidity":     e.Main.Humidity,
 			"pressure":     e.Main.Pressure,
 			"rain":         gatherRain(e),
-			"snow":         gatherSnow(e),
 			"temperature":  e.Main.Temp,
-			"feels_like":   e.Main.Feels,
 			"wind_degrees": e.Wind.Deg,
 			"wind_speed":   e.Wind.Speed,
 		}

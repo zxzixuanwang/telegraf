@@ -3,11 +3,8 @@ package diskio
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -83,10 +80,13 @@ func (d *DiskIO) diskInfo(devName string) (map[string]string, error) {
 		}
 		if l[:2] == "S:" {
 			if devlinks.Len() > 0 {
-				devlinks.WriteString(" ") //nolint:revive // this will never fail
+				//nolint:errcheck,revive // this will never fail
+				devlinks.WriteString(" ")
 			}
-			devlinks.WriteString("/dev/") //nolint:revive // this will never fail
-			devlinks.WriteString(l[2:])   //nolint:revive // this will never fail
+			//nolint:errcheck,revive // this will never fail
+			devlinks.WriteString("/dev/")
+			//nolint:errcheck,revive // this will never fail
+			devlinks.WriteString(l[2:])
 			continue
 		}
 		if l[:2] != "E:" {
@@ -104,30 +104,4 @@ func (d *DiskIO) diskInfo(devName string) (map[string]string, error) {
 	}
 
 	return di, nil
-}
-
-func resolveName(name string) string {
-	resolved, err := filepath.EvalSymlinks(name)
-	if err == nil {
-		return resolved
-	}
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return name
-	}
-	// Try to prepend "/dev"
-	resolved, err = filepath.EvalSymlinks(filepath.Join("/dev", name))
-	if err != nil {
-		return name
-	}
-
-	return resolved
-}
-
-func getDeviceWWID(name string) string {
-	path := fmt.Sprintf("/sys/block/%s/wwid", filepath.Base(name))
-	buf, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSuffix(string(buf), "\n")
 }

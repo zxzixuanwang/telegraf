@@ -1,10 +1,8 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package openntpd
 
 import (
 	"bufio"
 	"bytes"
-	_ "embed"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -16,9 +14,6 @@ import (
 	"github.com/influxdata/telegraf/internal"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 // Mapping of the ntpctl tag key to the index in the command output
 var tagI = map[string]int{
@@ -54,6 +49,23 @@ type Openntpd struct {
 var defaultBinary = "/usr/sbin/ntpctl"
 var defaultTimeout = config.Duration(5 * time.Second)
 
+func (n *Openntpd) Description() string {
+	return "Get standard NTP query metrics from OpenNTPD."
+}
+
+func (n *Openntpd) SampleConfig() string {
+	return `
+  ## Run ntpctl binary with sudo.
+  # use_sudo = false
+
+  ## Location of the ntpctl binary.
+  # binary = "/usr/sbin/ntpctl"
+
+  ## Maximum time the ntpctl binary is allowed to run.
+  # timeout = "5ms"
+  `
+}
+
 // Shell out to ntpctl and return the output
 func openntpdRunner(cmdName string, timeout config.Duration, useSudo bool) (*bytes.Buffer, error) {
 	cmdArgs := []string{"-s", "peers"}
@@ -69,20 +81,16 @@ func openntpdRunner(cmdName string, timeout config.Duration, useSudo bool) (*byt
 	cmd.Stdout = &out
 	err := internal.RunTimeout(cmd, time.Duration(timeout))
 	if err != nil {
-		return &out, fmt.Errorf("error running ntpctl: %w", err)
+		return &out, fmt.Errorf("error running ntpctl: %s", err)
 	}
 
 	return &out, nil
 }
 
-func (*Openntpd) SampleConfig() string {
-	return sampleConfig
-}
-
 func (n *Openntpd) Gather(acc telegraf.Accumulator) error {
 	out, err := n.run(n.Binary, n.Timeout, n.UseSudo)
 	if err != nil {
-		return fmt.Errorf("error gathering metrics: %w", err)
+		return fmt.Errorf("error gathering metrics: %s", err)
 	}
 
 	lineCounter := 0

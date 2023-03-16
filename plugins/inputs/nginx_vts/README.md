@@ -1,41 +1,18 @@
 # Nginx Virtual Host Traffic (VTS) Input Plugin
 
-This plugin gathers Nginx status using external virtual host traffic status
-module - <https://github.com/vozlt/nginx-module-vts>. This is an Nginx module
-that provides access to virtual host status information. It contains the current
-status such as servers, upstreams, caches. This is similar to the live activity
-monitoring of Nginx plus.  For module configuration details please see its
-[documentation](https://github.com/vozlt/nginx-module-vts#synopsis).
-
-## Global configuration options <!-- @/docs/includes/plugin_config.md -->
-
-In addition to the plugin-specific configuration settings, plugins support
-additional global and plugin configuration settings. These settings are used to
-modify metrics, tags, and field or create aliases and configure ordering, etc.
-See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
-
-[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+This plugin gathers Nginx status using external virtual host traffic status module -  <https://github.com/vozlt/nginx-module-vts>. This is an Nginx module that provides access to virtual host status information. It contains the current status such as servers, upstreams, caches. This is similar to the live activity monitoring of Nginx plus.
+For module configuration details please see its [documentation](https://github.com/vozlt/nginx-module-vts#synopsis).
 
 ## Configuration
 
-```toml @sample.conf
-# Read Nginx virtual host traffic status module information (nginx-module-vts)
+```toml
+# Read nginx status information using nginx-module-vts module
 [[inputs.nginx_vts]]
-  ## An array of ngx_http_status_module or status URI to gather stats.
+  ## An array of Nginx status URIs to gather stats.
   urls = ["http://localhost/status"]
-
-  ## HTTP response timeout (default: 5s)
-  response_timeout = "5s"
-
-  ## Optional TLS Config
-  # tls_ca = "/etc/telegraf/ca.pem"
-  # tls_cert = "/etc/telegraf/cert.pem"
-  # tls_key = "/etc/telegraf/key.pem"
-  ## Use TLS but skip chain & host verification
-  # insecure_skip_verify = false
 ```
 
-## Metrics
+## Measurements & Fields
 
 - nginx_vts_connections
   - active
@@ -93,7 +70,7 @@ See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
   - hit
   - scarce
 
-### Tags
+## Tags
 
 - nginx_vts_connections
   - source

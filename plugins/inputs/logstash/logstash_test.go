@@ -32,8 +32,7 @@ func Test_Logstash5GatherProcessStats(test *testing.T) {
 	}))
 	requestURL, err := url.Parse(logstashTest.URL)
 	require.NoErrorf(test, err, "Can't connect to: %s", logstashTest.URL)
-	fakeServer.Listener, err = net.Listen("tcp", fmt.Sprintf("%s:%s", requestURL.Hostname(), requestURL.Port()))
-	require.NoError(test, err)
+	fakeServer.Listener, _ = net.Listen("tcp", fmt.Sprintf("%s:%s", requestURL.Hostname(), requestURL.Port()))
 	fakeServer.Start()
 	defer fakeServer.Close()
 
@@ -77,8 +76,7 @@ func Test_Logstash6GatherProcessStats(test *testing.T) {
 	}))
 	requestURL, err := url.Parse(logstashTest.URL)
 	require.NoErrorf(test, err, "Can't connect to: %s", logstashTest.URL)
-	fakeServer.Listener, err = net.Listen("tcp", fmt.Sprintf("%s:%s", requestURL.Hostname(), requestURL.Port()))
-	require.NoError(test, err)
+	fakeServer.Listener, _ = net.Listen("tcp", fmt.Sprintf("%s:%s", requestURL.Hostname(), requestURL.Port()))
 	fakeServer.Start()
 	defer fakeServer.Close()
 
@@ -123,8 +121,7 @@ func Test_Logstash5GatherPipelineStats(test *testing.T) {
 	}))
 	requestURL, err := url.Parse(logstashTest.URL)
 	require.NoErrorf(test, err, "Can't connect to: %s", logstashTest.URL)
-	fakeServer.Listener, err = net.Listen("tcp", fmt.Sprintf("%s:%s", requestURL.Hostname(), requestURL.Port()))
-	require.NoError(test, err)
+	fakeServer.Listener, _ = net.Listen("tcp", fmt.Sprintf("%s:%s", requestURL.Hostname(), requestURL.Port()))
 	fakeServer.Start()
 	defer fakeServer.Close()
 
@@ -221,8 +218,7 @@ func Test_Logstash6GatherPipelinesStats(test *testing.T) {
 	}))
 	requestURL, err := url.Parse(logstashTest.URL)
 	require.NoErrorf(test, err, "Can't connect to: %s", logstashTest.URL)
-	fakeServer.Listener, err = net.Listen("tcp", fmt.Sprintf("%s:%s", requestURL.Hostname(), requestURL.Port()))
-	require.NoError(test, err)
+	fakeServer.Listener, _ = net.Listen("tcp", fmt.Sprintf("%s:%s", requestURL.Hostname(), requestURL.Port()))
 	fakeServer.Start()
 	defer fakeServer.Close()
 
@@ -322,24 +318,6 @@ func Test_Logstash6GatherPipelinesStats(test *testing.T) {
 			"duration_in_millis": float64(13149.0),
 			"in":                 float64(180659.0),
 			"out":                float64(177549.0),
-		},
-		map[string]string{
-			"node_id":      string("3044f675-21ce-4335-898a-8408aa678245"),
-			"node_name":    string("node-6-test"),
-			"source":       string("node-6"),
-			"node_version": string("6.4.2"),
-			"pipeline":     string("main"),
-			"plugin_name":  string("date"),
-			"plugin_id":    string("d079424bb6b7b8c7c61d9c5e0ddae445e92fa9ffa2e8690b0a669f7c690542f0"),
-			"plugin_type":  string("filter"),
-		},
-	)
-
-	logstash6accPipelinesStats.AssertContainsTaggedFields(
-		test,
-		"logstash_plugins",
-		map[string]interface{}{
-			"failures": int64(2),
 		},
 		map[string]string{
 			"node_id":      string("3044f675-21ce-4335-898a-8408aa678245"),
@@ -563,8 +541,7 @@ func Test_Logstash5GatherJVMStats(test *testing.T) {
 	}))
 	requestURL, err := url.Parse(logstashTest.URL)
 	require.NoErrorf(test, err, "Can't connect to: %s", logstashTest.URL)
-	fakeServer.Listener, err = net.Listen("tcp", fmt.Sprintf("%s:%s", requestURL.Hostname(), requestURL.Port()))
-	require.NoError(test, err)
+	fakeServer.Listener, _ = net.Listen("tcp", fmt.Sprintf("%s:%s", requestURL.Hostname(), requestURL.Port()))
 	fakeServer.Start()
 	defer fakeServer.Close()
 
@@ -627,8 +604,7 @@ func Test_Logstash6GatherJVMStats(test *testing.T) {
 	}))
 	requestURL, err := url.Parse(logstashTest.URL)
 	require.NoErrorf(test, err, "Can't connect to: %s", logstashTest.URL)
-	fakeServer.Listener, err = net.Listen("tcp", fmt.Sprintf("%s:%s", requestURL.Hostname(), requestURL.Port()))
-	require.NoError(test, err)
+	fakeServer.Listener, _ = net.Listen("tcp", fmt.Sprintf("%s:%s", requestURL.Hostname(), requestURL.Port()))
 	fakeServer.Start()
 	defer fakeServer.Close()
 
@@ -695,8 +671,7 @@ func Test_Logstash7GatherPipelinesQueueStats(test *testing.T) {
 	if err != nil {
 		test.Logf("Can't connect to: %s", logstashTest.URL)
 	}
-	fakeServer.Listener, err = net.Listen("tcp", fmt.Sprintf("%s:%s", requestURL.Hostname(), requestURL.Port()))
-	require.NoError(test, err)
+	fakeServer.Listener, _ = net.Listen("tcp", fmt.Sprintf("%s:%s", requestURL.Hostname(), requestURL.Port()))
 	fakeServer.Start()
 	defer fakeServer.Close()
 

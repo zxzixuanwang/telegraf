@@ -1,9 +1,7 @@
-//go:generate ../../../tools/readme_config_includer/generator
 package jenkins
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -18,9 +16,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 // Jenkins plugin gathers information about the nodes and jobs running in a jenkins instance.
 type Jenkins struct {
@@ -52,6 +47,54 @@ type Jenkins struct {
 	semaphore chan struct{}
 }
 
+const sampleConfig = `
+  ## The Jenkins URL in the format "schema://host:port"
+  url = "http://my-jenkins-instance:8080"
+  # username = "admin"
+  # password = "admin"
+
+  ## Set response_timeout
+  response_timeout = "5s"
+
+  ## Optional TLS Config
+  # tls_ca = "/etc/telegraf/ca.pem"
+  # tls_cert = "/etc/telegraf/cert.pem"
+  # tls_key = "/etc/telegraf/key.pem"
+  ## Use SSL but skip chain & host verification
+  # insecure_skip_verify = false
+
+  ## Optional Max Job Build Age filter
+  ## Default 1 hour, ignore builds older than max_build_age
+  # max_build_age = "1h"
+
+  ## Optional Sub Job Depth filter
+  ## Jenkins can have unlimited layer of sub jobs
+  ## This config will limit the layers of pulling, default value 0 means
+  ## unlimited pulling until no more sub jobs
+  # max_subjob_depth = 0
+
+  ## Optional Sub Job Per Layer
+  ## In workflow-multibranch-plugin, each branch will be created as a sub job.
+  ## This config will limit to call only the lasted branches in each layer,
+  ## empty will use default value 10
+  # max_subjob_per_layer = 10
+
+  ## Jobs to include or exclude from gathering
+  ## When using both lists, job_exclude has priority.
+  ## Wildcards are supported: [ "jobA/*", "jobB/subjob1/*"]
+  # job_include = [ "*" ]
+  # job_exclude = [ ]
+
+  ## Nodes to include or exclude from gathering
+  ## When using both lists, node_exclude has priority.
+  # node_include = [ "*" ]
+  # node_exclude = [ ]
+
+  ## Worker pool for jenkins plugin only
+  ## Empty this field will use default value 5
+  # max_connections = 5
+`
+
 // measurement
 const (
 	measurementJenkins = "jenkins"
@@ -59,8 +102,14 @@ const (
 	measurementJob     = "jenkins_job"
 )
 
-func (*Jenkins) SampleConfig() string {
+// SampleConfig implements telegraf.Input interface
+func (j *Jenkins) SampleConfig() string {
 	return sampleConfig
+}
+
+// Description implements telegraf.Input interface
+func (j *Jenkins) Description() string {
+	return "Read jobs and cluster metrics from Jenkins instances"
 }
 
 // Gather implements telegraf.Input interface
@@ -84,7 +133,7 @@ func (j *Jenkins) Gather(acc telegraf.Accumulator) error {
 func (j *Jenkins) newHTTPClient() (*http.Client, error) {
 	tlsCfg, err := j.ClientConfig.TLSConfig()
 	if err != nil {
-		return nil, fmt.Errorf("error parse jenkins config %q: %w", j.URL, err)
+		return nil, fmt.Errorf("error parse jenkins config[%s]: %v", j.URL, err)
 	}
 	return &http.Client{
 		Transport: &http.Transport{
@@ -118,11 +167,11 @@ func (j *Jenkins) initialize(client *http.Client) error {
 	// init filters
 	j.jobFilter, err = filter.NewIncludeExcludeFilter(j.JobInclude, j.JobExclude)
 	if err != nil {
-		return fmt.Errorf("error compiling job filters %q: %w", j.URL, err)
+		return fmt.Errorf("error compiling job filters[%s]: %v", j.URL, err)
 	}
 	j.nodeFilter, err = filter.NewIncludeExcludeFilter(j.NodeInclude, j.NodeExclude)
 	if err != nil {
-		return fmt.Errorf("error compiling node filters %q: %w", j.URL, err)
+		return fmt.Errorf("error compiling node filters[%s]: %v", j.URL, err)
 	}
 
 	// init tcp pool with default value
@@ -384,8 +433,8 @@ type jobRequest struct {
 }
 
 func (jr jobRequest) combined() []string {
-	path := make([]string, 0, len(jr.parents)+1)
-	path = append(path, jr.parents...)
+	path := make([]string, len(jr.parents))
+	copy(path, jr.parents)
 	return append(path, jr.name)
 }
 

@@ -1,26 +1,22 @@
-//go:generate ../../../tools/readme_config_includer/generator
 //go:build linux && (386 || amd64 || arm || arm64)
+// +build linux
+// +build 386 amd64 arm arm64
 
 package ras
 
 import (
 	"database/sql"
-	_ "embed"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	// Required for SQL framework driver
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" //to register SQLite driver
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
-
-//go:embed sample.conf
-var sampleConfig string
 
 // Ras plugin gathers and counts errors provided by RASDaemon
 type Ras struct {
@@ -46,7 +42,7 @@ type metricCounters map[string]int64
 
 const (
 	mceQuery = `
-		SELECT
+		SELECT 
 			id, timestamp, error_msg, mcistatus_msg, socketid
 		FROM mce_record
 		WHERE timestamp > ?
@@ -72,8 +68,18 @@ const (
 	unclassifiedMCEBase    = "unclassified_mce_errors"
 )
 
-func (*Ras) SampleConfig() string {
-	return sampleConfig
+// SampleConfig returns sample configuration for this plugin.
+func (r *Ras) SampleConfig() string {
+	return `
+  ## Optional path to RASDaemon sqlite3 database.
+  ## Default: /var/lib/rasdaemon/ras-mc_event.db
+  # db_path = ""
+`
+}
+
+// Description returns the plugin description.
+func (r *Ras) Description() string {
+	return "RAS plugin exposes counter metrics for Machine Check Errors provided by RASDaemon (sqlite3 output is required)."
 }
 
 // Start initializes connection to DB, metrics are gathered in Gather
@@ -186,7 +192,7 @@ func validateDbPath(dbPath string) error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("cannot get system information for db_path file %q: %w", dbPath, err)
+		return fmt.Errorf("cannot get system information for db_path file: [%s] - %v", dbPath, err)
 	}
 
 	if mode := pathInfo.Mode(); !mode.IsRegular() {

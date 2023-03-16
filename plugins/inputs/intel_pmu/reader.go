@@ -1,4 +1,5 @@
 //go:build linux && amd64
+// +build linux,amd64
 
 package intel_pmu
 
@@ -107,7 +108,7 @@ func (ie *iaEntitiesValuesReader) readCoreEvents(entity *CoreEventEntity) ([]cor
 		errGroup.Go(func() error {
 			values, err := ie.eventReader.readValue(actualEvent)
 			if err != nil {
-				return fmt.Errorf("failed to read core event %q values: %w", actualEvent, err)
+				return fmt.Errorf("failed to read core event `%s` values: %v", actualEvent, err)
 			}
 			cpu, _ := actualEvent.PMUPlacement()
 			newMetric := coreMetric{
@@ -176,7 +177,7 @@ func (ie *iaEntitiesValuesReader) readMultiEventSeparately(multiEvent multiEvent
 		group.Go(func() error {
 			values, err := ie.eventReader.readValue(actualEvent)
 			if err != nil {
-				return fmt.Errorf("failed to read uncore event %q values: %w", actualEvent, err)
+				return fmt.Errorf("failed to read uncore event `%s` values: %v", actualEvent, err)
 			}
 			newMetric := uncoreMetric{
 				values:   values,
@@ -217,7 +218,7 @@ func (ie *iaEntitiesValuesReader) readMultiEventAgg(multiEvent multiEvent) (unco
 		group.Go(func() error {
 			value, err := ie.eventReader.readValue(actualEvent)
 			if err != nil {
-				return fmt.Errorf("failed to read uncore event %q values: %w", actualEvent, err)
+				return fmt.Errorf("failed to read uncore event `%s` values: %v", actualEvent, err)
 			}
 			values[id] = value
 			return nil
@@ -230,7 +231,7 @@ func (ie *iaEntitiesValuesReader) readMultiEventAgg(multiEvent multiEvent) (unco
 
 	bRaw, bEnabled, bRunning := ia.AggregateValues(values)
 	if !bRaw.IsUint64() || !bEnabled.IsUint64() || !bRunning.IsUint64() {
-		return uncoreMetric{}, fmt.Errorf("cannot aggregate %q values, uint64 exceeding", perfEvent)
+		return uncoreMetric{}, fmt.Errorf("cannot aggregate `%s` values, uint64 exceeding", perfEvent)
 	}
 	aggValues := ia.CounterValue{
 		Raw:     bRaw.Uint64(),
