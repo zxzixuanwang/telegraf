@@ -146,7 +146,6 @@ func (p *Procstat) Gather(acc telegraf.Accumulator) error {
 			acc.AddFields("procstat_lookup", fields, tags, now)
 			return err
 		}
-
 		err = p.updateProcesses(pids, tags, p.procs, newProcs)
 		if err != nil {
 			acc.AddError(fmt.Errorf("procstat getting process, exe: [%s] pidfile: [%s] pattern: [%s] user: [%s] %s",
@@ -337,7 +336,7 @@ func (p *Procstat) addMetric(proc Process, acc telegraf.Accumulator, t time.Time
 	if err == nil {
 		fields[prefix+"ppid"] = ppid
 	}
-
+	fields[prefix+"running_up"] = 1
 	acc.AddFields("procstat", fields, proc.Tags(), t)
 }
 
